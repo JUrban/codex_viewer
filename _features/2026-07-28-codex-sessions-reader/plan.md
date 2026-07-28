@@ -23,7 +23,7 @@ The first release deliberately does not edit, delete, resume, export, synchroniz
 - [x] (2026-07-28 13:08Z) Obtained explicit user approval for this ExecPlan and recorded ADR-0001.
 - [x] (2026-07-28 13:22Z) Milestone 1: established the npm/TypeScript project, browser-safe shared contracts, trace-notebook fixture shell, and secure loopback production server; typecheck, 4 tests, build, HTTP smoke, socket inspection, and desktop/mobile browser inspection passed.
 - [x] (2026-07-28 13:40Z) Milestone 2: implemented allowlisted path registration and opaque IDs, feature-detected SQLite metadata with JSONL fallback, tolerant whole-file rollout decoding, identity resolution, bounded tool pairing, safe normalization, and synthetic fixture coverage; typecheck, 14 tests, build, and diff-check passed.
-- [ ] Milestone 3: implement generation-consistent repository snapshots, bounded search, and versioned APIs.
+- [x] (2026-07-28 13:58Z) Milestone 3: implemented single-flight generation-consistent repository snapshots, whole-file fingerprint caching, bounded allowlisted search, and the versioned read-only HTTP API; typecheck, 22 tests, build, production API smoke, and diff-check passed.
 - [ ] Milestone 4: build the responsive session browser and safe timeline reader.
 - [ ] Milestone 5: harden, validate, document, and complete quality review.
 
@@ -35,20 +35,16 @@ Review must cover all code and documentation introduced for the reader, includin
 
 - `dc42247` — initial approved ExecPlan, uncertainty record, and ADR-0001; this is the architecture baseline for implementation review.
 - `654325d` — Milestone 1 project foundation, shared contracts, secure loopback server, fixture UI, tests, and documentation.
+- `bd1e449` — Milestone 2 allowlisted discovery, dual-source catalog adapters, tolerant decoding, safe normalization, fixtures, and ingestion tests.
 
 ### Uncommitted changes to review
 
-- `_features/2026-07-28-codex-sessions-reader/plan.md` — updated Milestone 1 execution record.
-- `.gitignore`, `package.json`, `package-lock.json`, `tsconfig.json`, `tsconfig.server.json`, `vite.config.ts`, `vitest.config.ts`, `index.html` — single-package build, test, and runtime foundation.
-- `src/shared/` — browser-safe domain and API contracts.
-- `src/server/config.ts`, `src/server/http/`, `src/server/main.ts` — startup-only configuration and loopback HTTP security/static serving boundary.
-- `src/client/` — accessible responsive fixture shell and trace-notebook visual system.
-- `tests/` — initial HTTP security and client landmark coverage.
-- `README.md` — Milestone 1 prerequisites, commands, configuration, and security boundary.
-- `src/server/security/` — canonical allowlisted rollout registration and collision-safe opaque ID mapping.
-- `src/server/codex/` — dual-source catalog discovery, tolerant rollout decoding, identity resolution, normalization, tool pairing, and limits.
-- `tests/fixtures/codex-home/` — entirely synthetic Codex home covering active, archived, child, malformed, partial-tail, unknown-event, tool, and incompatible-SQLite cases.
-- `tests/server/catalog-source.test.ts`, `tests/server/path-policy.test.ts`, `tests/server/rollout-decoder.test.ts`, `tests/server/session-normalizer.test.ts` — Milestone 2 discovery, security, decode, identity, normalization, and bounding proofs.
+- `_features/2026-07-28-codex-sessions-reader/plan.md` — Milestone 3 execution record and current review scope.
+- `src/shared/api-contract.ts` — generation-bound tool-detail request contract.
+- `src/server/repository/` — single-flight refresh, whole-file fingerprint cache, immutable catalog generations, repository port, and production repository composition.
+- `src/server/search/` — allowlisted search-document construction, normalization, excerpts, and explicit work budgets.
+- `src/server/http/api-router.ts`, `src/server/main.ts` — versioned safe handlers and production repository/router wiring.
+- `tests/server/session-repository.test.ts`, `tests/server/api-http.test.ts` — Milestone 3 snapshot, cache invalidation, search canary, API, stale-generation, SQLite/JSONL, and bounded-work coverage.
 
 ## Surprises & Discoveries
 
@@ -90,6 +86,15 @@ Review must cover all code and documentation introduced for the reader, includin
 
 - Observation: Real assistant `response_item` records use `phase: "final_answer"` in addition to the browser-domain spelling `final`, and custom tool output may be either a string or an array of text parts.
   Evidence: Synthetic normalization tests exercise `final_answer`, string `custom_tool_call_output`, and array `custom_tool_call_output`; all normalize to the bounded domain representation.
+
+- Observation: Running discovery on every request need not invalidate pagination.
+  Evidence: The refresh coordinator coalesces overlapping rebuilds, while a deterministic signature over catalog mode, safe diagnostics, metadata, and file fingerprints retains the existing generation when the source is unchanged.
+
+- Observation: Tool detail is as generation-sensitive as an item page even though it has no ordinal cursor.
+  Evidence: Tool item IDs are derived from physical ordinals and may refer to a different call after replacement; the API therefore requires `generation` and returns `409 stale_generation` after a snapshot change.
+
+- Observation: RFC3339 timestamps with different UTC offsets cannot be filtered correctly by lexical string comparison.
+  Evidence: Root integration added an equivalent-offset range test, changed filters to compare parsed instants, and now rejects an inverted `from`/`to` range.
 
 ## Decision Log
 
@@ -145,9 +150,23 @@ Review must cover all code and documentation introduced for the reader, includin
   Rationale: The browser contract stays stable while raw format variants, oversized untrusted tool text, reasoning bytes, developer content, and unknown payloads remain behind the server boundary.
   Date/Author: 2026-07-28 / Codex
 
+- Decision: Refresh before each repository read, coalesce concurrent refreshes, and increase generation only when the catalog signature changes.
+  Rationale: Active rollouts become visible without a watcher, while unchanged reads and pagination retain a stable generation and every response uses one fully published snapshot.
+  Date/Author: 2026-07-28 / Codex
+
+- Decision: Build ephemeral search documents exclusively from normalized title, cwd, and user/assistant message fields, with byte, time, result, excerpt, and query limits.
+  Rationale: Constructing the documents after normalization makes sensitive-field exclusion structural, and explicit budgets let the API return safe partial results instead of consuming unbounded work.
+  Date/Author: 2026-07-28 / Codex
+
+- Decision: Require a matching generation for subsequent item pages and every tool-detail request.
+  Rationale: Ordinals and tool item IDs are snapshot-local; rejecting missing or stale generations avoids silently skipping or retrieving a different item after append or replacement.
+  Date/Author: 2026-07-28 / Codex
+
 ## Outcomes & Retrospective
 
-Milestones 1 and 2 delivered a runnable foundation plus a tested, read-only Codex ingestion boundary. The production process serves the built fixture shell only from loopback and rejects unsafe request sources and mutation methods. Discovery now admits only canonical rollout files below explicit session roots, opportunistically enriches them from the highest compatible read-only SQLite state, and remains functional with JSONL alone. Whole-file decoding tolerates malformed middle lines and pending tails; normalization keeps user and assistant messages without mirrored duplicates, emits unavailable reasoning markers without retaining ciphertext, pairs completed and pending tools under explicit limits, and exposes only safe internal summaries. Fourteen tests pass. A root integration smoke against the live local Codex home discovered 18 allowlisted sessions in `sqlite+jsonl` mode with no source diagnostics and normalized one rollout without exposing its content. Generation-consistent repository behavior and session APIs remain intentionally deferred to Milestone 3, while the real browser remains deferred to Milestone 4.
+Milestones 1 through 3 delivered a runnable, read-only ingestion and API backend. The production process serves the built fixture shell only from loopback and rejects unsafe request sources and mutation methods. Discovery admits only canonical rollout files below explicit session roots, opportunistically enriches them from the highest compatible read-only SQLite state, and remains functional with JSONL alone. Whole-file decoding tolerates malformed middle lines and pending tails; normalization keeps user and assistant messages without mirrored duplicates, emits unavailable reasoning markers without retaining ciphertext, pairs completed and pending tools under explicit limits, and exposes only safe internal summaries.
+
+The repository now publishes catalog, normalized sessions, relationships, fingerprints, tool details, and search documents as one process-local generation. Concurrent reads share one refresh, unchanged sources retain their generation, and append or replacement publishes a complete new snapshot. The `/api/v1` status, list, detail, paged-items, and lazy tool endpoints expose only browser-safe contracts. Search can match title, cwd, and user/assistant messages but structurally excludes developer content, reasoning, tools, and internal payloads; explicit budgets report partial results. Twenty-two tests pass, including real HTTP integration in JSONL and SQLite modes. A production-build smoke against the live local Codex home returned 20 sessions in `sqlite+jsonl` mode and a filtered list without exposing the configured Codex home. The real data-backed browser remains intentionally deferred to Milestone 4.
 
 ## Context and Orientation
 
@@ -454,6 +473,18 @@ Milestone 2 validation:
     adapter proofs: corrupt newest SQLite falls through to an older compatible generation; fully incompatible SQLite falls back to JSONL
     live read-only smoke: sqlite+jsonl mode; 18 allowlisted sessions; no source diagnostics; one rollout normalized successfully
 
+Milestone 3 validation:
+
+    npm run typecheck: exit 0
+    npm test: 8 files, 22 tests passed
+    npm run build: exit 0; dist/client and dist/server emitted
+    git diff --check: exit 0
+    refresh proofs: overlapping reads coalesced; unchanged discovery retained generation 1
+    snapshot proofs: append and atomic replacement increased generation; prior response objects remained unchanged
+    search proofs: title/cwd/user/assistant matched; developer/reasoning/tool/internal canaries did not; byte budget returned partial warning
+    API proofs: JSONL and SQLite modes; status/list/detail/items/tool; pagination; required and stale generation errors; missing and invalid resources
+    production smoke: synthetic JSONL status/list passed; live home returned sqlite+jsonl, generation 1, 20 sessions, and no warnings
+
 The first visual pass retained only the semantic trace rail as the signature motif. Desktop and narrow screenshots were kept in `/private/tmp` for critique and were not added to the repository. The only initial browser console error was a missing favicon request; an empty data favicon removed that irrelevant request without adding an asset or network dependency.
 
 ## Interfaces and Dependencies
@@ -558,4 +589,4 @@ The repository must not expose filesystem paths, SQLite rows, raw Codex records,
 
 Runtime dependencies are `react`, `react-dom`, `react-markdown`, and `remark-gfm`. Development dependencies are `typescript`, `vite`, `@vitejs/plugin-react`, `tsx`, `vitest`, `jsdom`, Testing Library packages, and TypeScript types for Node and React. Prefer Node standard-library modules for HTTP, crypto, filesystem, path, streams, and SQLite. Do not add Express, an ORM, a native SQLite addon, a watcher, a client state framework, a CSS framework, a syntax highlighter, a persistent search database, or external font and analytics services without revisiting the architecture decision.
 
-Revision note (2026-07-28): Initial plan created after problem framing, repository exploration, uncertainty recording, architecture comparison, user confirmation of the mixed design, and frontend design critique. Updated after Milestones 1 and 2 to record commits, uncommitted review scope, implementation decisions, format discoveries, and validation evidence.
+Revision note (2026-07-28): Initial plan created after problem framing, repository exploration, uncertainty recording, architecture comparison, user confirmation of the mixed design, and frontend design critique. Updated after Milestones 1 through 3 to record commits, uncommitted review scope, implementation decisions, format discoveries, snapshot/API outcomes, and validation evidence.

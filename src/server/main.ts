@@ -1,8 +1,14 @@
 import { loadConfig } from "./config.js";
+import { createApiRouter } from "./http/api-router.js";
 import { createServer } from "./http/create-server.js";
+import { createSessionRepository } from "./repository/create-session-repository.js";
 
 const config = loadConfig();
-const server = createServer(config);
+const repository = await createSessionRepository(
+  config.codexHome,
+  process.env.CODEX_VIEWER_DISABLE_SQLITE === "1",
+);
+const server = createServer(config, createApiRouter(repository));
 
 server.listen(config.port, config.host, () => {
   const address = server.address();
@@ -21,4 +27,3 @@ function close(): void {
 
 process.once("SIGINT", close);
 process.once("SIGTERM", close);
-

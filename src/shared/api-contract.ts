@@ -92,3 +92,6 @@ export interface ToolDetailResponse {
   truncated: boolean;
 }
 
+export interface ToolDetailQuery {
+  generation: CatalogGeneration;
+}
