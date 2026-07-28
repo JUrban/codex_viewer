@@ -9,6 +9,7 @@ import { DefaultSessionNormalizer } from "../../src/server/codex/session-normali
 import { createSessionRepository } from "../../src/server/repository/create-session-repository.js";
 import {
   DefaultSessionRepository,
+  MAX_ITEM_PAGE_BYTES,
   RepositoryQueryError,
 } from "../../src/server/repository/session-repository.js";
 import { searchDocuments } from "../../src/server/search/search-document.js";
@@ -140,5 +141,105 @@ describe("DefaultSessionRepository", () => {
       from: "2026-07-29T00:00:00Z",
       to: "2026-07-28T00:00:00Z",
     })).rejects.toMatchObject<Partial<RepositoryQueryError>>({ code: "invalid_query" });
+  });
+
+  it("pages catalogs larger than the per-response safety limit", async () => {
+    const entries = Array.from({ length: 205 }, (_, index) => ({
+      descriptor: {
+        id: `session-${index}`,
+        canonicalPath: `/synthetic/rollout-${index}.jsonl`,
+        archived: false,
+        size: 1,
+        mtimeMs: index,
+        device: 1,
+        inode: index,
+      },
+      metadata: {
+        threadId: `thread-${index}`,
+        title: `Session ${String(index).padStart(3, "0")}`,
+        cwd: "/synthetic/large-catalog",
+        createdAt: null,
+        updatedAt: new Date(Date.UTC(2026, 0, 1, 0, 0, index)).toISOString(),
+        parentThreadId: null,
+        archived: false,
+      },
+    }));
+    const repository = new DefaultSessionRepository(
+      { discover: async () => ({ mode: "jsonl" as const, entries, diagnostics: [] }) },
+      {
+        decode: async (descriptor) => ({
+          descriptor,
+          records: [],
+          diagnostics: [],
+          incompleteTail: false,
+        }),
+      },
+      new IdentityResolver(),
+      new DefaultSessionNormalizer(),
+    );
+
+    const first = await repository.list({ limit: 200 });
+    expect(first).toMatchObject({ total: 205, hasMore: true, nextOffset: 200 });
+    await expect(repository.list({ offset: 200, limit: 200 }))
+      .rejects.toMatchObject<Partial<RepositoryQueryError>>({ code: "invalid_query" });
+    const second = await repository.list({
+      offset: first.nextOffset!,
+      limit: 200,
+      generation: first.generation,
+    });
+    expect(second).toMatchObject({ total: 205, hasMore: false, nextOffset: null });
+    expect(second.sessions).toHaveLength(5);
+    expect(new Set([...first.sessions, ...second.sessions].map((entry) => entry.session.id)).size)
+      .toBe(205);
+  });
+
+  it("bounds a page of individually valid long messages by response bytes", async () => {
+    const descriptor = {
+      id: "long-session",
+      canonicalPath: "/synthetic/rollout-long-session.jsonl",
+      archived: false,
+      size: 1,
+      mtimeMs: 1,
+      device: 1,
+      inode: 1,
+    };
+    const longText = "x".repeat(1_000_000);
+    const repository = new DefaultSessionRepository(
+      {
+        discover: async () => ({
+          mode: "jsonl" as const,
+          entries: [{ descriptor, metadata: null }],
+          diagnostics: [],
+        }),
+      },
+      {
+        decode: async () => ({
+          descriptor,
+          records: Array.from({ length: 10 }, (_, index) => ({
+            ordinal: index + 1,
+            value: {
+              timestamp: "2026-07-28T00:00:00Z",
+              type: "response_item",
+              payload: {
+                type: "message",
+                role: "user",
+                content: [{ type: "input_text", text: longText }],
+              },
+            },
+          })),
+          diagnostics: [],
+          incompleteTail: false,
+        }),
+      },
+      new IdentityResolver(),
+      new DefaultSessionNormalizer(),
+    );
+
+    const list = await repository.list({});
+    const page = await repository.getItems(list.sessions[0]!.session.id, { limit: 200 });
+    expect(page?.hasMore).toBe(true);
+    expect(page?.nextAfterOrdinal).toBe(page?.items.at(-1)?.ordinal);
+    expect(Buffer.byteLength(JSON.stringify(page?.items), "utf8"))
+      .toBeLessThanOrEqual(MAX_ITEM_PAGE_BYTES + 2);
   });
 });

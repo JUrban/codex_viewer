@@ -24,6 +24,10 @@ export function App() {
           ? <EmptyState title="No sessions match">Clear a filter or search for a different phrase.</EmptyState>
           : <SessionTree entries={browser.list?.sessions ?? []} selectedId={browser.selectedId}
               onSelect={browser.selectSession} />}
+        {browser.list?.hasMore ? <button className="load-more" type="button"
+          disabled={browser.listLoading} onClick={() => void browser.loadMoreSessions()}>
+          {browser.listLoading ? "Loading sessions…" : `Load more sessions (${browser.list.sessions.length} of ${browser.list.total})`}
+        </button> : null}
         {browser.list?.partial ? <p className="partial-notice">Results are partial because the safe search budget was reached.</p> : null}
       </aside>
 

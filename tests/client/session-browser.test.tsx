@@ -21,6 +21,7 @@ const listBody = {
   generation: 1,
   sessions: [{ session: baseSession, matches: [] }],
   projects: [{ project: "/project/reader", count: 1 }],
+  total: 1, nextOffset: null, hasMore: false,
   partial: false, warnings: [],
 };
 const detailBody = {
@@ -111,6 +112,76 @@ describe("session browser", () => {
     await user.click(screen.getByRole("button", { name: "Show tool detail" }));
     expect(await screen.findByText("<unsafe stays text>")).toBeInTheDocument();
     expect(screen.queryByText("unsafe stays text", { selector: "em" })).not.toBeInTheDocument();
+  });
+
+  it("loads catalog pages beyond the first 200 summaries", async () => {
+    const later = entry({ ...baseSession, id: CHILD_ID, title: "Later session" });
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("offset=1")) return Promise.resolve(json({
+        ...listBody,
+        generation: 1,
+        sessions: [later],
+        total: 2,
+        nextOffset: null,
+        hasMore: false,
+      }));
+      return Promise.resolve(json({
+        ...listBody,
+        total: 2,
+        nextOffset: 1,
+        hasMore: true,
+      }));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(await screen.findByRole("button", { name: "Load more sessions (1 of 2)" }));
+    expect(await screen.findByRole("button", { name: /Later session/ })).toBeInTheDocument();
+    expect(fetchMock.mock.calls.some(([url]) =>
+      String(url).includes("offset=1") && String(url).includes("generation=1"))).toBe(true);
+  });
+
+  it("does not merge an obsolete catalog page after filters change", async () => {
+    let resolveOldPage!: (response: Response) => void;
+    const oldPage = new Promise<Response>((resolve) => {
+      resolveOldPage = resolve;
+    });
+    const later = entry({ ...baseSession, id: CHILD_ID, title: "Obsolete later session" });
+    const filtered = entry({
+      ...baseSession,
+      id: "filteredabcdefghijklmnop",
+      title: "Filtered session",
+    });
+    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("offset=1")) return oldPage;
+      if (url.includes("q=new")) return Promise.resolve(json({
+        ...listBody,
+        sessions: [filtered],
+      }));
+      return Promise.resolve(json({
+        ...listBody,
+        total: 2,
+        nextOffset: 1,
+        hasMore: true,
+      }));
+    }));
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(await screen.findByRole("button", { name: "Load more sessions (1 of 2)" }));
+    await user.type(screen.getByRole("searchbox"), "new");
+    expect(await screen.findByRole("button", { name: /Filtered session/ })).toBeInTheDocument();
+    resolveOldPage(json({
+      ...listBody,
+      sessions: [later],
+      total: 2,
+      nextOffset: null,
+      hasMore: false,
+    }));
+    await waitFor(() => {
+      expect(screen.queryByRole("button", { name: /Obsolete later session/ })).toBeNull();
+    });
   });
 
   it("restarts from the first page when a generation becomes stale", async () => {

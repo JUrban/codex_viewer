@@ -25,7 +25,8 @@ The first release deliberately does not edit, delete, resume, export, synchroniz
 - [x] (2026-07-28 13:40Z) Milestone 2: implemented allowlisted path registration and opaque IDs, feature-detected SQLite metadata with JSONL fallback, tolerant whole-file rollout decoding, identity resolution, bounded tool pairing, safe normalization, and synthetic fixture coverage; typecheck, 14 tests, build, and diff-check passed.
 - [x] (2026-07-28 13:58Z) Milestone 3: implemented single-flight generation-consistent repository snapshots, whole-file fingerprint caching, bounded allowlisted search, and the versioned read-only HTTP API; typecheck, 22 tests, build, production API smoke, and diff-check passed.
 - [x] (2026-07-28 14:11Z) Milestone 4: replaced the fixture shell with the responsive real-data session browser, generation-safe paging and lazy tools, safe Markdown, URL-backed filters, hidden-aware live polling, and verified desktop/mobile browser behavior; typecheck, 30 tests, build, diff-check, and Playwright inspection passed.
-- [ ] Milestone 5: harden, validate, document, and complete quality review.
+- [x] (2026-07-28 14:31Z) Milestone 5 implementation and integration: added generation-scoped catalog pagination, bounded item-page bytes, disposable 100 MB+ scale validation, complete operator/security documentation, real local read-only/browser smoke coverage, and sequence-isolated catalog paging across filter changes; typecheck, all 34 tests, build, benchmark, and diff-check passed.
+- [ ] Milestone 5 quality review: run the Phase 7 simplifier and three focused reviewers, present findings to the user, and record their disposition.
 
 ## Review Scope
 
@@ -37,13 +38,15 @@ Review must cover all code and documentation introduced for the reader, includin
 - `654325d` — Milestone 1 project foundation, shared contracts, secure loopback server, fixture UI, tests, and documentation.
 - `bd1e449` — Milestone 2 allowlisted discovery, dual-source catalog adapters, tolerant decoding, safe normalization, fixtures, and ingestion tests.
 - `109ad1b` — Milestone 3 generation-consistent repository, bounded search, versioned read APIs, and integration tests.
+- `0b5e80a` — Milestone 4 responsive browser, URL state, generation-safe paging, safe Markdown, lazy tools, and client tests.
 
 ### Uncommitted changes to review
 
-- `_features/2026-07-28-codex-sessions-reader/plan.md` — Milestone 4 execution record and current review scope.
-- `src/client/App.tsx`, `src/client/api/`, `src/client/state/`, `src/client/components/` — real API browser state, URL navigation, cancellation, generation restart, session tree, safe reader, and lazy tool details.
-- `src/client/styles/` — responsive trace-notebook layout, semantic states, keyboard focus, contained narrow-screen carousel, and reduced-motion behavior.
-- `tests/client/` — URL, cancellation, grouping, paging, stale generation, lazy tool, internal view, Markdown security, empty/error, and polling coverage.
+- `_features/2026-07-28-codex-sessions-reader/plan.md` — Milestone 5 measurements, decisions, outcomes, and final pre-review scope.
+- `README.md`, `package.json`, `scripts/benchmark-scale.ts` — complete operating/security documentation and disposable 100 MB+ benchmark command.
+- `src/shared/api-contract.ts`, `src/server/http/api-router.ts`, `src/server/repository/session-repository.ts` — generation-scoped session-list pagination and bounded serialized item pages.
+- `src/client/App.tsx`, `src/client/api/client.ts`, `src/client/state/use-session-browser.ts` — catalog “load more” flow and stale-generation restart.
+- `tests/server/session-repository.test.ts`, `tests/server/api-http.test.ts`, `tests/client/session-browser.test.tsx` — 205-session reachability, cursor validation, response-byte, and browser pagination regressions.
 
 ## Surprises & Discoveries
 
@@ -103,6 +106,21 @@ Review must cover all code and documentation introduced for the reader, includin
 
 - Observation: A one-level session tree hides grandchildren in real multi-agent histories.
   Evidence: Root integration replaced flat child grouping with recursive branches, added a grandchild test, and retained orphan/cycle fallback so every returned session remains reachable.
+
+- Observation: The 200-summary list limit was a reachability bug rather than only a response-safety setting.
+  Evidence: The client always requested `limit=200` and the list API exposed no cursor, so session 201 and later could not be browsed; a 205-session regression now proves the second generation-scoped page returns the remaining five unique sessions.
+
+- Observation: A 200-item page limit alone did not meaningfully bound response bytes when each valid normalized message may contain 1,000,000 characters.
+  Evidence: The scale corpus produced a 1,000,649-byte first item page with one maximum-length message; repository paging now stops near 4 MiB of serialized item content as well as at 200 items.
+
+- Observation: The agreed 3,000-session, 111,096,068-byte synthetic corpus stays within the latency gate but makes the in-memory cost visible.
+  Evidence: Cold catalog was 454.2 ms, bounded search 171.1 ms, maximum-length detail first page 291 ms, and peak RSS 364,281,856 bytes. Search reported partial at its configured safety budget, as designed.
+
+- Observation: Permission removal is not a portable unreadability proof in every execution environment.
+  Evidence: The scale probe changed one rollout to mode `000`, but the current process could still read it; the probe records `portable-skip` and always restores mode `0600`.
+
+- Observation: Generation consistency alone does not isolate concurrent catalog requests when filters change without a source refresh.
+  Evidence: An in-flight “load more” response could share the new filter's generation and merge obsolete summaries into the replacement list. The browser now aborts page requests and uses a list sequence token across every filter reset; a deferred-response regression proves the obsolete page is ignored.
 
 ## Decision Log
 
@@ -174,6 +192,18 @@ Review must cover all code and documentation introduced for the reader, includin
   Rationale: Browser history and refresh remain useful without a client data framework, while one restart path prevents mixed-generation items and lets a stale expanded tool retry safely.
   Date/Author: 2026-07-28 / Codex
 
+- Decision: Page large catalogs with a generation-scoped numeric offset and expose `total`, `nextOffset`, and `hasMore`.
+  Rationale: This is the smallest reversible change that makes every summary reachable while preserving immutable-generation cursor semantics and avoiding a persistent index.
+  Date/Author: 2026-07-28 / Codex
+
+- Decision: Accept whole-file normalized in-memory snapshots for the MVP at the measured scale, with explicit per-field and per-response limits.
+  Rationale: The 111 MB probe remained within the 300–500 ms latency gate, while 364 MB peak RSS is a visible accepted MVP cost. A removable derived index remains a follow-up only if larger real corpora or memory pressure justify it.
+  Date/Author: 2026-07-28 / Codex
+
+- Decision: Add an approximately 4 MiB serialized-item budget in addition to the 200-item page limit.
+  Rationale: A count-only limit permitted a theoretical response near 200 MB. Returning at least one valid item and a next ordinal keeps progress possible while bounding ordinary pages.
+  Date/Author: 2026-07-28 / Codex
+
 ## Outcomes & Retrospective
 
 Milestones 1 through 3 delivered a runnable, read-only ingestion and API backend. The production process serves the built fixture shell only from loopback and rejects unsafe request sources and mutation methods. Discovery admits only canonical rollout files below explicit session roots, opportunistically enriches them from the highest compatible read-only SQLite state, and remains functional with JSONL alone. Whole-file decoding tolerates malformed middle lines and pending tails; normalization keeps user and assistant messages without mirrored duplicates, emits unavailable reasoning markers without retaining ciphertext, pairs completed and pending tools under explicit limits, and exposes only safe internal summaries.
@@ -181,6 +211,8 @@ Milestones 1 through 3 delivered a runnable, read-only ingestion and API backend
 The repository now publishes catalog, normalized sessions, relationships, fingerprints, tool details, and search documents as one process-local generation. Concurrent reads share one refresh, unchanged sources retain their generation, and append or replacement publishes a complete new snapshot. The `/api/v1` status, list, detail, paged-items, and lazy tool endpoints expose only browser-safe contracts. Search can match title, cwd, and user/assistant messages but structurally excludes developer content, reasoning, tools, and internal payloads; explicit budgets report partial results.
 
 Milestone 4 adds the real browser experience: URL-persistent search/project/date/archive filters and selection, recursively nested parent-child grouping with visible orphans, cancellation of obsolete requests, generation-safe incremental paging, low-frequency visible-only polling for live sessions, and lazy plain-text tools. Markdown uses `react-markdown` plus GFM without raw HTML, blocks unsafe schemes, and replaces images without loading them. The responsive master-detail UI keeps the trace gutter as its sole signature motif, exposes semantic labels in addition to color, and retains visible keyboard focus and reduced-motion behavior. Thirty tests pass. Production Playwright inspection against the real local Codex home found 21 sessions, exercised a real reader, confirmed only local requests and zero final console errors, and measured desktop and 390 px layouts without page-level horizontal overflow. Screenshots remained under `/private/tmp`.
+
+Milestone 5 implementation closes the large-catalog reachability gap with generation-scoped list pagination, isolates obsolete list pages when filters change, and caps timeline pages by serialized item bytes. The disposable benchmark generates 3,000 sessions and more than 100 MB exclusively under `/private/tmp`, exercises long messages, large tools, partial tails, corrupt SQLite, truncation, and replacement, prints bounded performance/response metrics, and removes the corpus. The README now covers installation, configuration, security, search scope, compatibility, troubleshooting, verification, and uninstall. Real-home smoke remained read-only, listened only on `127.0.0.1`, rejected forged Host and Origin with 403, made no external browser requests, and recovered expanded tool detail after synthetic stale generations. Typecheck, all 34 tests, production build, and diff-check pass. Phase 7 quality review remains intentionally pending.
 
 ## Context and Orientation
 
@@ -511,6 +543,28 @@ Milestone 4 validation:
     accessibility proof: keyboard Tab reached the search control with a visible solid focus outline; reduced-motion emulation reported no trace animation
     lazy-tool retry proof: a live catalog produced handled 409 stale_generation responses; the client restarted the timeline, retried automatically, rendered both Input and Output, and showed no user-visible alert
 
+Milestone 5 implementation validation:
+
+    npm run typecheck: exit 0 after final catalog request isolation
+    npm test: 9 files, 34 tests passed
+    integration regression: an obsolete deferred “load more” response is ignored after filters change even when both responses share one generation
+    npm run build: exit 0; dist/client and dist/server emitted
+    git diff --check: exit 0
+    generated corpus: 3,000 sessions; 111,096,068 bytes; created and removed below /private/tmp
+    cold catalog: 454.2 ms; first list response: 109,787 bytes
+    bounded search: 171.1 ms; search response: 1,087 bytes; partial safety warning returned
+    absent bounded search: 170.9 ms; partial safety warning returned
+    maximum-length detail first page: 291 ms; 1,000,649 response bytes
+    memory: 364,281,856-byte peak RSS; accepted MVP whole-file/in-memory cost
+    mutation proof: truncate and atomic replace advanced generation 1 -> 2 -> 3
+    bounds proof: 205 summaries paged 200 + 5; large tool detail truncated; long message exactly 1,000,000 characters; multi-message pages stop near 4 MiB
+    live status: sqlite+jsonl; generation 1; 22 sessions; zero warnings
+    socket: IPv4 127.0.0.1:4173 only; forged Host and Origin each returned 403
+    browser: all observed requests stayed at http://127.0.0.1:4173; no request failures or baseline console errors
+    tool retry: injected stale-generation tool response restarted and re-expanded detail with Input visible and no user alert
+    cleanup: production listener stopped; playwright-cli reported no browser sessions; generated scale corpus removed
+    remaining validation gate: run Phase 7 review
+
 The first visual pass retained only the semantic trace rail as the signature motif. Desktop and narrow screenshots were kept in `/private/tmp` for critique and were not added to the repository. The only initial browser console error was a missing favicon request; an empty data favicon removed that irrelevant request without adding an asset or network dependency.
 
 ## Interfaces and Dependencies
@@ -615,4 +669,4 @@ The repository must not expose filesystem paths, SQLite rows, raw Codex records,
 
 Runtime dependencies are `react`, `react-dom`, `react-markdown`, and `remark-gfm`. Development dependencies are `typescript`, `vite`, `@vitejs/plugin-react`, `tsx`, `vitest`, `jsdom`, Testing Library packages, and TypeScript types for Node and React. Prefer Node standard-library modules for HTTP, crypto, filesystem, path, streams, and SQLite. Do not add Express, an ORM, a native SQLite addon, a watcher, a client state framework, a CSS framework, a syntax highlighter, a persistent search database, or external font and analytics services without revisiting the architecture decision.
 
-Revision note (2026-07-28): Initial plan created after problem framing, repository exploration, uncertainty recording, architecture comparison, user confirmation of the mixed design, and frontend design critique. Updated after Milestones 1 through 4 to record commits, uncommitted review scope, implementation decisions, format and browser discoveries, snapshot/API/UI outcomes, and validation evidence.
+Revision note (2026-07-28): Initial plan created after problem framing, repository exploration, uncertainty recording, architecture comparison, user confirmation of the mixed design, and frontend design critique. Updated after Milestones 1 through 5 implementation to record commits, uncommitted review scope, implementation decisions, format/browser/scale discoveries, snapshot/API/UI outcomes, generated-corpus measurements, documentation, and validation evidence. Phase 7 review remains pending.

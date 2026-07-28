@@ -24,6 +24,17 @@ const EMPTY_FILTERS: BrowserFilters = {
   archived: false,
 };
 
+function listQuery(filters: BrowserFilters, q: string): SessionListQuery {
+  return {
+    q: q || undefined,
+    project: filters.project || undefined,
+    from: filters.from ? new Date(`${filters.from}T00:00:00`).toISOString() : undefined,
+    to: filters.to ? new Date(`${filters.to}T23:59:59.999`).toISOString() : undefined,
+    archived: filters.archived || undefined,
+    limit: 200,
+  };
+}
+
 function readUrl(): { filters: BrowserFilters; selectedId: string | null; internal: boolean } {
   const params = new URLSearchParams(window.location.search);
   return {
@@ -66,6 +77,8 @@ export function useSessionBrowser() {
   const [readerLoading, setReaderLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const navigationAbort = useRef<AbortController | null>(null);
+  const listPageAbort = useRef<AbortController | null>(null);
+  const listSequence = useRef(0);
   const loadSequence = useRef(0);
 
   useEffect(() => {
@@ -108,26 +121,65 @@ export function useSessionBrowser() {
   }, []);
 
   useEffect(() => {
+    listPageAbort.current?.abort();
     const controller = new AbortController();
+    const sequence = ++listSequence.current;
     setListLoading(true);
-    const query: SessionListQuery = {
-      q: debouncedQuery || undefined,
-      project: filters.project || undefined,
-      from: filters.from ? new Date(`${filters.from}T00:00:00`).toISOString() : undefined,
-      to: filters.to ? new Date(`${filters.to}T23:59:59.999`).toISOString() : undefined,
-      archived: filters.archived || undefined,
-      limit: 200,
-    };
+    const query = listQuery(filters, debouncedQuery);
     void api.sessions(query, controller.signal).then((response) => {
+      if (sequence !== listSequence.current) return;
       setList(response);
       setError(null);
     }).catch((reason: unknown) => {
-      if (!controller.signal.aborted) setError(messageFor(reason));
+      if (!controller.signal.aborted && sequence === listSequence.current) {
+        setError(messageFor(reason));
+      }
     }).finally(() => {
-      if (!controller.signal.aborted) setListLoading(false);
+      if (!controller.signal.aborted && sequence === listSequence.current) {
+        setListLoading(false);
+      }
     });
     return () => controller.abort();
   }, [debouncedQuery, filters.archived, filters.from, filters.project, filters.to]);
+
+  const loadMoreSessions = useCallback(async () => {
+    if (!list?.hasMore || list.nextOffset === null) return;
+    listPageAbort.current?.abort();
+    const controller = new AbortController();
+    listPageAbort.current = controller;
+    const sequence = listSequence.current;
+    setListLoading(true);
+    try {
+      const next = await api.sessions({
+        ...listQuery(filters, debouncedQuery),
+        offset: list.nextOffset,
+        generation: list.generation,
+      }, controller.signal);
+      if (sequence !== listSequence.current) return;
+      setList((current) => current?.generation === next.generation
+        ? {
+            ...next,
+            sessions: [
+              ...current.sessions,
+              ...next.sessions.filter((entry) =>
+                !current.sessions.some((existing) => existing.session.id === entry.session.id)),
+            ],
+          }
+        : next);
+      setError(null);
+    } catch (reason) {
+      if (controller.signal.aborted || sequence !== listSequence.current) return;
+      if (reason instanceof ApiClientError && reason.code === "stale_generation") {
+        setList(await api.sessions(listQuery(filters, debouncedQuery), controller.signal));
+      } else {
+        setError(messageFor(reason));
+      }
+    } finally {
+      if (!controller.signal.aborted && sequence === listSequence.current) {
+        setListLoading(false);
+      }
+    }
+  }, [debouncedQuery, filters, list]);
 
   const loadSession = useCallback(async (id: string, quiet = false) => {
     navigationAbort.current?.abort();
@@ -229,7 +281,7 @@ export function useSessionBrowser() {
   return {
     filters, setFilters, selectedId, selectSession, internal, setInternal,
     list, detail, page, items, listLoading, readerLoading, error,
-    clearError: () => setError(null), loadMore,
+    clearError: () => setError(null), loadMore, loadMoreSessions,
     restartSession: () => selectedId ? loadSession(selectedId) : Promise.resolve(),
   };
 }

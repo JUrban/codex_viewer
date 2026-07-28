@@ -78,6 +78,11 @@ describe("versioned session API", () => {
 
     const listResponse = await fetch(`${base}/api/v1/sessions?q=synthetic&limit=10`);
     const list = await listResponse.json();
+    expect(list).toEqual(expect.objectContaining({
+      total: expect.any(Number),
+      hasMore: false,
+      nextOffset: null,
+    }));
     const basic = list.sessions.find(
       (entry: { session: { title: string } }) => entry.session.title === "Synthetic trace",
     );
@@ -154,6 +159,7 @@ describe("versioned session API", () => {
     expect(body).not.toContain(canary);
     expect(JSON.parse(body).error.code).toBe("invalid_query");
     expect((await fetch(`${base}/api/v1/sessions?archived=maybe`)).status).toBe(400);
+    expect((await fetch(`${base}/api/v1/sessions?offset=1`)).status).toBe(400);
     expect((await fetch(`${base}/api/v1/sessions/not-valid`)).status).toBe(404);
   });
 

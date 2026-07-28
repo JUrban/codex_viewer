@@ -40,6 +40,7 @@ const DEFAULT_LIST_LIMIT = 50;
 const MAX_LIST_LIMIT = 200;
 const DEFAULT_ITEM_LIMIT = 50;
 const MAX_ITEM_LIMIT = 200;
+export const MAX_ITEM_PAGE_BYTES = 4 * 1024 * 1024;
 
 export class RepositoryQueryError extends Error {
   constructor(
@@ -108,10 +109,12 @@ export class DefaultSessionRepository implements SessionRepository {
   async list(query: SessionListQuery): Promise<SessionListResponse> {
     validateListQuery(query);
     const snapshot = await this.#current();
+    const offset = query.offset ?? 0;
+    assertGeneration(snapshot.generation, query.generation, offset > 0);
     const search = query.q === undefined
       ? { matches: null, partial: false, warnings: [] }
       : { ...searchDocuments(snapshot.documents, query.q, this.searchBudget) };
-    const entries = [];
+    const matchedIds: SessionId[] = [];
     const projects = new Map<string, number>();
     for (const id of snapshot.orderedIds) {
       const normalized = snapshot.sessions.get(id);
@@ -120,19 +123,27 @@ export class DefaultSessionRepository implements SessionRepository {
       if (!passesFilters(detail, query)) continue;
       if (search.matches !== null && !search.matches.has(id)) continue;
       if (detail.cwd !== null) projects.set(detail.cwd, (projects.get(detail.cwd) ?? 0) + 1);
-      if (entries.length < (query.limit ?? DEFAULT_LIST_LIMIT)) {
-        entries.push({
-          session: summaryOf(detail),
-          matches: search.matches?.get(id) ?? [],
-        });
-      }
+      matchedIds.push(id);
     }
+    const limit = query.limit ?? DEFAULT_LIST_LIMIT;
+    const pageIds = matchedIds.slice(offset, offset + limit);
+    const entries = pageIds.flatMap((id) => {
+      const normalized = snapshot.sessions.get(id);
+      return normalized === undefined ? [] : [{
+        session: summaryOf(normalized.detail),
+        matches: search.matches?.get(id) ?? [],
+      }];
+    });
+    const nextOffset = offset + entries.length;
     return {
       generation: snapshot.generation,
       sessions: entries,
       projects: [...projects.entries()]
         .map(([project, count]) => ({ project, count }))
         .sort((left, right) => left.project.localeCompare(right.project)),
+      total: matchedIds.length,
+      nextOffset: nextOffset < matchedIds.length ? nextOffset : null,
+      hasMore: nextOffset < matchedIds.length,
       partial: search.partial,
       warnings: search.warnings,
     };
@@ -156,11 +167,20 @@ export class DefaultSessionRepository implements SessionRepository {
     const visible = normalized.items.filter((item) =>
       item.ordinal > after && (query.view === "internal" || item.kind !== "internal"));
     const limit = query.limit ?? DEFAULT_ITEM_LIMIT;
-    const items = visible.slice(0, limit);
+    const items: TimelineItem[] = [];
+    let itemBytes = 0;
+    for (const item of visible) {
+      if (items.length >= limit) break;
+      const cloned = cloneItem(item);
+      const bytes = Buffer.byteLength(JSON.stringify(cloned), "utf8") + (items.length > 0 ? 1 : 0);
+      if (items.length > 0 && itemBytes + bytes > MAX_ITEM_PAGE_BYTES) break;
+      items.push(cloned);
+      itemBytes += bytes;
+    }
     const hasMore = visible.length > items.length;
     return {
       generation: snapshot.generation,
-      items: items.map(cloneItem),
+      items,
       nextAfterOrdinal: hasMore ? items.at(-1)?.ordinal ?? null : null,
       hasMore,
       sourceState: normalized.detail.sourceState,
@@ -348,6 +368,10 @@ function validateListQuery(query: SessionListQuery): void {
   }
   if (query.limit !== undefined && (!Number.isInteger(query.limit) || query.limit < 1 || query.limit > MAX_LIST_LIMIT)) {
     throw new RepositoryQueryError("invalid_query", `limit must be between 1 and ${MAX_LIST_LIMIT}`);
+  }
+  if (query.offset !== undefined &&
+    (!Number.isInteger(query.offset) || query.offset < 0)) {
+    throw new RepositoryQueryError("invalid_query", "offset must be a non-negative integer");
   }
   for (const [name, value] of [["from", query.from], ["to", query.to]] as const) {
     if (value !== undefined && !isIsoTimestamp(value)) {

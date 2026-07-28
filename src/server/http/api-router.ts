@@ -89,7 +89,9 @@ function parseListQuery(params: URLSearchParams): SessionListQuery {
   const from = optional(params, "from");
   const to = optional(params, "to");
   const archived = optional(params, "archived");
+  const offset = optional(params, "offset");
   const limit = optional(params, "limit");
+  const generation = optional(params, "generation");
   if (q !== undefined) query.q = q;
   if (project !== undefined) query.project = project;
   if (from !== undefined) query.from = from;
@@ -98,7 +100,9 @@ function parseListQuery(params: URLSearchParams): SessionListQuery {
     if (archived !== "true" && archived !== "false") invalid("archived must be true or false");
     query.archived = archived === "true";
   }
+  if (offset !== undefined) query.offset = integer(offset, "offset");
   if (limit !== undefined) query.limit = integer(limit, "limit");
+  if (generation !== undefined) query.generation = integer(generation, "generation");
   return query;
 }
 

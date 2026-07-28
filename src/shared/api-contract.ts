@@ -36,7 +36,9 @@ export interface SessionListQuery {
   from?: string;
   to?: string;
   archived?: boolean;
+  offset?: number;
   limit?: number;
+  generation?: CatalogGeneration;
 }
 
 export interface SearchMatch {
@@ -58,6 +60,9 @@ export interface SessionListResponse {
   generation: CatalogGeneration;
   sessions: SessionListEntry[];
   projects: ProjectFacet[];
+  total: number;
+  nextOffset: number | null;
+  hasMore: boolean;
   partial: boolean;
   warnings: ApiWarning[];
 }
