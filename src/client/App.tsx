@@ -1,17 +1,13 @@
-const sessions = [
-  { title: "Design the local session reader", project: "~/project/codex_viewer", selected: true },
-  { title: "Investigate rollout formats", project: "~/.codex/sessions", selected: false },
-  { title: "Child trace · security review", project: "~/project/codex_viewer", selected: false },
-];
-
-const events = [
-  { kind: "human", label: "User · 01", text: "Confirm the mixed architecture and preserve a read-only boundary." },
-  { kind: "assistant", label: "Assistant commentary · 02", text: "I’ll establish the contracts and secure local process first." },
-  { kind: "tool", label: "Tool · 03 · completed", text: "Repository inspection (detail stays collapsed)", action: true },
-  { kind: "final", label: "Assistant final · 04", text: "The plan is ready for milestone implementation." },
-] as const;
+import { DiagnosticNotice } from "./components/DiagnosticNotice";
+import { EmptyState } from "./components/EmptyState";
+import { ErrorState } from "./components/ErrorState";
+import { SessionFilters } from "./components/SessionFilters";
+import { SessionReader } from "./components/SessionReader";
+import { SessionTree } from "./components/SessionTree";
+import { useSessionBrowser } from "./state/use-session-browser";
 
 export function App() {
+  const browser = useSessionBrowser();
   return (
     <main className="app-shell">
       <aside className="session-index" aria-label="Session index">
@@ -20,49 +16,27 @@ export function App() {
           <h1>Codex sessions</h1>
           <p>Private to this machine · read only</p>
         </header>
-        <form className="filters" role="search">
-          <label htmlFor="session-search">Find a session</label>
-          <input id="session-search" type="search" placeholder="Title, project, or message" />
-        </form>
-        <nav aria-label="Fixture sessions">
-          <p className="section-label">Recent</p>
-          <ul className="session-list">
-            {sessions.map((session) => (
-              <li key={session.title}>
-                <button className={session.selected ? "session selected" : "session"} type="button">
-                  <span>{session.title}</span>
-                  <small>{session.project}</small>
-                </button>
-              </li>
-            ))}
-          </ul>
-        </nav>
+        <SessionFilters filters={browser.filters} projects={browser.list?.projects ?? []}
+          onChange={browser.setFilters} />
+        {browser.list?.warnings.length ? <DiagnosticNotice diagnostics={browser.list.warnings} /> : null}
+        {browser.listLoading ? <p className="loading" role="status">Finding sessions…</p> : null}
+        {!browser.listLoading && browser.list && !browser.list.sessions.length
+          ? <EmptyState title="No sessions match">Clear a filter or search for a different phrase.</EmptyState>
+          : <SessionTree entries={browser.list?.sessions ?? []} selectedId={browser.selectedId}
+              onSelect={browser.selectSession} />}
+        {browser.list?.partial ? <p className="partial-notice">Results are partial because the safe search budget was reached.</p> : null}
       </aside>
 
-      <section className="reader" aria-labelledby="session-title">
-        <header className="reader-header">
-          <div>
-            <p className="eyebrow">Session fixture</p>
-            <h2 id="session-title">Design the local session reader</h2>
-            <p className="session-meta">~/project/codex_viewer · 28 Jul 2026 · 4 events</p>
-          </div>
-          <span className="state"><span aria-hidden="true">●</span> complete</span>
-        </header>
-
-        <ol className="timeline" aria-label="Session timeline">
-          {events.map((event) => (
-            <li className={`trace-event ${event.kind}`} key={event.label}>
-              <span className="trace-mark" aria-hidden="true" />
-              <article>
-                <p className="event-label">{event.label}</p>
-                <p>{event.text}</p>
-                {"action" in event && event.action ? <button type="button">Show tool detail</button> : null}
-              </article>
-            </li>
-          ))}
-        </ol>
-      </section>
+      {browser.error ? <section className="reader"><ErrorState message={browser.error} onDismiss={browser.clearError} /></section>
+        : browser.detail
+          ? <SessionReader detail={browser.detail} page={browser.page} items={browser.items}
+              internal={browser.internal} onInternalChange={browser.setInternal}
+              loading={browser.readerLoading} onLoadMore={browser.loadMore} onStale={browser.restartSession} />
+          : <section className="reader reader-welcome">
+              {browser.readerLoading
+                ? <p className="loading" role="status">Opening session…</p>
+                : <EmptyState title="Choose a session">Select a trace from the index to read its conversation.</EmptyState>}
+            </section>}
     </main>
   );
 }
-

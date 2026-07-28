@@ -24,7 +24,7 @@ The first release deliberately does not edit, delete, resume, export, synchroniz
 - [x] (2026-07-28 13:22Z) Milestone 1: established the npm/TypeScript project, browser-safe shared contracts, trace-notebook fixture shell, and secure loopback production server; typecheck, 4 tests, build, HTTP smoke, socket inspection, and desktop/mobile browser inspection passed.
 - [x] (2026-07-28 13:40Z) Milestone 2: implemented allowlisted path registration and opaque IDs, feature-detected SQLite metadata with JSONL fallback, tolerant whole-file rollout decoding, identity resolution, bounded tool pairing, safe normalization, and synthetic fixture coverage; typecheck, 14 tests, build, and diff-check passed.
 - [x] (2026-07-28 13:58Z) Milestone 3: implemented single-flight generation-consistent repository snapshots, whole-file fingerprint caching, bounded allowlisted search, and the versioned read-only HTTP API; typecheck, 22 tests, build, production API smoke, and diff-check passed.
-- [ ] Milestone 4: build the responsive session browser and safe timeline reader.
+- [x] (2026-07-28 14:11Z) Milestone 4: replaced the fixture shell with the responsive real-data session browser, generation-safe paging and lazy tools, safe Markdown, URL-backed filters, hidden-aware live polling, and verified desktop/mobile browser behavior; typecheck, 30 tests, build, diff-check, and Playwright inspection passed.
 - [ ] Milestone 5: harden, validate, document, and complete quality review.
 
 ## Review Scope
@@ -36,15 +36,14 @@ Review must cover all code and documentation introduced for the reader, includin
 - `dc42247` — initial approved ExecPlan, uncertainty record, and ADR-0001; this is the architecture baseline for implementation review.
 - `654325d` — Milestone 1 project foundation, shared contracts, secure loopback server, fixture UI, tests, and documentation.
 - `bd1e449` — Milestone 2 allowlisted discovery, dual-source catalog adapters, tolerant decoding, safe normalization, fixtures, and ingestion tests.
+- `109ad1b` — Milestone 3 generation-consistent repository, bounded search, versioned read APIs, and integration tests.
 
 ### Uncommitted changes to review
 
-- `_features/2026-07-28-codex-sessions-reader/plan.md` — Milestone 3 execution record and current review scope.
-- `src/shared/api-contract.ts` — generation-bound tool-detail request contract.
-- `src/server/repository/` — single-flight refresh, whole-file fingerprint cache, immutable catalog generations, repository port, and production repository composition.
-- `src/server/search/` — allowlisted search-document construction, normalization, excerpts, and explicit work budgets.
-- `src/server/http/api-router.ts`, `src/server/main.ts` — versioned safe handlers and production repository/router wiring.
-- `tests/server/session-repository.test.ts`, `tests/server/api-http.test.ts` — Milestone 3 snapshot, cache invalidation, search canary, API, stale-generation, SQLite/JSONL, and bounded-work coverage.
+- `_features/2026-07-28-codex-sessions-reader/plan.md` — Milestone 4 execution record and current review scope.
+- `src/client/App.tsx`, `src/client/api/`, `src/client/state/`, `src/client/components/` — real API browser state, URL navigation, cancellation, generation restart, session tree, safe reader, and lazy tool details.
+- `src/client/styles/` — responsive trace-notebook layout, semantic states, keyboard focus, contained narrow-screen carousel, and reduced-motion behavior.
+- `tests/client/` — URL, cancellation, grouping, paging, stale generation, lazy tool, internal view, Markdown security, empty/error, and polling coverage.
 
 ## Surprises & Discoveries
 
@@ -95,6 +94,15 @@ Review must cover all code and documentation introduced for the reader, includin
 
 - Observation: RFC3339 timestamps with different UTC offsets cannot be filtered correctly by lexical string comparison.
   Evidence: Root integration added an equivalent-offset range test, changed filters to compare parsed instants, and now rejects an inverted `from`/`to` range.
+
+- Observation: Automated component tests did not expose the API list limit or CSS min-content behavior seen by a real browser.
+  Evidence: The first production Playwright load returned `400` for `limit=500` against the documented server maximum of 200; after correcting it, a 390 px viewport reported a 1,744 px document width until the horizontal session carousel was explicitly contained. Final width was 390 px.
+
+- Observation: Tool detail can become stale even while reading a completed session because another live rollout advances the catalog-wide generation.
+  Evidence: Playwright received `409 stale_generation` from a lazy tool request after the page had been open; tool expansion now restarts the selected timeline and automatically retries against the newly published generation.
+
+- Observation: A one-level session tree hides grandchildren in real multi-agent histories.
+  Evidence: Root integration replaced flat child grouping with recursive branches, added a grandchild test, and retained orphan/cycle fallback so every returned session remains reachable.
 
 ## Decision Log
 
@@ -162,11 +170,17 @@ Review must cover all code and documentation introduced for the reader, includin
   Rationale: Ordinals and tool item IDs are snapshot-local; rejecting missing or stale generations avoids silently skipping or retrieving a different item after append or replacement.
   Date/Author: 2026-07-28 / Codex
 
+- Decision: Keep browser state in URL search parameters and native React state, and restart the entire selected timeline after any stale page or tool-detail response.
+  Rationale: Browser history and refresh remain useful without a client data framework, while one restart path prevents mixed-generation items and lets a stale expanded tool retry safely.
+  Date/Author: 2026-07-28 / Codex
+
 ## Outcomes & Retrospective
 
 Milestones 1 through 3 delivered a runnable, read-only ingestion and API backend. The production process serves the built fixture shell only from loopback and rejects unsafe request sources and mutation methods. Discovery admits only canonical rollout files below explicit session roots, opportunistically enriches them from the highest compatible read-only SQLite state, and remains functional with JSONL alone. Whole-file decoding tolerates malformed middle lines and pending tails; normalization keeps user and assistant messages without mirrored duplicates, emits unavailable reasoning markers without retaining ciphertext, pairs completed and pending tools under explicit limits, and exposes only safe internal summaries.
 
-The repository now publishes catalog, normalized sessions, relationships, fingerprints, tool details, and search documents as one process-local generation. Concurrent reads share one refresh, unchanged sources retain their generation, and append or replacement publishes a complete new snapshot. The `/api/v1` status, list, detail, paged-items, and lazy tool endpoints expose only browser-safe contracts. Search can match title, cwd, and user/assistant messages but structurally excludes developer content, reasoning, tools, and internal payloads; explicit budgets report partial results. Twenty-two tests pass, including real HTTP integration in JSONL and SQLite modes. A production-build smoke against the live local Codex home returned 20 sessions in `sqlite+jsonl` mode and a filtered list without exposing the configured Codex home. The real data-backed browser remains intentionally deferred to Milestone 4.
+The repository now publishes catalog, normalized sessions, relationships, fingerprints, tool details, and search documents as one process-local generation. Concurrent reads share one refresh, unchanged sources retain their generation, and append or replacement publishes a complete new snapshot. The `/api/v1` status, list, detail, paged-items, and lazy tool endpoints expose only browser-safe contracts. Search can match title, cwd, and user/assistant messages but structurally excludes developer content, reasoning, tools, and internal payloads; explicit budgets report partial results.
+
+Milestone 4 adds the real browser experience: URL-persistent search/project/date/archive filters and selection, recursively nested parent-child grouping with visible orphans, cancellation of obsolete requests, generation-safe incremental paging, low-frequency visible-only polling for live sessions, and lazy plain-text tools. Markdown uses `react-markdown` plus GFM without raw HTML, blocks unsafe schemes, and replaces images without loading them. The responsive master-detail UI keeps the trace gutter as its sole signature motif, exposes semantic labels in addition to color, and retains visible keyboard focus and reduced-motion behavior. Thirty tests pass. Production Playwright inspection against the real local Codex home found 21 sessions, exercised a real reader, confirmed only local requests and zero final console errors, and measured desktop and 390 px layouts without page-level horizontal overflow. Screenshots remained under `/private/tmp`.
 
 ## Context and Orientation
 
@@ -485,6 +499,18 @@ Milestone 3 validation:
     API proofs: JSONL and SQLite modes; status/list/detail/items/tool; pagination; required and stale generation errors; missing and invalid resources
     production smoke: synthetic JSONL status/list passed; live home returned sqlite+jsonl, generation 1, 20 sessions, and no warnings
 
+Milestone 4 validation:
+
+    npm run typecheck: exit 0
+    npm test: 9 files, 30 tests passed
+    npm run build: exit 0; dist/client and dist/server emitted
+    git diff --check: exit 0
+    client proofs: URL state, aborted obsolete requests, parent/child/orphan grouping, page deduplication, stale restart, lazy tools, internal toggle, Markdown safety, empty/error states, and hidden polling
+    browser proof: named session milestone4; real list/detail/items returned 200; final console 0 errors and 0 warnings; no external resource requests
+    responsive proof: 1280x720 and 390x844 screenshots in /private/tmp; narrow document scroll width equaled viewport width
+    accessibility proof: keyboard Tab reached the search control with a visible solid focus outline; reduced-motion emulation reported no trace animation
+    lazy-tool retry proof: a live catalog produced handled 409 stale_generation responses; the client restarted the timeline, retried automatically, rendered both Input and Output, and showed no user-visible alert
+
 The first visual pass retained only the semantic trace rail as the signature motif. Desktop and narrow screenshots were kept in `/private/tmp` for critique and were not added to the repository. The only initial browser console error was a missing favicon request; an empty data favicon removed that irrelevant request without adding an asset or network dependency.
 
 ## Interfaces and Dependencies
@@ -589,4 +615,4 @@ The repository must not expose filesystem paths, SQLite rows, raw Codex records,
 
 Runtime dependencies are `react`, `react-dom`, `react-markdown`, and `remark-gfm`. Development dependencies are `typescript`, `vite`, `@vitejs/plugin-react`, `tsx`, `vitest`, `jsdom`, Testing Library packages, and TypeScript types for Node and React. Prefer Node standard-library modules for HTTP, crypto, filesystem, path, streams, and SQLite. Do not add Express, an ORM, a native SQLite addon, a watcher, a client state framework, a CSS framework, a syntax highlighter, a persistent search database, or external font and analytics services without revisiting the architecture decision.
 
-Revision note (2026-07-28): Initial plan created after problem framing, repository exploration, uncertainty recording, architecture comparison, user confirmation of the mixed design, and frontend design critique. Updated after Milestones 1 through 3 to record commits, uncommitted review scope, implementation decisions, format discoveries, snapshot/API outcomes, and validation evidence.
+Revision note (2026-07-28): Initial plan created after problem framing, repository exploration, uncertainty recording, architecture comparison, user confirmation of the mixed design, and frontend design critique. Updated after Milestones 1 through 4 to record commits, uncommitted review scope, implementation decisions, format and browser discoveries, snapshot/API/UI outcomes, and validation evidence.
