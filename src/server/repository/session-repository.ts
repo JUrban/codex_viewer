@@ -113,8 +113,8 @@ export class DefaultSessionRepository implements SessionRepository {
     assertGeneration(snapshot.generation, query.generation, offset > 0);
     const search = query.q === undefined
       ? { matches: null, partial: false, warnings: [] }
-      : { ...searchDocuments(snapshot.documents, query.q, this.searchBudget) };
-    const matchedIds: SessionId[] = [];
+      : searchDocuments(snapshot.documents, query.q, this.searchBudget);
+    const matchedSessions: NormalizedSession[] = [];
     const projects = new Map<string, number>();
     for (const id of snapshot.orderedIds) {
       const normalized = snapshot.sessions.get(id);
@@ -123,27 +123,26 @@ export class DefaultSessionRepository implements SessionRepository {
       if (!passesFilters(detail, query)) continue;
       if (search.matches !== null && !search.matches.has(id)) continue;
       if (detail.cwd !== null) projects.set(detail.cwd, (projects.get(detail.cwd) ?? 0) + 1);
-      matchedIds.push(id);
+      matchedSessions.push(normalized);
     }
     const limit = query.limit ?? DEFAULT_LIST_LIMIT;
-    const pageIds = matchedIds.slice(offset, offset + limit);
-    const entries = pageIds.flatMap((id) => {
-      const normalized = snapshot.sessions.get(id);
-      return normalized === undefined ? [] : [{
+    const entries = matchedSessions
+      .slice(offset, offset + limit)
+      .map((normalized) => ({
         session: summaryOf(normalized.detail),
-        matches: search.matches?.get(id) ?? [],
-      }];
-    });
+        matches: search.matches?.get(normalized.detail.id) ?? [],
+      }));
     const nextOffset = offset + entries.length;
+    const hasMore = nextOffset < matchedSessions.length;
     return {
       generation: snapshot.generation,
       sessions: entries,
       projects: [...projects.entries()]
         .map(([project, count]) => ({ project, count }))
         .sort((left, right) => left.project.localeCompare(right.project)),
-      total: matchedIds.length,
-      nextOffset: nextOffset < matchedIds.length ? nextOffset : null,
-      hasMore: nextOffset < matchedIds.length,
+      total: matchedSessions.length,
+      nextOffset: hasMore ? nextOffset : null,
+      hasMore,
       partial: search.partial,
       warnings: search.warnings,
     };
@@ -196,8 +195,9 @@ export class DefaultSessionRepository implements SessionRepository {
     const snapshot = await this.#current();
     assertGeneration(snapshot.generation, query.generation, true);
     const normalized = snapshot.sessions.get(id);
-    const item = normalized?.items.find((candidate) => candidate.id === itemId);
-    if (normalized === undefined || item?.kind !== "tool") return null;
+    if (normalized === undefined) return null;
+    const item = normalized.items.find((candidate) => candidate.id === itemId);
+    if (item?.kind !== "tool") return null;
     const detail = normalized.toolDetails.get(itemId);
     if (detail === undefined) return null;
     return {

@@ -156,16 +156,17 @@ export function useSessionBrowser() {
         generation: list.generation,
       }, controller.signal);
       if (sequence !== listSequence.current) return;
-      setList((current) => current?.generation === next.generation
-        ? {
-            ...next,
-            sessions: [
-              ...current.sessions,
-              ...next.sessions.filter((entry) =>
-                !current.sessions.some((existing) => existing.session.id === entry.session.id)),
-            ],
-          }
-        : next);
+      setList((current) => {
+        if (current?.generation !== next.generation) return next;
+        return {
+          ...next,
+          sessions: [
+            ...current.sessions,
+            ...next.sessions.filter((entry) =>
+              !current.sessions.some((existing) => existing.session.id === entry.session.id)),
+          ],
+        };
+      });
       setError(null);
     } catch (reason) {
       if (controller.signal.aborted || sequence !== listSequence.current) return;

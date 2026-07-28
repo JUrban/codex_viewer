@@ -12,8 +12,7 @@ export function safeUrlTransform(url: string): string {
 }
 
 export function MessageItem({ item }: { item: Message }) {
-  const label = item.role === "user" ? "User" :
-    item.phase === "commentary" ? "Assistant commentary" : "Assistant final";
+  const label = messageLabel(item);
   return <article className="message-body">
     <p className="event-label">{label} · {item.ordinal}</p>
     <ReactMarkdown remarkPlugins={[remarkGfm]} skipHtml urlTransform={safeUrlTransform}
@@ -24,4 +23,9 @@ export function MessageItem({ item }: { item: Message }) {
         img: ({ alt }) => <span className="image-placeholder">[Image omitted{alt ? `: ${alt}` : ""}]</span>,
       }}>{item.markdown}</ReactMarkdown>
   </article>;
+}
+
+function messageLabel(item: Message): string {
+  if (item.role === "user") return "User";
+  return item.phase === "commentary" ? "Assistant commentary" : "Assistant final";
 }

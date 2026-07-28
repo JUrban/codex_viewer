@@ -47,6 +47,7 @@ export class ToolAccumulator {
       const preview = previewSource === null ? null : truncateText(previewSource, MAX_TOOL_PREVIEW_CHARS).text;
       const truncated = input.truncated || result.truncated ||
         (previewSource !== null && previewSource.length > MAX_TOOL_PREVIEW_CHARS);
+      const status = toolStatus(output);
       return {
         item: {
           kind: "tool",
@@ -54,7 +55,7 @@ export class ToolAccumulator {
           ordinal: call.ordinal,
           timestamp: call.timestamp,
           toolName: call.toolName,
-          status: output === undefined ? "pending" : output.failed ? "failed" : "completed",
+          status,
           preview,
           truncated,
           hasDetail: call.input !== null || output?.output != null,
@@ -63,6 +64,11 @@ export class ToolAccumulator {
       };
     });
   }
+}
+
+function toolStatus(output: ToolOutput | undefined): ToolItem["status"] {
+  if (output === undefined) return "pending";
+  return output.failed ? "failed" : "completed";
 }
 
 function truncateNullable(value: string | null): { text: string | null; truncated: boolean } {

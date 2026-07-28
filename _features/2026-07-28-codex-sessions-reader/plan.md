@@ -26,7 +26,8 @@ The first release deliberately does not edit, delete, resume, export, synchroniz
 - [x] (2026-07-28 13:58Z) Milestone 3: implemented single-flight generation-consistent repository snapshots, whole-file fingerprint caching, bounded allowlisted search, and the versioned read-only HTTP API; typecheck, 22 tests, build, production API smoke, and diff-check passed.
 - [x] (2026-07-28 14:11Z) Milestone 4: replaced the fixture shell with the responsive real-data session browser, generation-safe paging and lazy tools, safe Markdown, URL-backed filters, hidden-aware live polling, and verified desktop/mobile browser behavior; typecheck, 30 tests, build, diff-check, and Playwright inspection passed.
 - [x] (2026-07-28 14:31Z) Milestone 5 implementation and integration: added generation-scoped catalog pagination, bounded item-page bytes, disposable 100 MB+ scale validation, complete operator/security documentation, real local read-only/browser smoke coverage, and sequence-isolated catalog paging across filter changes; typecheck, all 34 tests, build, benchmark, and diff-check passed.
-- [ ] Milestone 5 quality review: run the Phase 7 simplifier and three focused reviewers, present findings to the user, and record their disposition.
+- [x] (2026-07-28 14:36Z) Phase 7 simplifier: removed redundant repository lookups and impossible branches, named message/tool status decisions, and made same-generation page merging explicit without changing behavior; typecheck, all 34 tests, build, and diff-check passed.
+- [ ] Milestone 5 quality review: run three focused reviewers, present findings to the user, and record their disposition.
 
 ## Review Scope
 
@@ -39,14 +40,14 @@ Review must cover all code and documentation introduced for the reader, includin
 - `bd1e449` — Milestone 2 allowlisted discovery, dual-source catalog adapters, tolerant decoding, safe normalization, fixtures, and ingestion tests.
 - `109ad1b` — Milestone 3 generation-consistent repository, bounded search, versioned read APIs, and integration tests.
 - `0b5e80a` — Milestone 4 responsive browser, URL state, generation-safe paging, safe Markdown, lazy tools, and client tests.
+- `f43412a` — Milestone 5 generation-scoped catalog pagination, bounded item pages, concurrency hardening, scale benchmark, complete operating documentation, and regressions.
 
 ### Uncommitted changes to review
 
-- `_features/2026-07-28-codex-sessions-reader/plan.md` — Milestone 5 measurements, decisions, outcomes, and final pre-review scope.
-- `README.md`, `package.json`, `scripts/benchmark-scale.ts` — complete operating/security documentation and disposable 100 MB+ benchmark command.
-- `src/shared/api-contract.ts`, `src/server/http/api-router.ts`, `src/server/repository/session-repository.ts` — generation-scoped session-list pagination and bounded serialized item pages.
-- `src/client/App.tsx`, `src/client/api/client.ts`, `src/client/state/use-session-browser.ts` — catalog “load more” flow and stale-generation restart.
-- `tests/server/session-repository.test.ts`, `tests/server/api-http.test.ts`, `tests/client/session-browser.test.tsx` — 205-session reachability, cursor validation, response-byte, and browser pagination regressions.
+- `_features/2026-07-28-codex-sessions-reader/plan.md` — review-scope bookkeeping and the Phase 7 simplifier decision.
+- `src/server/repository/session-repository.ts` — simplified catalog-page construction and tool-detail guards without changing generation or response semantics.
+- `src/server/codex/session-normalizer.ts`, `src/server/codex/tool-accumulator.ts` — named message and tool-status branches in place of nested conditional expressions.
+- `src/client/components/MessageItem.tsx`, `src/client/state/use-session-browser.ts` — named message labeling and explicit same-generation list-page merging.
 
 ## Surprises & Discoveries
 
@@ -204,6 +205,10 @@ Review must cover all code and documentation introduced for the reader, includin
   Rationale: A count-only limit permitted a theoretical response near 200 MB. Returning at least one valid item and a next ordinal keeps progress possible while bounding ordinary pages.
   Date/Author: 2026-07-28 / Codex
 
+- Decision: Keep the Phase 7 simplifier changes local to expression and control-flow clarity; retain the snapshot, generation, normalization, and client request architecture unchanged.
+  Rationale: Directly carrying matched sessions removes an impossible second lookup branch, while named message/tool status branches and explicit same-generation merging reduce cognitive load. The broader mechanisms encode tested concurrency and security behavior and do not justify simplification risk.
+  Date/Author: 2026-07-28 / Codex code simplifier
+
 ## Outcomes & Retrospective
 
 Milestones 1 through 3 delivered a runnable, read-only ingestion and API backend. The production process serves the built fixture shell only from loopback and rejects unsafe request sources and mutation methods. Discovery admits only canonical rollout files below explicit session roots, opportunistically enriches them from the highest compatible read-only SQLite state, and remains functional with JSONL alone. Whole-file decoding tolerates malformed middle lines and pending tails; normalization keeps user and assistant messages without mirrored duplicates, emits unavailable reasoning markers without retaining ciphertext, pairs completed and pending tools under explicit limits, and exposes only safe internal summaries.
@@ -212,7 +217,7 @@ The repository now publishes catalog, normalized sessions, relationships, finger
 
 Milestone 4 adds the real browser experience: URL-persistent search/project/date/archive filters and selection, recursively nested parent-child grouping with visible orphans, cancellation of obsolete requests, generation-safe incremental paging, low-frequency visible-only polling for live sessions, and lazy plain-text tools. Markdown uses `react-markdown` plus GFM without raw HTML, blocks unsafe schemes, and replaces images without loading them. The responsive master-detail UI keeps the trace gutter as its sole signature motif, exposes semantic labels in addition to color, and retains visible keyboard focus and reduced-motion behavior. Thirty tests pass. Production Playwright inspection against the real local Codex home found 21 sessions, exercised a real reader, confirmed only local requests and zero final console errors, and measured desktop and 390 px layouts without page-level horizontal overflow. Screenshots remained under `/private/tmp`.
 
-Milestone 5 implementation closes the large-catalog reachability gap with generation-scoped list pagination, isolates obsolete list pages when filters change, and caps timeline pages by serialized item bytes. The disposable benchmark generates 3,000 sessions and more than 100 MB exclusively under `/private/tmp`, exercises long messages, large tools, partial tails, corrupt SQLite, truncation, and replacement, prints bounded performance/response metrics, and removes the corpus. The README now covers installation, configuration, security, search scope, compatibility, troubleshooting, verification, and uninstall. Real-home smoke remained read-only, listened only on `127.0.0.1`, rejected forged Host and Origin with 403, made no external browser requests, and recovered expanded tool detail after synthetic stale generations. Typecheck, all 34 tests, production build, and diff-check pass. Phase 7 quality review remains intentionally pending.
+Milestone 5 implementation closes the large-catalog reachability gap with generation-scoped list pagination, isolates obsolete list pages when filters change, and caps timeline pages by serialized item bytes. The disposable benchmark generates 3,000 sessions and more than 100 MB exclusively under `/private/tmp`, exercises long messages, large tools, partial tails, corrupt SQLite, truncation, and replacement, prints bounded performance/response metrics, and removes the corpus. The README now covers installation, configuration, security, search scope, compatibility, troubleshooting, verification, and uninstall. Real-home smoke remained read-only, listened only on `127.0.0.1`, rejected forged Host and Origin with 403, made no external browser requests, and recovered expanded tool detail after synthetic stale generations. The Phase 7 simplifier reduced local expression and control-flow complexity while deliberately retaining the tested snapshot, generation, normalization, and request-isolation architecture. Typecheck, all 34 tests, production build, and diff-check pass. The three focused quality reviews remain intentionally pending.
 
 ## Context and Orientation
 
@@ -563,7 +568,8 @@ Milestone 5 implementation validation:
     browser: all observed requests stayed at http://127.0.0.1:4173; no request failures or baseline console errors
     tool retry: injected stale-generation tool response restarted and re-expanded detail with Input visible and no user alert
     cleanup: production listener stopped; playwright-cli reported no browser sessions; generated scale corpus removed
-    remaining validation gate: run Phase 7 review
+    simplifier validation: typecheck, 9 files / 34 tests, production build, and diff-check passed after behavior-preserving cleanup
+    remaining validation gate: run the three focused Phase 7 reviews
 
 The first visual pass retained only the semantic trace rail as the signature motif. Desktop and narrow screenshots were kept in `/private/tmp` for critique and were not added to the repository. The only initial browser console error was a missing favicon request; an empty data favicon removed that irrelevant request without adding an asset or network dependency.
 

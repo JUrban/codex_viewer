@@ -181,11 +181,13 @@ function eventMessageCandidate(
   if (type !== "user_message" && type !== "agent_message") return null;
   const markdown = string(payload.message);
   if (markdown === null) return null;
+  const role = type === "user_message" ? "user" : "assistant";
+  const phase = type === "agent_message" ? normalizePhase(payload.phase) : null;
   return candidate(
     ordinal,
     timestamp,
-    type === "user_message" ? "user" : "assistant",
-    type === "agent_message" ? normalizePhase(payload.phase) : null,
+    role,
+    phase,
     markdown,
     "event",
   );
