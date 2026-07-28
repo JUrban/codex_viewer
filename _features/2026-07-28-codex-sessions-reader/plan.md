@@ -21,7 +21,7 @@ The first release deliberately does not edit, delete, resume, export, synchroniz
 - [x] (2026-07-28 13:05Z) Compared minimal and evolutionary architectures and obtained user confirmation for the mixed architecture.
 - [x] (2026-07-28 13:07Z) Drafted this ExecPlan from the repository evidence, approved architecture, and frontend design guidance.
 - [x] (2026-07-28 13:08Z) Obtained explicit user approval for this ExecPlan and recorded ADR-0001.
-- [ ] Milestone 1: establish the project, contracts, visual system, and secure loopback server.
+- [x] (2026-07-28 13:22Z) Milestone 1: established the npm/TypeScript project, browser-safe shared contracts, trace-notebook fixture shell, and secure loopback production server; typecheck, 4 tests, build, HTTP smoke, socket inspection, and desktop/mobile browser inspection passed.
 - [ ] Milestone 2: implement safe Codex discovery, tolerant rollout decoding, and normalization.
 - [ ] Milestone 3: implement generation-consistent repository snapshots, bounded search, and versioned APIs.
 - [ ] Milestone 4: build the responsive session browser and safe timeline reader.
@@ -33,13 +33,17 @@ Review must cover all code and documentation introduced for the reader, includin
 
 ### Commits to review
 
-None yet.
+- `dc42247` — initial approved ExecPlan, uncertainty record, and ADR-0001; this is the architecture baseline for implementation review.
 
 ### Uncommitted changes to review
 
-- `_features/2026-07-28-codex-sessions-reader/plan.md` — implementation authority and living execution record.
-- `_features/2026-07-28-codex-sessions-reader/uncertainty.md` — evidence and accepted compatibility boundaries.
-- `docs/adr/0001-use-generation-based-session-snapshots.md` — accepted architecture decision governing refresh, cache, and API consistency.
+- `_features/2026-07-28-codex-sessions-reader/plan.md` — updated Milestone 1 execution record.
+- `.gitignore`, `package.json`, `package-lock.json`, `tsconfig.json`, `tsconfig.server.json`, `vite.config.ts`, `vitest.config.ts`, `index.html` — single-package build, test, and runtime foundation.
+- `src/shared/` — browser-safe domain and API contracts.
+- `src/server/config.ts`, `src/server/http/`, `src/server/main.ts` — startup-only configuration and loopback HTTP security/static serving boundary.
+- `src/client/` — accessible responsive fixture shell and trace-notebook visual system.
+- `tests/` — initial HTTP security and client landmark coverage.
+- `README.md` — Milestone 1 prerequisites, commands, configuration, and security boundary.
 
 ## Surprises & Discoveries
 
@@ -60,6 +64,15 @@ None yet.
 
 - Observation: The requested independent third architecture review could not be launched because the agent runtime reached its thread limit and exposed no close operation.
   Evidence: Repeated `spawn_agent` calls returned `agent thread limit reached`; a disclosed-bias adversarial review by the minimal-design author was used as the constrained fallback.
+
+- Observation: The user-level npm cache was not writable in the managed environment even though dependency installation itself was allowed.
+  Evidence: The prescribed runtime install first failed with `EPERM` at `/Users/kngin/.npm/_cacache/tmp`; the identical npm dependency install succeeded with a disposable cache under `/private/tmp`.
+
+- Observation: Current TypeScript and Vitest releases are stricter than older project templates.
+  Evidence: TypeScript 7 required `vite/client` for CSS side-effect imports, and Vitest 4 no longer accepted `environmentMatchGlobs`; file-level `@vitest-environment jsdom` kept server tests in Node and client tests in jsdom.
+
+- Observation: Node's `fetch` does not provide a reliable way to forge a `Host` header for a security test.
+  Evidence: A fetch-based test reached the SPA with status 200 despite requesting an attacker Host; the same request made through `node:http` reached the server with the forged authority and was rejected with 403.
 
 ## Decision Log
 
@@ -91,9 +104,17 @@ None yet.
   Rationale: The alternatives and accepted costs are non-trivial, and future maintainers would otherwise lack the reason for generation-scoped whole-file snapshots and paged APIs.
   Date/Author: 2026-07-28 / User and Codex
 
+- Decision: Keep Milestone 1's `/api/` router deliberately empty and return a uniform no-store 404 until the repository-backed handlers arrive in Milestone 3.
+  Rationale: This proves that SPA fallback cannot shadow API routes without inventing placeholder status semantics that later milestones would have to preserve.
+  Date/Author: 2026-07-28 / Codex
+
+- Decision: Use a disposable npm cache only to work around the environment's unwritable user cache.
+  Rationale: This preserves npm, the prescribed dependency set, and the generated lockfile while avoiding changes to user-owned cache permissions or repository configuration.
+  Date/Author: 2026-07-28 / Codex
+
 ## Outcomes & Retrospective
 
-No implementation outcome exists yet. At completion, compare the delivered application with the Purpose section, record measured startup/search/detail performance, list any compatibility or accessibility gaps, and state whether the trace-notebook design improved scanning without distracting from long-form reading.
+Milestone 1 delivered a runnable and testable foundation. The production process serves the built fixture shell only from loopback and rejects unsafe request sources and mutation methods. Shared contracts now define the later adapter/repository/UI boundary without Node imports. Desktop and 390 px browser inspection showed a restrained trace rail, readable long-form column, keyboard-addressable controls, meaningful landmarks, and no horizontal document overflow. Real Codex discovery, repository behavior, and session APIs remain intentionally deferred to Milestones 2 and 3.
 
 ## Context and Orientation
 
@@ -376,6 +397,18 @@ The feature packet is:
     _features/2026-07-28-codex-sessions-reader/uncertainty.md
 
 Implementation transcripts, generated-scale performance numbers, milestone commit SHAs, visual critique notes, and any validation gaps must be appended here as work proceeds.
+
+Milestone 1 validation:
+
+    npm run typecheck: exit 0
+    npm test: 2 files, 4 tests passed
+    npm run build: exit 0; dist/client and dist/server emitted
+    production smoke: GET / returned 200 with CSP, nosniff, no-referrer, and no CORS
+    API boundary smoke: GET /api/v1/status returned safe no-store 404
+    socket inspection: node listened on IPv4 127.0.0.1 only
+    browser inspection: 1280x720 and 390x844; document scroll width equaled viewport width
+
+The first visual pass retained only the semantic trace rail as the signature motif. Desktop and narrow screenshots were kept in `/private/tmp` for critique and were not added to the repository. The only initial browser console error was a missing favicon request; an empty data favicon removed that irrelevant request without adding an asset or network dependency.
 
 ## Interfaces and Dependencies
 

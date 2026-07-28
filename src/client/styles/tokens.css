@@ -1,0 +1,17 @@
+:root {
+  --paper: #f7fafa;
+  --paper-deep: #eef4f4;
+  --ink: #18262d;
+  --ink-soft: #52636a;
+  --mist: #dce6e8;
+  --current: #176b75;
+  --human: #9d4e3a;
+  --signal: #c4862d;
+  --title-font: Charter, "Iowan Old Style", Georgia, serif;
+  --body-font: "Avenir Next", Inter, system-ui, sans-serif;
+  --mono-font: "SFMono-Regular", Consolas, monospace;
+  color: var(--ink);
+  font-family: var(--body-font);
+  background: var(--paper);
+}
+
