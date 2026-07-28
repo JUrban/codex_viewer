@@ -22,7 +22,7 @@ The first release deliberately does not edit, delete, resume, export, synchroniz
 - [x] (2026-07-28 13:07Z) Drafted this ExecPlan from the repository evidence, approved architecture, and frontend design guidance.
 - [x] (2026-07-28 13:08Z) Obtained explicit user approval for this ExecPlan and recorded ADR-0001.
 - [x] (2026-07-28 13:22Z) Milestone 1: established the npm/TypeScript project, browser-safe shared contracts, trace-notebook fixture shell, and secure loopback production server; typecheck, 4 tests, build, HTTP smoke, socket inspection, and desktop/mobile browser inspection passed.
-- [ ] Milestone 2: implement safe Codex discovery, tolerant rollout decoding, and normalization.
+- [x] (2026-07-28 13:40Z) Milestone 2: implemented allowlisted path registration and opaque IDs, feature-detected SQLite metadata with JSONL fallback, tolerant whole-file rollout decoding, identity resolution, bounded tool pairing, safe normalization, and synthetic fixture coverage; typecheck, 14 tests, build, and diff-check passed.
 - [ ] Milestone 3: implement generation-consistent repository snapshots, bounded search, and versioned APIs.
 - [ ] Milestone 4: build the responsive session browser and safe timeline reader.
 - [ ] Milestone 5: harden, validate, document, and complete quality review.
@@ -34,6 +34,7 @@ Review must cover all code and documentation introduced for the reader, includin
 ### Commits to review
 
 - `dc42247` — initial approved ExecPlan, uncertainty record, and ADR-0001; this is the architecture baseline for implementation review.
+- `654325d` — Milestone 1 project foundation, shared contracts, secure loopback server, fixture UI, tests, and documentation.
 
 ### Uncommitted changes to review
 
@@ -44,6 +45,10 @@ Review must cover all code and documentation introduced for the reader, includin
 - `src/client/` — accessible responsive fixture shell and trace-notebook visual system.
 - `tests/` — initial HTTP security and client landmark coverage.
 - `README.md` — Milestone 1 prerequisites, commands, configuration, and security boundary.
+- `src/server/security/` — canonical allowlisted rollout registration and collision-safe opaque ID mapping.
+- `src/server/codex/` — dual-source catalog discovery, tolerant rollout decoding, identity resolution, normalization, tool pairing, and limits.
+- `tests/fixtures/codex-home/` — entirely synthetic Codex home covering active, archived, child, malformed, partial-tail, unknown-event, tool, and incompatible-SQLite cases.
+- `tests/server/catalog-source.test.ts`, `tests/server/path-policy.test.ts`, `tests/server/rollout-decoder.test.ts`, `tests/server/session-normalizer.test.ts` — Milestone 2 discovery, security, decode, identity, normalization, and bounding proofs.
 
 ## Surprises & Discoveries
 
@@ -73,6 +78,18 @@ Review must cover all code and documentation introduced for the reader, includin
 
 - Observation: Node's `fetch` does not provide a reliable way to forge a `Host` header for a security test.
   Evidence: A fetch-based test reached the SPA with status 200 despite requesting an attacker Host; the same request made through `node:http` reached the server with the forged authority and was rejected with 403.
+
+- Observation: On macOS, temporary paths returned below `/var/folders` canonicalize through `realpath` to `/private/var/folders`.
+  Evidence: The first path-policy assertion compared a lexical temporary path with its canonical descriptor and failed; changing the assertion to compare `realpath` values matched the security boundary being tested.
+
+- Observation: Selecting only the numerically newest SQLite state file would make an older compatible database unreachable when the newest file is corrupt or has an unknown schema.
+  Evidence: The synthetic catalog test places corrupt `state_99.sqlite` above compatible `state_50.sqlite`; descending feature detection successfully selects generation 50 and returns `sqlite+jsonl`.
+
+- Observation: Catalog merging must be a real union, not only a metadata join onto the JSONL scan.
+  Evidence: A valid SQLite row can identify an allowlisted rollout omitted by a transient directory-scan failure; integration review changed the composite source to retain entries from either source while deduplicating by canonical path.
+
+- Observation: Real assistant `response_item` records use `phase: "final_answer"` in addition to the browser-domain spelling `final`, and custom tool output may be either a string or an array of text parts.
+  Evidence: Synthetic normalization tests exercise `final_answer`, string `custom_tool_call_output`, and array `custom_tool_call_output`; all normalize to the bounded domain representation.
 
 ## Decision Log
 
@@ -112,9 +129,25 @@ Review must cover all code and documentation introduced for the reader, includin
   Rationale: This preserves npm, the prescribed dependency set, and the generated lockfile while avoiding changes to user-owned cache permissions or repository configuration.
   Date/Author: 2026-07-28 / Codex
 
+- Decision: Reject rollout leaf symlinks and require both allowlisted roots and candidate files to pass `realpath` containment and regular-file checks.
+  Rationale: This is stricter than merely detecting known traversal strings and keeps discovery correct across lexical `..`, intermediate symlinks, and platform path aliases.
+  Date/Author: 2026-07-28 / Codex
+
+- Decision: Inspect SQLite state generations from newest to oldest and use the first database whose `threads` table exposes `rollout_path`, selecting only known columns.
+  Rationale: SQLite remains opportunistic metadata. A corrupt or future newest generation must not suppress an older compatible source or the JSONL correctness fallback.
+  Date/Author: 2026-07-28 / Codex
+
+- Decision: Treat only complete newline-terminated JSONL lines as records and scope mirrored message deduplication to adjacent cross-source equivalents.
+  Rationale: This preserves physical ordinals, retains genuine repeated `response_item` messages, and avoids publishing a live writer's partial final record.
+  Date/Author: 2026-07-28 / Codex
+
+- Decision: Normalize `final_answer` to the domain phase `final`, bound retained tool input/output to 256,000 characters, and reduce unknown events to type-only summaries.
+  Rationale: The browser contract stays stable while raw format variants, oversized untrusted tool text, reasoning bytes, developer content, and unknown payloads remain behind the server boundary.
+  Date/Author: 2026-07-28 / Codex
+
 ## Outcomes & Retrospective
 
-Milestone 1 delivered a runnable and testable foundation. The production process serves the built fixture shell only from loopback and rejects unsafe request sources and mutation methods. Shared contracts now define the later adapter/repository/UI boundary without Node imports. Desktop and 390 px browser inspection showed a restrained trace rail, readable long-form column, keyboard-addressable controls, meaningful landmarks, and no horizontal document overflow. Real Codex discovery, repository behavior, and session APIs remain intentionally deferred to Milestones 2 and 3.
+Milestones 1 and 2 delivered a runnable foundation plus a tested, read-only Codex ingestion boundary. The production process serves the built fixture shell only from loopback and rejects unsafe request sources and mutation methods. Discovery now admits only canonical rollout files below explicit session roots, opportunistically enriches them from the highest compatible read-only SQLite state, and remains functional with JSONL alone. Whole-file decoding tolerates malformed middle lines and pending tails; normalization keeps user and assistant messages without mirrored duplicates, emits unavailable reasoning markers without retaining ciphertext, pairs completed and pending tools under explicit limits, and exposes only safe internal summaries. Fourteen tests pass. A root integration smoke against the live local Codex home discovered 18 allowlisted sessions in `sqlite+jsonl` mode with no source diagnostics and normalized one rollout without exposing its content. Generation-consistent repository behavior and session APIs remain intentionally deferred to Milestone 3, while the real browser remains deferred to Milestone 4.
 
 ## Context and Orientation
 
@@ -408,6 +441,19 @@ Milestone 1 validation:
     socket inspection: node listened on IPv4 127.0.0.1 only
     browser inspection: 1280x720 and 390x844; document scroll width equaled viewport width
 
+Milestone 2 validation:
+
+    npm run typecheck: exit 0
+    npm test: 6 files, 14 tests passed
+    npm run build: exit 0; dist/client and dist/server emitted
+    focused ingestion suite: 4 files, 10 tests passed
+    git diff --check: exit 0
+    path proofs: lexical traversal, outside-root files, invalid names, and symlink escape rejected
+    decode proofs: physical ordinals preserved; malformed middle line skipped; partial tail held pending
+    normalization proofs: mirrors deduplicated; genuine repeats retained; reasoning/developer/internal payload canaries absent
+    adapter proofs: corrupt newest SQLite falls through to an older compatible generation; fully incompatible SQLite falls back to JSONL
+    live read-only smoke: sqlite+jsonl mode; 18 allowlisted sessions; no source diagnostics; one rollout normalized successfully
+
 The first visual pass retained only the semantic trace rail as the signature motif. Desktop and narrow screenshots were kept in `/private/tmp` for critique and were not added to the repository. The only initial browser console error was a missing favicon request; an empty data favicon removed that irrelevant request without adding an asset or network dependency.
 
 ## Interfaces and Dependencies
@@ -512,4 +558,4 @@ The repository must not expose filesystem paths, SQLite rows, raw Codex records,
 
 Runtime dependencies are `react`, `react-dom`, `react-markdown`, and `remark-gfm`. Development dependencies are `typescript`, `vite`, `@vitejs/plugin-react`, `tsx`, `vitest`, `jsdom`, Testing Library packages, and TypeScript types for Node and React. Prefer Node standard-library modules for HTTP, crypto, filesystem, path, streams, and SQLite. Do not add Express, an ORM, a native SQLite addon, a watcher, a client state framework, a CSS framework, a syntax highlighter, a persistent search database, or external font and analytics services without revisiting the architecture decision.
 
-Revision note (2026-07-28): Initial plan created after problem framing, repository exploration, uncertainty recording, architecture comparison, user confirmation of the mixed design, and frontend design critique.
+Revision note (2026-07-28): Initial plan created after problem framing, repository exploration, uncertainty recording, architecture comparison, user confirmation of the mixed design, and frontend design critique. Updated after Milestones 1 and 2 to record commits, uncommitted review scope, implementation decisions, format discoveries, and validation evidence.

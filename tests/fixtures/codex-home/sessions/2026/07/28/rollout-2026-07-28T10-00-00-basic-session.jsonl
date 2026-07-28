@@ -1,0 +1,17 @@
+{"timestamp":"2026-07-28T10:00:00.000Z","type":"session_meta","payload":{"id":"basic-session","cwd":"/synthetic/project","title":"Synthetic trace","timestamp":"2026-07-28T10:00:00.000Z"}}
+{"timestamp":"2026-07-28T10:00:01.000Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Please inspect the synthetic widget."}]}}
+{"timestamp":"2026-07-28T10:00:01.000Z","type":"event_msg","payload":{"type":"user_message","message":"Please inspect the synthetic widget."}}
+{"timestamp":"2026-07-28T10:00:02.000Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Please inspect the synthetic widget."}]}}
+{"timestamp":"2026-07-28T10:00:03.000Z","type":"response_item","payload":{"type":"message","role":"developer","content":[{"type":"input_text","text":"DEVELOPER_CANARY_NEVER_RENDER"}]}}
+{"timestamp":"2026-07-28T10:00:04.000Z","type":"response_item","payload":{"type":"reasoning","encrypted_content":"REASONING_CANARY_NEVER_RENDER","summary":[]}}
+{"timestamp":"2026-07-28T10:00:05.000Z","type":"response_item","payload":{"type":"function_call","name":"inspect_widget","arguments":"{\"id\":\"sample\"}","call_id":"call-complete"}}
+{"timestamp":"2026-07-28T10:00:06.000Z","type":"response_item","payload":{"type":"function_call_output","call_id":"call-complete","output":"synthetic result"}}
+{"timestamp":"2026-07-28T10:00:07.000Z","type":"response_item","payload":{"type":"function_call","name":"pending_widget","arguments":"waiting","call_id":"call-pending"}}
+{"timestamp":"2026-07-28T10:00:08.000Z","type":"response_item","payload":{"type":"message","role":"assistant","phase":"commentary","content":[{"type":"output_text","text":"The synthetic widget is ready."}]}}
+{"timestamp":"2026-07-28T10:00:08.000Z","type":"event_msg","payload":{"type":"agent_message","phase":"commentary","message":"The synthetic widget is ready."}}
+{"timestamp":"2026-07-28T10:00:08.100Z","type":"response_item","payload":{"type":"custom_tool_call","name":"custom_string","input":"alpha","call_id":"custom-string"}}
+{"timestamp":"2026-07-28T10:00:08.200Z","type":"response_item","payload":{"type":"custom_tool_call_output","call_id":"custom-string","output":"string-shaped output"}}
+{"timestamp":"2026-07-28T10:00:08.300Z","type":"response_item","payload":{"type":"custom_tool_call","name":"custom_array","input":"beta","call_id":"custom-array"}}
+{"timestamp":"2026-07-28T10:00:08.400Z","type":"response_item","payload":{"type":"custom_tool_call_output","call_id":"custom-array","output":[{"type":"output_text","text":"array "},{"type":"output_text","text":"shaped output"}]}}
+{"timestamp":"2026-07-28T10:00:08.500Z","type":"response_item","payload":{"type":"message","role":"assistant","phase":"final_answer","content":[{"type":"output_text","text":"Final synthetic answer."}]}}
+{"timestamp":"2026-07-28T10:00:09.000Z","type":"future_record","payload":{"secret":"INTERNAL_PAYLOAD_CANARY"}}

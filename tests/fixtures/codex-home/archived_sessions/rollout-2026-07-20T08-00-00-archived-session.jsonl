@@ -1,0 +1,2 @@
+{"timestamp":"2026-07-20T08:00:00.000Z","type":"session_meta","payload":{"id":"archived-session","cwd":"/synthetic/archive","timestamp":"2026-07-20T08:00:00.000Z"}}
+{"timestamp":"2026-07-20T08:00:01.000Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Archived synthetic prompt"}]}}
