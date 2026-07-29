@@ -65,7 +65,7 @@ const normalized: NormalizedSession = {
   session,
   timeline,
   toolDetails: new Map(),
-  injectedContextDetails: new Map(),
+  directiveDetails: new Map(),
 };
 
 describe("server architecture boundaries", () => {

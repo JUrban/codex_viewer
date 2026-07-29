@@ -35,16 +35,18 @@ export function SessionHeader({
         <p className="session-source-id">
           Original session ID · <code>{session.sourceId ?? "Unavailable"}</code>
         </p>
-        {VISIBILITY_TOGGLES.map(({ key, label }) => (
-          <label className="check-row event-toggle" key={key}>
-            <input
-              type="checkbox"
-              checked={visibility[key]}
-              onChange={(event) => onVisibilityChange(key, event.target.checked)}
-            />
-            {label}
-          </label>
-        ))}
+        <div className="event-toggles" role="group" aria-label="Timeline event visibility">
+          {VISIBILITY_TOGGLES.map(({ key, label }) => (
+            <label className="check-row event-toggle" key={key}>
+              <input
+                type="checkbox"
+                checked={visibility[key]}
+                onChange={(event) => onVisibilityChange(key, event.target.checked)}
+              />
+              {label}
+            </label>
+          ))}
+        </div>
       </div>
       <span className={`state state-${session.sourceState}`}>
         <span aria-hidden="true">●</span> {session.sourceState}
@@ -57,8 +59,8 @@ const VISIBILITY_TOGGLES: Array<{
   key: TimelineVisibilityKey;
   label: string;
 }> = [
-  { key: "tools", label: "Show tool events" },
-  { key: "context", label: "Show injected context" },
-  { key: "reasoning", label: "Show reasoning summaries" },
-  { key: "internal", label: "Show internal events" },
+  { key: "tools", label: "tool" },
+  { key: "directive", label: "directive" },
+  { key: "reasoning", label: "reasoning" },
+  { key: "internal", label: "internal" },
 ];

@@ -87,7 +87,7 @@ function readUrl(): BrowserLocation {
     visibility: {
       ...DEFAULT_TIMELINE_VISIBILITY,
       tools: params.get("tools") === "true",
-      context: params.get("context") === "true",
+      directive: params.get("directive") === "true",
       reasoning: params.get("reasoning") === "true",
       internal: params.get("internal") === "true",
     },

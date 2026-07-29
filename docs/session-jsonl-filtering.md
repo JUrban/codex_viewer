@@ -26,8 +26,8 @@ timeline items. Keep it synchronized with `rollout-decoder.ts`,
 - A user response message becomes a conversation message only when an
   unused `event_msg/user_message` within two physical line ordinals has the
   same role, phase, and text. The nearest matching event is used and each event
-  can be paired only once. Otherwise the response becomes `injected-context`.
-- Developer response messages always become `injected-context`.
+  can be paired only once. Otherwise the response becomes `directive`.
+- Developer response messages always become `directive`.
 - An event message paired with a response message is consumed as a duplicate
   and is not emitted separately.
 - Valid `user_message` and `agent_message` events require a non-empty string
@@ -49,14 +49,14 @@ timeline items. Keep it synchronized with `rollout-decoder.ts`,
 
 Timeline pages include every normalized item kind. The client always displays
 user and assistant messages, then independently filters `tool`,
-`injected-context`, `reasoning`, and `internal` items. Those four technical
+`directive`, `reasoning`, and `internal` items. Those four technical
 event kinds are hidden by default and can be enabled without reloading the
 timeline.
 
 ## Truncation and paging
 
 Truncation preserves an item but shortens its text; it is not filtering.
-Message text is capped at 1,000,000 characters. Injected-context detail and
+Message text is capped at 1,000,000 characters. Directive detail and
 tool input/output are capped at 256,000 characters. Session previews, item
 summaries, tool previews, and search excerpts share a 240-character limit.
 Timeline paging may defer items to a later page because of the 512-item and

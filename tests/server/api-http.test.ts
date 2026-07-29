@@ -88,7 +88,7 @@ describe("versioned session API", () => {
     );
     expect(basic.session.id).toMatch(/^[A-Za-z0-9_-]{43}$/);
     expect(basic.session.sourceId).toBeUndefined();
-    expect(JSON.stringify(list)).not.toContain("DEVELOPER_CONTEXT_CANARY");
+    expect(JSON.stringify(list)).not.toContain("DEVELOPER_DIRECTIVE_CANARY");
 
     const agentSearch = await fetch(`${base}/api/v1/sessions?q=widget_review`)
       .then((response) => response.json());
@@ -121,41 +121,45 @@ describe("versioned session API", () => {
     const allItems = await fetch(
       `${base}/api/v1/sessions/${basic.session.id}/items?limit=512`,
     ).then((response) => response.json());
-    expect(JSON.stringify(allItems)).not.toContain("INJECTED_CONTEXT_DETAIL_CANARY");
+    expect(JSON.stringify(allItems)).not.toContain("DIRECTIVE_DETAIL_CANARY");
     expect(JSON.stringify(allItems)).not.toContain("REASONING_CANARY_NEVER_RENDER");
     expect(allItems.items.find((item: { kind: string }) => item.kind === "reasoning"))
       .toEqual(expect.objectContaining({ summary: "REASONING_SUMMARY_CANARY" }));
-    const context = allItems.items.find((item: { kind: string }) => item.kind === "injected-context");
+    const directive = allItems.items.find((item: { kind: string }) => item.kind === "directive");
     expect((await fetch(
-      `${base}/api/v1/sessions/${basic.session.id}/items/${context.id}/context`,
+      `${base}/api/v1/sessions/${basic.session.id}/items/${directive.id}/directive`,
     )).status).toBe(400);
-    const contextResponse = await fetch(
-      `${base}/api/v1/sessions/${basic.session.id}/items/${context.id}/context` +
+    const directiveResponse = await fetch(
+      `${base}/api/v1/sessions/${basic.session.id}/items/${directive.id}/directive` +
       `?generation=${allItems.generation}`,
     );
-    expect(contextResponse.status).toBe(200);
-    expect(await contextResponse.json()).toEqual(expect.objectContaining({
+    expect(directiveResponse.status).toBe(200);
+    expect(await directiveResponse.json()).toEqual(expect.objectContaining({
       sessionId: basic.session.id,
-      itemId: context.id,
-      text: expect.stringContaining("INJECTED_CONTEXT_DETAIL_CANARY"),
+      itemId: directive.id,
+      text: expect.stringContaining("DIRECTIVE_DETAIL_CANARY"),
       truncated: false,
     }));
-    const developerContext = allItems.items.find(
-      (item: { id: string }) => item.id === "context-5",
+    expect((await fetch(
+      `${base}/api/v1/sessions/${basic.session.id}/items/${directive.id}/context` +
+      `?generation=${allItems.generation}`,
+    )).status).toBe(404);
+    const developerDirective = allItems.items.find(
+      (item: { id: string }) => item.id === "directive-5",
     );
-    expect(developerContext).toEqual(expect.objectContaining({
-      kind: "injected-context",
-      summary: "DEVELOPER_CONTEXT_CANARY",
+    expect(developerDirective).toEqual(expect.objectContaining({
+      kind: "directive",
+      summary: "DEVELOPER_DIRECTIVE_CANARY",
     }));
-    const developerContextResponse = await fetch(
-      `${base}/api/v1/sessions/${basic.session.id}/items/${developerContext.id}/context` +
+    const developerDirectiveResponse = await fetch(
+      `${base}/api/v1/sessions/${basic.session.id}/items/${developerDirective.id}/directive` +
       `?generation=${allItems.generation}`,
     );
-    expect(developerContextResponse.status).toBe(200);
-    expect(await developerContextResponse.json()).toEqual(expect.objectContaining({
+    expect(developerDirectiveResponse.status).toBe(200);
+    expect(await developerDirectiveResponse.json()).toEqual(expect.objectContaining({
       sessionId: basic.session.id,
-      itemId: developerContext.id,
-      text: "DEVELOPER_CONTEXT_CANARY",
+      itemId: developerDirective.id,
+      text: "DEVELOPER_DIRECTIVE_CANARY",
       truncated: false,
     }));
     const tool = allItems.items.find((item: { kind: string }) => item.kind === "tool");

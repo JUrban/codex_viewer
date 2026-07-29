@@ -60,8 +60,8 @@ export interface DomainToolRecord extends DomainTimelineRecordBase {
   readonly hasDetail: boolean;
 }
 
-export interface DomainInjectedContextRecord extends DomainTimelineRecordBase {
-  readonly kind: "injected-context";
+export interface DomainDirectiveRecord extends DomainTimelineRecordBase {
+  readonly kind: "directive";
   readonly summary: string;
   readonly charCount: number;
   readonly truncated: boolean;
@@ -96,7 +96,7 @@ export interface DomainInternalEventRecord extends DomainTimelineRecordBase {
 export type DomainTimelineRecord =
   | DomainMessageRecord
   | DomainToolRecord
-  | DomainInjectedContextRecord
+  | DomainDirectiveRecord
   | DomainReasoningRecord
   | DomainInternalEventRecord;
 
@@ -106,7 +106,7 @@ export interface DomainToolDetail {
   readonly truncated: boolean;
 }
 
-export interface DomainInjectedContextDetail {
+export interface DomainDirectiveDetail {
   readonly text: string;
   readonly truncated: boolean;
 }
@@ -115,5 +115,5 @@ export interface NormalizedSession {
   readonly session: DomainSession;
   readonly timeline: readonly DomainTimelineRecord[];
   readonly toolDetails: ReadonlyMap<DomainItemId, DomainToolDetail>;
-  readonly injectedContextDetails: ReadonlyMap<DomainItemId, DomainInjectedContextDetail>;
+  readonly directiveDetails: ReadonlyMap<DomainItemId, DomainDirectiveDetail>;
 }

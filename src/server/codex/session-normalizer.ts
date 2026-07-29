@@ -1,7 +1,7 @@
 import type {
   DomainDiagnostic as Diagnostic,
-  DomainInjectedContextDetail as NormalizedInjectedContextDetail,
-  DomainInjectedContextRecord as InjectedContextItem,
+  DomainDirectiveDetail as NormalizedDirectiveDetail,
+  DomainDirectiveRecord as DirectiveItem,
   DomainInternalEventRecord as InternalEventItem,
   DomainMessageRecord as MessageItem,
   DomainReasoningRecord as ReasoningItem,
@@ -14,7 +14,7 @@ import type { DecodedRecord, DecodedRollout } from "./rollout-decoder.js";
 import { isObject } from "./rollout-decoder.js";
 import type { SessionMetadata } from "./identity-resolver.js";
 import {
-  MAX_INJECTED_CONTEXT_CHARS,
+  MAX_DIRECTIVE_CHARS,
   MAX_MESSAGE_CHARS,
   MAX_PREVIEW_CHARS,
   normalizeSessionTitle,
@@ -32,7 +32,7 @@ interface MessageCandidate {
   role: "user" | "assistant";
   phase: "commentary" | "final" | null;
   text: string;
-  injected: boolean;
+  alwaysDirective: boolean;
 }
 
 export interface SessionNormalizer {
@@ -98,7 +98,7 @@ export class DefaultSessionNormalizer implements SessionNormalizer {
       session: detail,
       timeline: items,
       toolDetails: new Map(accumulatedTools.map((tool) => [tool.item.id, tool.detail])),
-      injectedContextDetails: normalizedMessages.injectedContextDetails,
+      directiveDetails: normalizedMessages.directiveDetails,
     };
   }
 }
@@ -196,7 +196,7 @@ function responseMessageCandidate(
     role: role === "developer" ? "user" : role,
     phase,
     text: markdown,
-    injected: role === "developer",
+    alwaysDirective: role === "developer",
   };
 }
 
@@ -211,45 +211,45 @@ function eventMessageCandidate(
   if (markdown === null) return null;
   const role = type === "user_message" ? "user" : "assistant";
   const phase = type === "agent_message" ? normalizePhase(payload.phase) : null;
-  return { ordinal, timestamp, role, phase, text: markdown, injected: false };
+  return { ordinal, timestamp, role, phase, text: markdown, alwaysDirective: false };
 }
 
 function normalizeMessages(
   responseMessages: MessageCandidate[],
   eventMessages: MessageCandidate[],
 ): {
-  items: Array<MessageItem | InjectedContextItem>;
+  items: Array<MessageItem | DirectiveItem>;
   internalItems: InternalEventItem[];
-  injectedContextDetails: Map<string, NormalizedInjectedContextDetail>;
+  directiveDetails: Map<string, NormalizedDirectiveDetail>;
 } {
-  const items: Array<MessageItem | InjectedContextItem> = [];
+  const items: Array<MessageItem | DirectiveItem> = [];
   const internalItems: InternalEventItem[] = [];
-  const injectedContextDetails = new Map<string, NormalizedInjectedContextDetail>();
+  const directiveDetails = new Map<string, NormalizedDirectiveDetail>();
   const usedEvents = new Set<number>();
 
   for (const response of responseMessages) {
-    const matchingEvent = response.injected
+    const matchingEvent = response.alwaysDirective
       ? null
       : nearestMatchingEvent(response, eventMessages, usedEvents);
     if (matchingEvent !== null) usedEvents.add(matchingEvent);
-    if (!response.injected && (response.role === "assistant" || matchingEvent !== null)) {
+    if (!response.alwaysDirective && (response.role === "assistant" || matchingEvent !== null)) {
       items.push(messageItem(response));
       continue;
     }
 
-    const id = `context-${response.ordinal}`;
-    const detail = truncateText(response.text, MAX_INJECTED_CONTEXT_CHARS);
+    const id = `directive-${response.ordinal}`;
+    const detail = truncateText(response.text, MAX_DIRECTIVE_CHARS);
     items.push({
-      kind: "injected-context",
+      kind: "directive",
       id,
       ordinal: response.ordinal,
       timestamp: response.timestamp,
-      summary: injectedSummary(response.text),
+      summary: directiveSummary(response.text),
       charCount: response.text.length,
       truncated: detail.truncated,
       hasDetail: true,
     });
-    injectedContextDetails.set(id, detail);
+    directiveDetails.set(id, detail);
   }
 
   for (let index = 0; index < eventMessages.length; index += 1) {
@@ -262,7 +262,7 @@ function normalizeMessages(
     ));
   }
 
-  return { items, internalItems, injectedContextDetails };
+  return { items, internalItems, directiveDetails };
 }
 
 function nearestMatchingEvent(
@@ -303,9 +303,9 @@ function messageItem(candidate: MessageCandidate): MessageItem {
   };
 }
 
-function injectedSummary(value: string): string {
+function directiveSummary(value: string): string {
   const firstLine = value.split(/\r?\n/).map((line) => line.trim()).find(Boolean);
-  return truncateText(firstLine ?? "Injected user-role context", MAX_PREVIEW_CHARS).text;
+  return truncateText(firstLine ?? "Directive", MAX_PREVIEW_CHARS).text;
 }
 
 function toolCall(

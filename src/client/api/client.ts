@@ -1,6 +1,6 @@
 import type {
   ApiError,
-  InjectedContextDetailResponse,
+  DirectiveDetailResponse,
   ItemPageQuery,
   ItemPageResponse,
   SessionDetailResponse,
@@ -83,9 +83,9 @@ export const api = {
       `/api/v1/sessions/${encodeURIComponent(sessionId)}/items/${encodeURIComponent(itemId)}/tool${queryString({ generation })}`,
       signal,
     ),
-  context: (sessionId: string, itemId: string, generation: number, signal?: AbortSignal) =>
-    request<InjectedContextDetailResponse>(
-      `/api/v1/sessions/${encodeURIComponent(sessionId)}/items/${encodeURIComponent(itemId)}/context${queryString({ generation })}`,
+  directive: (sessionId: string, itemId: string, generation: number, signal?: AbortSignal) =>
+    request<DirectiveDetailResponse>(
+      `/api/v1/sessions/${encodeURIComponent(sessionId)}/items/${encodeURIComponent(itemId)}/directive${queryString({ generation })}`,
       signal,
     ),
 };

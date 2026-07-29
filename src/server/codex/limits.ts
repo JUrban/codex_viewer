@@ -4,7 +4,7 @@ export const MAX_MESSAGE_CHARS = 1_000_000;
 export const MAX_TOOL_DETAIL_CHARS = 256_000;
 export const MAX_PREVIEW_CHARS = 240;
 export const MAX_SESSION_TITLE_CHARS = 80;
-export const MAX_INJECTED_CONTEXT_CHARS = 256_000;
+export const MAX_DIRECTIVE_CHARS = 256_000;
 
 export function truncateText(value: string, limit: number): { text: string; truncated: boolean } {
   if (value.length <= limit) return { text: value, truncated: false };

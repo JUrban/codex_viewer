@@ -63,8 +63,8 @@ export interface ToolItem extends TimelineItemBase {
   hasDetail: boolean;
 }
 
-export interface InjectedContextItem extends TimelineItemBase {
-  kind: "injected-context";
+export interface DirectiveItem extends TimelineItemBase {
+  kind: "directive";
   summary: string;
   charCount: number;
   truncated: boolean;
@@ -99,6 +99,6 @@ export interface InternalEventItem extends TimelineItemBase {
 export type TimelineItem =
   | MessageItem
   | ToolItem
-  | InjectedContextItem
+  | DirectiveItem
   | ReasoningItem
   | InternalEventItem;

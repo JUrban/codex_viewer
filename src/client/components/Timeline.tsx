@@ -1,5 +1,5 @@
 import type { TimelineItem } from "../../shared/domain";
-import { InjectedContextItem } from "./InjectedContextItem";
+import { DirectiveItem } from "./DirectiveItem";
 import { InternalEventItem } from "./InternalEventItem";
 import { MessageItem } from "./MessageItem";
 import { ReasoningItem } from "./ReasoningItem";
@@ -72,9 +72,9 @@ function TimelineContent({
           onStale={onStale}
         />
       );
-    case "injected-context":
+    case "directive":
       return (
-        <InjectedContextItem
+        <DirectiveItem
           item={item}
           sessionId={sessionId}
           generation={generation}

@@ -100,7 +100,7 @@ export interface ToolDetailQuery {
   generation: CatalogGeneration;
 }
 
-export interface InjectedContextDetailResponse {
+export interface DirectiveDetailResponse {
   generation: CatalogGeneration;
   sessionId: SessionId;
   itemId: ItemId;
@@ -108,6 +108,6 @@ export interface InjectedContextDetailResponse {
   truncated: boolean;
 }
 
-export interface InjectedContextDetailQuery {
+export interface DirectiveDetailQuery {
   generation: CatalogGeneration;
 }

@@ -183,7 +183,7 @@ function unavailableSession(entry: CatalogEntry): NormalizedSession {
     },
     timeline: [],
     toolDetails: new Map(),
-    injectedContextDetails: new Map(),
+    directiveDetails: new Map(),
   };
 }
 
@@ -230,7 +230,7 @@ function linkRelationships(
     session: { ...linked.session, childIds: [...linked.session.childIds] },
     timeline: linked.normalized.timeline,
     toolDetails: linked.normalized.toolDetails,
-    injectedContextDetails: linked.normalized.injectedContextDetails,
+    directiveDetails: linked.normalized.directiveDetails,
   }]));
 }
 

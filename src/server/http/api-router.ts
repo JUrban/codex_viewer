@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type {
-  InjectedContextDetailQuery,
+  DirectiveDetailQuery,
   ItemPageQuery,
   SessionListQuery,
   ToolDetailQuery,
@@ -68,14 +68,14 @@ export function createApiRouter(repository: SessionRepository): ApiRouter {
         segments.length === 3 &&
         segments[0] === "items" &&
         isItemId(itemId) &&
-        segments[2] === "context"
+        segments[2] === "directive"
       ) {
-        const result = await repository.getInjectedContextDetail(
+        const result = await repository.getDirectiveDetail(
           id,
           itemId,
-          parseInjectedContextQuery(url.searchParams),
+          parseDirectiveQuery(url.searchParams),
         );
-        if (result === null) return notFound(response, headOnly, "context_not_found");
+        if (result === null) return notFound(response, headOnly, "directive_not_found");
         sendJson(response, 200, result, headOnly);
         return true;
       }
@@ -136,8 +136,8 @@ function parseToolQuery(params: URLSearchParams): ToolDetailQuery {
   return { generation: requiredGeneration(params, "tool detail") };
 }
 
-function parseInjectedContextQuery(params: URLSearchParams): InjectedContextDetailQuery {
-  return { generation: requiredGeneration(params, "injected context detail") };
+function parseDirectiveQuery(params: URLSearchParams): DirectiveDetailQuery {
+  return { generation: requiredGeneration(params, "directive detail") };
 }
 
 function requiredGeneration(params: URLSearchParams, resource: string): number {
@@ -168,7 +168,7 @@ function isOpaqueId(value: string): boolean {
 }
 
 function isItemId(value: string): boolean {
-  return /^(?:message|tool|context|reasoning|internal)-\d+$/.test(value);
+  return /^(?:message|tool|directive|reasoning|internal)-\d+$/.test(value);
 }
 
 function notFound(

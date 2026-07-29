@@ -79,7 +79,7 @@ authentication and network access outside the reader.
 
 Search covers session title, project path, canonical assistant messages, and
 user messages corroborated by matching `event_msg.user_message` records. It
-excludes injected context, tools, reasoning, and internal event payloads.
+excludes directives, tools, reasoning, and internal event payloads.
 
 Search work is bounded by elapsed time, scanned bytes, result count, query
 length, and excerpt length. A partial-results notice means a safety budget was
@@ -107,7 +107,7 @@ compatible `state_<number>.sqlite` files read-only, feature-detects the
 corrupt, or from an unknown schema generation.
 
 Individual JSONL lines over 8 MiB are skipped. Normalized message text is capped
-at 1,000,000 characters; injected context detail and tool input/output are
+at 1,000,000 characters; directive detail and tool input/output are
 capped at 256,000 characters each. Session previews, item summaries, tool
 previews, and search excerpts use a shared 240-character limit.
 Timeline pages stop at 512 entries or approximately 4 MiB of serialized item

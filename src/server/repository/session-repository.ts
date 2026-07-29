@@ -1,6 +1,6 @@
 import type {
-  InjectedContextDetailQuery,
-  InjectedContextDetailResponse,
+  DirectiveDetailQuery,
+  DirectiveDetailResponse,
   ItemPageQuery,
   ItemPageResponse,
   SessionDetailResponse,
@@ -46,11 +46,11 @@ export interface SessionRepository {
     itemId: string,
     query: ToolDetailQuery,
   ): Promise<ToolDetailResponse | null>;
-  getInjectedContextDetail(
+  getDirectiveDetail(
     id: SessionId,
     itemId: string,
-    query: InjectedContextDetailQuery,
-  ): Promise<InjectedContextDetailResponse | null>;
+    query: DirectiveDetailQuery,
+  ): Promise<DirectiveDetailResponse | null>;
   refresh(): Promise<CatalogGeneration>;
 }
 
@@ -116,13 +116,13 @@ export class DefaultSessionRepository implements SessionRepository {
       : this.#mapper.toolDetail(snapshot.generation, id, itemId, detail);
   }
 
-  async getInjectedContextDetail(
+  async getDirectiveDetail(
     id: SessionId,
     itemId: string,
-    query: InjectedContextDetailQuery,
-  ): Promise<InjectedContextDetailResponse | null> {
+    query: DirectiveDetailQuery,
+  ): Promise<DirectiveDetailResponse | null> {
     const snapshot = await this.#store.current();
-    const detail = this.#queries.injectedContextDetail(
+    const detail = this.#queries.directiveDetail(
       snapshot,
       id,
       itemId,
@@ -130,6 +130,6 @@ export class DefaultSessionRepository implements SessionRepository {
     );
     return detail === null
       ? null
-      : this.#mapper.injectedContextDetail(snapshot.generation, id, itemId, detail);
+      : this.#mapper.directiveDetail(snapshot.generation, id, itemId, detail);
   }
 }

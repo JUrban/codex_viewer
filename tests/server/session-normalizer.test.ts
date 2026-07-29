@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { IdentityResolver } from "../../src/server/codex/identity-resolver.js";
 import {
-  MAX_INJECTED_CONTEXT_CHARS,
+  MAX_DIRECTIVE_CHARS,
   MAX_PREVIEW_CHARS,
   MAX_SESSION_TITLE_CHARS,
   MAX_TOOL_DETAIL_CHARS,
@@ -23,33 +23,33 @@ async function normalize(fileName: string) {
 }
 
 describe("IdentityResolver and SessionNormalizer", () => {
-  it("uses response messages as canonical and classifies injected user and developer context", async () => {
+  it("uses response messages as canonical and classifies synthetic user and developer messages as directives", async () => {
     const normalized = await normalize("rollout-2026-07-28T10-00-00-basic-session.jsonl");
     const messages = normalized.timeline.filter((item) => item.kind === "message");
     expect(messages).toHaveLength(3);
     expect(messages.filter((item) => item.role === "user")).toHaveLength(1);
     expect(messages.filter((item) => item.role === "assistant")).toHaveLength(2);
     expect(messages.find((item) => item.markdown === "Final synthetic answer.")?.phase).toBe("final");
-    const contexts = normalized.timeline.filter((item) => item.kind === "injected-context");
-    expect(contexts).toHaveLength(2);
-    expect(contexts[0]).toEqual(expect.objectContaining({
-      id: "context-4",
-      summary: "Injected configuration summary",
-      charCount: 61,
+    const directives = normalized.timeline.filter((item) => item.kind === "directive");
+    expect(directives).toHaveLength(2);
+    expect(directives[0]).toEqual(expect.objectContaining({
+      id: "directive-4",
+      summary: "Directive configuration summary",
+      charCount: 55,
       hasDetail: true,
     }));
-    expect(normalized.injectedContextDetails.get("context-4")).toEqual({
-      text: "Injected configuration summary\nINJECTED_CONTEXT_DETAIL_CANARY",
+    expect(normalized.directiveDetails.get("directive-4")).toEqual({
+      text: "Directive configuration summary\nDIRECTIVE_DETAIL_CANARY",
       truncated: false,
     });
-    expect(contexts[1]).toEqual(expect.objectContaining({
-      id: "context-5",
-      summary: "DEVELOPER_CONTEXT_CANARY",
-      charCount: 24,
+    expect(directives[1]).toEqual(expect.objectContaining({
+      id: "directive-5",
+      summary: "DEVELOPER_DIRECTIVE_CANARY",
+      charCount: 26,
       hasDetail: true,
     }));
-    expect(normalized.injectedContextDetails.get("context-5")).toEqual({
-      text: "DEVELOPER_CONTEXT_CANARY",
+    expect(normalized.directiveDetails.get("directive-5")).toEqual({
+      text: "DEVELOPER_DIRECTIVE_CANARY",
       truncated: false,
     });
     expect(normalized.session.messageCount).toBe(3);
@@ -118,7 +118,7 @@ describe("IdentityResolver and SessionNormalizer", () => {
             type: "response_item",
             payload: {
               type: "message", role: "user",
-              content: [{ type: "input_text", text: "Injected summary\nINJECTED_ONLY_SECRET" }],
+              content: [{ type: "input_text", text: "Directive summary\nDIRECTIVE_ONLY_SECRET" }],
             },
           },
         },
@@ -185,7 +185,7 @@ describe("IdentityResolver and SessionNormalizer", () => {
     });
 
     expect(normalized.timeline.map((item) => [item.ordinal, item.kind])).toEqual([
-      [1, "injected-context"],
+      [1, "directive"],
       [2, "message"],
       [4, "message"],
       [6, "internal"],
@@ -201,7 +201,7 @@ describe("IdentityResolver and SessionNormalizer", () => {
     }));
     expect(normalized.timeline.filter((item) => item.kind === "message").map((item) => item.markdown))
       .toEqual(["Actual user\n\ninput", "Canonical\n\nassistant"]);
-    expect(JSON.stringify(normalized.timeline)).not.toContain("INJECTED_ONLY_SECRET");
+    expect(JSON.stringify(normalized.timeline)).not.toContain("DIRECTIVE_ONLY_SECRET");
     expect(JSON.stringify(normalized.timeline)).not.toContain("Propagated parent text");
   });
 
@@ -467,17 +467,17 @@ describe("IdentityResolver and SessionNormalizer", () => {
     });
     const detail = normalized.toolDetails.get("tool-1");
     const tool = normalized.timeline.find((item) => item.id === "tool-1");
-    const contextItem = normalized.timeline.find((item) => item.id === "context-3");
+    const directiveItem = normalized.timeline.find((item) => item.id === "directive-3");
     expect(tool?.kind === "tool" ? tool.preview : null).toHaveLength(MAX_PREVIEW_CHARS);
     expect(detail?.input).toHaveLength(MAX_TOOL_DETAIL_CHARS);
     expect(detail?.output).toHaveLength(MAX_TOOL_DETAIL_CHARS);
     expect(detail?.truncated).toBe(true);
-    const context = normalized.injectedContextDetails.get("context-3");
+    const directive = normalized.directiveDetails.get("directive-3");
     expect(normalized.session.preview).toHaveLength(MAX_PREVIEW_CHARS);
-    expect(contextItem?.kind === "injected-context" ? contextItem.summary : null)
+    expect(directiveItem?.kind === "directive" ? directiveItem.summary : null)
       .toHaveLength(MAX_PREVIEW_CHARS);
-    expect(context?.text).toHaveLength(MAX_INJECTED_CONTEXT_CHARS);
-    expect(context?.truncated).toBe(true);
+    expect(directive?.text).toHaveLength(MAX_DIRECTIVE_CHARS);
+    expect(directive?.truncated).toBe(true);
   });
 
   it("chooses filename-matching metadata when duplicate metadata records exist", async () => {
@@ -494,7 +494,7 @@ describe("IdentityResolver and SessionNormalizer", () => {
   it("keeps valid records after a malformed middle line and marks the source partial", async () => {
     const normalized = await normalize("rollout-2026-07-28T12-00-00-malformed-session.jsonl");
     expect(normalized.timeline.filter((item) => item.kind === "message")).toHaveLength(1);
-    expect(normalized.timeline.filter((item) => item.kind === "injected-context")).toHaveLength(1);
+    expect(normalized.timeline.filter((item) => item.kind === "directive")).toHaveLength(1);
     expect(normalized.session.sourceState).toBe("partial");
     expect(normalized.session.diagnostics).toEqual([
       expect.objectContaining({ code: "malformed_json", ordinal: 3 }),

@@ -5,7 +5,7 @@ import type {
 import type {
   DomainCatalogGeneration,
   DomainDiagnostic,
-  DomainInjectedContextDetail,
+  DomainDirectiveDetail,
   DomainSession,
   DomainSourceState,
   DomainTimelineRecord,
@@ -156,12 +156,12 @@ export class SessionQueryService {
       : itemDetail(normalized, itemId, "tool", normalized.toolDetails);
   }
 
-  injectedContextDetail(
+  directiveDetail(
     snapshot: CatalogSnapshot,
     id: string,
     itemId: string,
     generation: number,
-  ): DomainInjectedContextDetail | null {
+  ): DomainDirectiveDetail | null {
     assertGeneration(snapshot.generation, generation, true);
     const normalized = snapshot.sessions.get(id);
     return normalized === undefined
@@ -169,8 +169,8 @@ export class SessionQueryService {
       : itemDetail(
         normalized,
         itemId,
-        "injected-context",
-        normalized.injectedContextDetails,
+        "directive",
+        normalized.directiveDetails,
       );
   }
 }

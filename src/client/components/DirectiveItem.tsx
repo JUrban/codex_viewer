@@ -1,48 +1,48 @@
 import { useCallback, useState } from "react";
-import type { InjectedContextDetailResponse } from "../../shared/api-contract";
-import type { InjectedContextItem as InjectedContext } from "../../shared/domain";
+import type { DirectiveDetailResponse } from "../../shared/api-contract";
+import type { DirectiveItem as Directive } from "../../shared/domain";
 import { api } from "../api/client";
 import { useLazyDetail } from "../state/use-lazy-detail";
 
-interface InjectedContextItemProps {
-  item: InjectedContext;
+interface DirectiveItemProps {
+  item: Directive;
   sessionId: string;
   generation: number;
   onStale: () => void;
 }
 
-export function InjectedContextItem({
+export function DirectiveItem({
   item,
   sessionId,
   generation,
   onStale,
-}: InjectedContextItemProps) {
+}: DirectiveItemProps) {
   const [open, setOpen] = useState(false);
   const loadDetail = useCallback(
-    (signal: AbortSignal): Promise<InjectedContextDetailResponse> =>
-      api.context(sessionId, item.id, generation, signal),
+    (signal: AbortSignal): Promise<DirectiveDetailResponse> =>
+      api.directive(sessionId, item.id, generation, signal),
     [generation, item.id, sessionId],
   );
   const { detail, error } = useLazyDetail({
     enabled: open,
     generation,
     load: loadDetail,
-    unavailableMessage: "Injected context unavailable",
+    unavailableMessage: "Directive unavailable",
     onStale,
   });
 
   return (
-    <article className="injected-context-body">
-      <p className="event-label">Injected context · {item.ordinal}</p>
+    <article className="directive-body">
+      <p className="event-label">Directive · {item.ordinal}</p>
       <p><strong>{item.summary}</strong> · {item.charCount.toLocaleString()} characters</p>
       <button type="button" aria-expanded={open} onClick={() => setOpen((value) => !value)}>
-        {open ? "Hide injected context" : "Show injected context"}
+        {open ? "Hide directive" : "Show directive"}
       </button>
       {open
         ? (
             <div className="tool-detail">
               {detail === null && error === null
-                ? <p role="status">Loading injected context…</p>
+                ? <p role="status">Loading directive…</p>
                 : null}
               {error ? <p role="alert">{error}</p> : null}
               {detail
@@ -50,7 +50,7 @@ export function InjectedContextItem({
                     <>
                       <pre>{detail.text}</pre>
                       {detail.truncated || item.truncated
-                        ? <p className="truncated">Injected context was truncated for safe display.</p>
+                        ? <p className="truncated">Directive was truncated for safe display.</p>
                         : null}
                     </>
                   )

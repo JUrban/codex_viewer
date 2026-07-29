@@ -83,14 +83,14 @@ describe("DefaultSessionRepository", () => {
     const allItems = await repository.getItems(parent.session.id, {
       limit: 200,
     });
-    const context = allItems!.items.find((item) => item.kind === "injected-context")!;
-    expect(JSON.stringify(allItems)).not.toContain("INJECTED_CONTEXT_DETAIL_CANARY");
-    expect(await repository.getInjectedContextDetail(parent.session.id, context.id, {
+    const directive = allItems!.items.find((item) => item.kind === "directive")!;
+    expect(JSON.stringify(allItems)).not.toContain("DIRECTIVE_DETAIL_CANARY");
+    expect(await repository.getDirectiveDetail(parent.session.id, directive.id, {
       generation: allItems!.generation,
     })).toEqual(expect.objectContaining({
       sessionId: parent.session.id,
-      itemId: context.id,
-      text: expect.stringContaining("INJECTED_CONTEXT_DETAIL_CANARY"),
+      itemId: directive.id,
+      text: expect.stringContaining("DIRECTIVE_DETAIL_CANARY"),
       truncated: false,
     }));
 
@@ -113,7 +113,7 @@ describe("DefaultSessionRepository", () => {
       afterOrdinal: page!.nextAfterOrdinal!,
       generation: first.generation,
     })).rejects.toMatchObject<Partial<RepositoryQueryError>>({ code: "stale_generation" });
-    await expect(repository.getInjectedContextDetail(parent.session.id, context.id, {
+    await expect(repository.getDirectiveDetail(parent.session.id, directive.id, {
       generation: allItems!.generation,
     })).rejects.toMatchObject<Partial<RepositoryQueryError>>({ code: "stale_generation" });
 
@@ -141,7 +141,7 @@ describe("DefaultSessionRepository", () => {
     expect(new Set(page?.items.map((item) => item.kind))).toEqual(new Set([
       "message",
       "tool",
-      "injected-context",
+      "directive",
       "reasoning",
       "internal",
     ]));
@@ -166,11 +166,11 @@ describe("DefaultSessionRepository", () => {
     expect((await repository.list({ q: "/synthetic/project" })).sessions).toHaveLength(1);
     expect((await repository.list({ q: "Final synthetic answer" })).sessions).toHaveLength(1);
     for (const canary of [
-      "DEVELOPER_CONTEXT_CANARY",
+      "DEVELOPER_DIRECTIVE_CANARY",
       "REASONING_CANARY_NEVER_RENDER",
       "REASONING_SUMMARY_CANARY",
       "INTERNAL_PAYLOAD_CANARY",
-      "INJECTED_CONTEXT_DETAIL_CANARY",
+      "DIRECTIVE_DETAIL_CANARY",
       "synthetic result",
       "call-complete",
     ]) {

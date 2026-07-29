@@ -1,5 +1,5 @@
 import type {
-  InjectedContextDetailResponse,
+  DirectiveDetailResponse,
   ItemPageResponse,
   SessionDetailResponse,
   SessionListResponse,
@@ -14,7 +14,7 @@ import type {
 } from "../../shared/domain.js";
 import type {
   DomainDiagnostic,
-  DomainInjectedContextDetail,
+  DomainDirectiveDetail,
   DomainSession,
   DomainTimelineRecord,
   DomainToolDetail,
@@ -83,12 +83,12 @@ export class SessionApiMapper {
     };
   }
 
-  injectedContextDetail(
+  directiveDetail(
     generation: number,
     sessionId: string,
     itemId: string,
-    detail: DomainInjectedContextDetail,
-  ): InjectedContextDetailResponse {
+    detail: DomainDirectiveDetail,
+  ): DirectiveDetailResponse {
     return {
       generation,
       sessionId,

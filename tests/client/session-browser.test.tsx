@@ -4,14 +4,14 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "../../src/client/App";
-import { InjectedContextItem } from "../../src/client/components/InjectedContextItem";
+import { DirectiveItem } from "../../src/client/components/DirectiveItem";
 import { MessageItem, safeUrlTransform } from "../../src/client/components/MessageItem";
 import { groupSessions, SessionTree } from "../../src/client/components/SessionTree";
 import { Timeline } from "../../src/client/components/Timeline";
 import { ToolItem } from "../../src/client/components/ToolItem";
 import type { ItemPageResponse, SessionListEntry } from "../../src/shared/api-contract";
 import type {
-  InjectedContextItem as InjectedContext,
+  DirectiveItem as Directive,
   SessionSummary,
   ToolItem as Tool,
 } from "../../src/shared/domain";
@@ -41,9 +41,9 @@ const toolItem: Tool = {
   kind: "tool", id: "tool-2", ordinal: 2, timestamp: null, toolName: "exec",
   status: "completed", preview: "inspect", truncated: false, hasDetail: true,
 };
-const injectedContextItem: InjectedContext = {
-  kind: "injected-context",
-  id: "context-4",
+const directiveItem: Directive = {
+  kind: "directive",
+  id: "directive-4",
   ordinal: 4,
   timestamp: null,
   summary: "AGENTS.md instructions",
@@ -281,7 +281,7 @@ describe("session browser", () => {
     await user.click(await screen.findByRole("button", { name: /Reader work/ }));
     expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/tool-2/tool"))).toBe(false);
     expect(screen.queryByText(/exec/)).toBeNull();
-    await user.click(screen.getByRole("checkbox", { name: "Show tool events" }));
+    await user.click(screen.getByRole("checkbox", { name: "tool" }));
     expect(await screen.findByText(/exec/)).toBeInTheDocument();
     await user.click(await screen.findByRole("button", { name: "Load more events" }));
     expect(await screen.findByText("Finished")).toBeInTheDocument();
@@ -431,20 +431,20 @@ describe("session browser", () => {
     expect(await screen.findByText("Fresh tool detail")).toBeInTheDocument();
   });
 
-  it("loads injected context lazily and isolates it by session", async () => {
+  it("loads directive lazily and isolates it by session", async () => {
     const fetchMock = vi.fn((input: RequestInfo | URL) => {
       const url = String(input);
       return Promise.resolve(json({
         generation: 1,
         sessionId: url.includes(OTHER_ID) ? OTHER_ID : SESSION_ID,
-        itemId: "context-4",
-        text: url.includes(OTHER_ID) ? "Other injected context" : "Reader injected context",
+        itemId: "directive-4",
+        text: url.includes(OTHER_ID) ? "Other directive" : "Reader directive",
         truncated: false,
       }));
     });
     vi.stubGlobal("fetch", fetchMock);
     const props = {
-      items: [injectedContextItem],
+      items: [directiveItem],
       generation: 1,
       hasMore: false,
       loading: false,
@@ -454,15 +454,15 @@ describe("session browser", () => {
     const { rerender } = render(<Timeline {...props} sessionId={SESSION_ID} />);
     expect(fetchMock).not.toHaveBeenCalled();
     expect(screen.getByText(/AGENTS.md instructions/)).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Show injected context" }));
-    expect(await screen.findByText("Reader injected context")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Show directive" }));
+    expect(await screen.findByText("Reader directive")).toBeInTheDocument();
     rerender(<Timeline {...props} sessionId={OTHER_ID} />);
-    expect(screen.queryByText("Reader injected context")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Show injected context" }));
-    expect(await screen.findByText("Other injected context")).toBeInTheDocument();
+    expect(screen.queryByText("Reader directive")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Show directive" }));
+    expect(await screen.findByText("Other directive")).toBeInTheDocument();
   });
 
-  it("waits for a new generation before retrying stale injected context", async () => {
+  it("waits for a new generation before retrying stale directive", async () => {
     const onStale = vi.fn();
     const fetchMock = vi.fn((input: RequestInfo | URL) => {
       const url = String(input);
@@ -472,38 +472,38 @@ describe("session browser", () => {
       return Promise.resolve(json({
         generation: 2,
         sessionId: SESSION_ID,
-        itemId: "context-4",
-        text: "Fresh injected context",
+        itemId: "directive-4",
+        text: "Fresh directive",
         truncated: true,
       }));
     });
     vi.stubGlobal("fetch", fetchMock);
     const { rerender } = render(
-      <InjectedContextItem
-        item={injectedContextItem}
+      <DirectiveItem
+        item={directiveItem}
         sessionId={SESSION_ID}
         generation={1}
         onStale={onStale}
       />,
     );
-    fireEvent.click(screen.getByRole("button", { name: "Show injected context" }));
+    fireEvent.click(screen.getByRole("button", { name: "Show directive" }));
     await waitFor(() => expect(onStale).toHaveBeenCalledTimes(1));
-    rerender(<InjectedContextItem
-      item={injectedContextItem}
+    rerender(<DirectiveItem
+      item={directiveItem}
       sessionId={SESSION_ID}
       generation={1}
       onStale={onStale}
     />);
     await act(async () => Promise.resolve());
     expect(fetchMock.mock.calls.filter(([url]) => String(url).includes("generation=1"))).toHaveLength(1);
-    rerender(<InjectedContextItem
-      item={injectedContextItem}
+    rerender(<DirectiveItem
+      item={directiveItem}
       sessionId={SESSION_ID}
       generation={2}
       onStale={onStale}
     />);
-    expect(await screen.findByText("Fresh injected context")).toBeInTheDocument();
-    expect(screen.getByText("Injected context was truncated for safe display.")).toBeInTheDocument();
+    expect(await screen.findByText("Fresh directive")).toBeInTheDocument();
+    expect(screen.getByText("Directive was truncated for safe display.")).toBeInTheDocument();
   });
 
   it("loads catalog pages beyond the first 200 summaries", async () => {
@@ -609,7 +609,7 @@ describe("session browser", () => {
     expect(await screen.findByText("Conversation view")).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Refresh sessions" }));
-    const toggle = screen.getByRole("checkbox", { name: "Show internal events" });
+    const toggle = screen.getByRole("checkbox", { name: "internal" });
     await user.click(toggle);
     expect(await screen.findByText(/Internal view/)).toBeInTheDocument();
 
@@ -782,7 +782,7 @@ describe("session browser", () => {
       items: [
         firstPage.items[0],
         toolItem,
-        injectedContextItem,
+        directiveItem,
         {
           kind: "reasoning",
           id: "reasoning-5",
@@ -814,12 +814,15 @@ describe("session browser", () => {
     fireEvent.click(await screen.findByRole("button", { name: /Reader work/ }));
     expect(await screen.findByText("Hello")).toBeInTheDocument();
 
-    const toolToggle = await screen.findByRole("checkbox", { name: "Show tool events" });
-    const contextToggle = screen.getByRole("checkbox", { name: "Show injected context" });
-    const reasoningToggle = screen.getByRole("checkbox", { name: "Show reasoning summaries" });
-    const internalToggle = screen.getByRole("checkbox", { name: "Show internal events" });
+    const toolToggle = await screen.findByRole("checkbox", { name: "tool" });
+    const directiveToggle = screen.getByRole("checkbox", { name: "directive" });
+    const reasoningToggle = screen.getByRole("checkbox", { name: "reasoning" });
+    const internalToggle = screen.getByRole("checkbox", { name: "internal" });
+    expect(
+      screen.getByRole("group", { name: "Timeline event visibility" }),
+    ).toContainElement(toolToggle);
     expect(toolToggle).not.toBeChecked();
-    expect(contextToggle).not.toBeChecked();
+    expect(directiveToggle).not.toBeChecked();
     expect(reasoningToggle).not.toBeChecked();
     expect(internalToggle).not.toBeChecked();
     expect(screen.queryByText(/exec/)).toBeNull();
@@ -836,7 +839,7 @@ describe("session browser", () => {
     expect(String(itemCalls()[0]![0])).not.toContain("includeTools=");
 
     fireEvent.click(toolToggle);
-    fireEvent.click(contextToggle);
+    fireEvent.click(directiveToggle);
     fireEvent.click(reasoningToggle);
     fireEvent.click(internalToggle);
     expect(screen.getByText(/exec/)).toBeInTheDocument();
@@ -844,20 +847,20 @@ describe("session browser", () => {
     expect(screen.getByText("Local reasoning summary")).toBeInTheDocument();
     expect(screen.getByText(/Local internal event/)).toBeInTheDocument();
     expect(window.location.search).toContain("tools=true");
-    expect(window.location.search).toContain("context=true");
+    expect(window.location.search).toContain("directive=true");
     expect(window.location.search).toContain("reasoning=true");
     expect(window.location.search).toContain("internal=true");
     expect(toolToggle).toBeChecked();
-    expect(contextToggle).toBeChecked();
+    expect(directiveToggle).toBeChecked();
     expect(reasoningToggle).toBeChecked();
     expect(internalToggle).toBeChecked();
     expect(itemCalls()).toHaveLength(1);
 
-    window.history.pushState(null, "", `/?session=${SESSION_ID}&context=true`);
+    window.history.pushState(null, "", `/?session=${SESSION_ID}&directive=true`);
     window.dispatchEvent(new PopStateEvent("popstate"));
     await waitFor(() => expect(toolToggle).not.toBeChecked());
     expect(window.location.search).not.toContain("tools=true");
-    expect(contextToggle).toBeChecked();
+    expect(directiveToggle).toBeChecked();
     expect(reasoningToggle).not.toBeChecked();
     expect(internalToggle).not.toBeChecked();
     expect(screen.queryByText(/exec/)).toBeNull();
