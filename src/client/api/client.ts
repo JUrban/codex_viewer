@@ -74,7 +74,6 @@ export const api = {
       `/api/v1/sessions/${encodeURIComponent(id)}/items${queryString({
         afterOrdinal: query.afterOrdinal,
         limit: query.limit,
-        view: query.view,
         generation: query.generation,
       })}`,
       signal,

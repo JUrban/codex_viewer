@@ -25,7 +25,7 @@ import type { CatalogSnapshot } from "./catalog-snapshot-store.js";
 const DEFAULT_LIST_LIMIT = 50;
 const MAX_LIST_LIMIT = 200;
 const DEFAULT_ITEM_LIMIT = 50;
-const MAX_ITEM_LIMIT = 200;
+const MAX_ITEM_LIMIT = 512;
 export const MAX_ITEM_PAGE_BYTES = 4 * 1024 * 1024;
 
 export class RepositoryQueryError extends Error {
@@ -121,9 +121,7 @@ export class SessionQueryService {
     const normalized = snapshot.sessions.get(id);
     if (normalized === undefined) return null;
     const after = query.afterOrdinal ?? 0;
-    const visible = normalized.timeline.filter((item) =>
-      item.ordinal > after &&
-      (query.view === "internal" || (item.kind !== "internal" && item.kind !== "reasoning")));
+    const visible = normalized.timeline.filter((item) => item.ordinal > after);
     const limit = query.limit ?? DEFAULT_ITEM_LIMIT;
     const items: DomainTimelineRecord[] = [];
     let itemBytes = 0;

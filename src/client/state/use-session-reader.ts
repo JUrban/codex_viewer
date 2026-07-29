@@ -7,7 +7,7 @@ import type { TimelineItem } from "../../shared/domain";
 import { api, ApiClientError } from "../api/client";
 import { useSessionPolling } from "./use-session-polling";
 
-const TIMELINE_PAGE_SIZE = 50;
+const TIMELINE_PAGE_SIZE = 512;
 const POLL_INTERVAL_MS = 8_000;
 
 type ReaderMode = "idle" | "opening" | "ready" | "paging" | "refreshing";
@@ -48,7 +48,6 @@ type SessionLoadResult = "loaded" | "missing" | "failed";
 
 export function useSessionReader(
   selectedId: string | null,
-  internal: boolean,
   clearMissingSession: () => void,
 ) {
   const [state, dispatch] = useReducer(reducer, initialState);
@@ -57,10 +56,8 @@ export function useSessionReader(
   const pageAbort = useRef<AbortController | null>(null);
   const sequence = useRef(0);
   const selectedIdRef = useRef(selectedId);
-  const internalRef = useRef(internal);
   const stateRef = useRef(state);
   selectedIdRef.current = selectedId;
-  internalRef.current = internal;
   stateRef.current = state;
 
   const abortAll = useCallback(() => {
@@ -97,7 +94,6 @@ export function useSessionReader(
         page = await api.items(id, {
           generation: detail.generation,
           limit: TIMELINE_PAGE_SIZE,
-          view: timelineView(internalRef.current),
         }, timelineController.signal);
       } catch (reason) {
         if (!isStaleGeneration(reason)) throw reason;
@@ -107,7 +103,6 @@ export function useSessionReader(
         page = await api.items(id, {
           generation: detail.generation,
           limit: TIMELINE_PAGE_SIZE,
-          view: timelineView(internalRef.current),
         }, timelineController.signal);
       }
       if (request !== sequence.current) return "failed";
@@ -153,7 +148,7 @@ export function useSessionReader(
     else dispatch({ type: "reset-timeline" });
     void loadSession(selectedId);
     return abortAll;
-  }, [abortAll, internal, loadSession, selectedId]);
+  }, [abortAll, loadSession, selectedId]);
 
   const loadMore = useCallback(async () => {
     const id = selectedIdRef.current;
@@ -169,7 +164,6 @@ export function useSessionReader(
         afterOrdinal: current.nextAfterOrdinal,
         generation: current.generation,
         limit: TIMELINE_PAGE_SIZE,
-        view: timelineView(internalRef.current),
       }, controller.signal);
       if (request === sequence.current) dispatch({ type: "page-success", page: next });
     } catch (reason) {
@@ -265,10 +259,6 @@ function reducer(state: ReaderState, action: ReaderAction): ReaderState {
     case "clear-error":
       return { ...state, error: null };
   }
-}
-
-function timelineView(internal: boolean): "internal" | "conversation" {
-  return internal ? "internal" : "conversation";
 }
 
 function messageFor(reason: unknown): string {

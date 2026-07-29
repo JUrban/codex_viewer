@@ -15,7 +15,6 @@ export function useSessionBrowser() {
   const list = useSessionList(location.filters);
   const reader = useSessionReader(
     location.selectedId,
-    location.internal,
     location.clearMissingSession,
   );
 
@@ -39,8 +38,8 @@ export function useSessionBrowser() {
     setFilters: location.setFilters,
     selectedId: location.selectedId,
     selectSession: location.selectSession,
-    internal: location.internal,
-    setInternal: location.setInternal,
+    visibility: location.visibility,
+    setVisibility: location.setVisibility,
     list: list.list,
     detail: reader.detail,
     page: reader.page,

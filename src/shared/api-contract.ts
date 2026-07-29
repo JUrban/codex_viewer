@@ -75,7 +75,6 @@ export interface SessionDetailResponse {
 export interface ItemPageQuery {
   afterOrdinal?: number;
   limit?: number;
-  view?: "conversation" | "internal";
   generation?: CatalogGeneration;
 }
 

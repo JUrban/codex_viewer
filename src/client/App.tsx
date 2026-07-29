@@ -127,8 +127,8 @@ function Reader({ browser }: { browser: SessionBrowser }) {
         detail={browser.detail}
         page={browser.page}
         items={browser.items}
-        internal={browser.internal}
-        onInternalChange={browser.setInternal}
+        visibility={browser.visibility}
+        onVisibilityChange={browser.setVisibility}
         loading={browser.readerLoading}
         onLoadMore={browser.loadMore}
         onStale={browser.restartSession}

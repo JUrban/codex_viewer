@@ -1,9 +1,13 @@
 import type { SessionDetail } from "../../shared/domain";
+import type {
+  TimelineVisibility,
+  TimelineVisibilityKey,
+} from "../state/timeline-visibility";
 
 interface SessionHeaderProps {
   session: SessionDetail;
-  internal: boolean;
-  onInternalChange: (value: boolean) => void;
+  visibility: TimelineVisibility;
+  onVisibilityChange: (key: TimelineVisibilityKey, visible: boolean) => void;
 }
 
 const DATE_FORMAT = new Intl.DateTimeFormat(undefined, {
@@ -11,7 +15,11 @@ const DATE_FORMAT = new Intl.DateTimeFormat(undefined, {
   timeStyle: "short",
 });
 
-export function SessionHeader({ session, internal, onInternalChange }: SessionHeaderProps) {
+export function SessionHeader({
+  session,
+  visibility,
+  onVisibilityChange,
+}: SessionHeaderProps) {
   const updatedAt = session.updatedAt
     ? DATE_FORMAT.format(new Date(session.updatedAt))
     : "Time unavailable";
@@ -27,14 +35,16 @@ export function SessionHeader({ session, internal, onInternalChange }: SessionHe
         <p className="session-source-id">
           Original session ID · <code>{session.sourceId ?? "Unavailable"}</code>
         </p>
-        <label className="check-row internal-toggle">
-          <input
-            type="checkbox"
-            checked={internal}
-            onChange={(event) => onInternalChange(event.target.checked)}
-          />
-          Show internal events
-        </label>
+        {VISIBILITY_TOGGLES.map(({ key, label }) => (
+          <label className="check-row event-toggle" key={key}>
+            <input
+              type="checkbox"
+              checked={visibility[key]}
+              onChange={(event) => onVisibilityChange(key, event.target.checked)}
+            />
+            {label}
+          </label>
+        ))}
       </div>
       <span className={`state state-${session.sourceState}`}>
         <span aria-hidden="true">●</span> {session.sourceState}
@@ -42,3 +52,13 @@ export function SessionHeader({ session, internal, onInternalChange }: SessionHe
     </header>
   );
 }
+
+const VISIBILITY_TOGGLES: Array<{
+  key: TimelineVisibilityKey;
+  label: string;
+}> = [
+  { key: "tools", label: "Show tool events" },
+  { key: "context", label: "Show injected context" },
+  { key: "reasoning", label: "Show reasoning summaries" },
+  { key: "internal", label: "Show internal events" },
+];

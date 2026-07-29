@@ -45,11 +45,13 @@ timeline items. Keep it synchronized with `rollout-decoder.ts`,
 - Other typed records become safe `internal` summaries. A record without a
   usable type becomes a diagnostic.
 
-## Conversation view
+## Client visibility
 
-The default conversation view excludes `internal` and `reasoning` items.
-The internal view includes all normalized item kinds, including those two.
-Injected context and tool items remain visible in the default view.
+Timeline pages include every normalized item kind. The client always displays
+user and assistant messages, then independently filters `tool`,
+`injected-context`, `reasoning`, and `internal` items. Those four technical
+event kinds are hidden by default and can be enabled without reloading the
+timeline.
 
 ## Truncation and paging
 
@@ -57,5 +59,5 @@ Truncation preserves an item but shortens its text; it is not filtering.
 Message text is capped at 1,000,000 characters. Injected-context detail and
 tool input/output are capped at 256,000 characters. Session previews, item
 summaries, tool previews, and search excerpts share a 240-character limit.
-Timeline paging may defer otherwise visible items to a later page because of
-the item-count and response size limits.
+Timeline paging may defer items to a later page because of the 512-item and
+4 MiB response size limits. Client-side filtering never changes page cursors.

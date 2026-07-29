@@ -125,14 +125,9 @@ function parseItemQuery(params: URLSearchParams): ItemPageQuery {
   const query: ItemPageQuery = {};
   const afterOrdinal = optional(params, "afterOrdinal");
   const limit = optional(params, "limit");
-  const view = optional(params, "view");
   const generation = optional(params, "generation");
   if (afterOrdinal !== undefined) query.afterOrdinal = integer(afterOrdinal, "afterOrdinal");
   if (limit !== undefined) query.limit = integer(limit, "limit");
-  if (view !== undefined) {
-    if (view !== "conversation" && view !== "internal") invalid("view must be conversation or internal");
-    query.view = view;
-  }
   if (generation !== undefined) query.generation = integer(generation, "generation");
   return query;
 }

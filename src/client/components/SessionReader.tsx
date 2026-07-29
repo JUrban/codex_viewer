@@ -1,5 +1,11 @@
+import { useMemo } from "react";
 import type { ItemPageResponse, SessionDetailResponse } from "../../shared/api-contract";
 import type { TimelineItem } from "../../shared/domain";
+import {
+  isTimelineItemVisible,
+  type TimelineVisibility,
+  type TimelineVisibilityKey,
+} from "../state/timeline-visibility";
 import { DiagnosticNotice } from "./DiagnosticNotice";
 import { EmptyState } from "./EmptyState";
 import { ErrorState } from "./ErrorState";
@@ -10,8 +16,8 @@ interface SessionReaderProps {
   detail: SessionDetailResponse;
   page: ItemPageResponse | null;
   items: TimelineItem[];
-  internal: boolean;
-  onInternalChange: (value: boolean) => void;
+  visibility: TimelineVisibility;
+  onVisibilityChange: (key: TimelineVisibilityKey, visible: boolean) => void;
   loading: boolean;
   onLoadMore: () => void;
   onStale: () => void;
@@ -23,14 +29,20 @@ export function SessionReader({
   detail,
   page,
   items,
-  internal,
-  onInternalChange,
+  visibility,
+  onVisibilityChange,
   loading,
   onLoadMore,
   onStale,
   error,
   onDismissError,
 }: SessionReaderProps) {
+  const visibleItems = useMemo(
+    () => items.filter((item) => isTimelineItemVisible(item, visibility)),
+    [items, visibility],
+  );
+  const hasMore = page?.hasMore ?? false;
+
   return (
     <section className="reader" aria-labelledby="session-title">
       {error && onDismissError
@@ -38,27 +50,40 @@ export function SessionReader({
         : null}
       <SessionHeader
         session={detail.session}
-        internal={internal}
-        onInternalChange={onInternalChange}
+        visibility={visibility}
+        onVisibilityChange={onVisibilityChange}
       />
       <DiagnosticNotice diagnostics={page?.diagnostics ?? detail.session.diagnostics} />
-      {items.length === 0 && !loading
+      {visibleItems.length === 0 && !loading
         ? (
             <EmptyState title="This session has no visible events">
-              Try showing internal events, or wait for the session to update.
+              {emptyStateMessage(visibility, hasMore)}
             </EmptyState>
           )
-        : (
+        : null}
+      {visibleItems.length > 0 || hasMore
+        ? (
             <Timeline
-              items={items}
+              items={visibleItems}
               sessionId={detail.session.id}
               generation={page?.generation ?? detail.generation}
-              hasMore={page?.hasMore ?? false}
+              hasMore={hasMore}
               loading={loading}
               onLoadMore={onLoadMore}
               onStale={onStale}
             />
-          )}
+          )
+        : null}
     </section>
   );
+}
+
+function emptyStateMessage(visibility: TimelineVisibility, hasMore: boolean): string {
+  if (hasMore) {
+    return "No visible events in the loaded range. Load more events or change a visibility filter.";
+  }
+  if (Object.values(visibility).some((visible) => !visible)) {
+    return "Try showing more event types, or wait for the session to update.";
+  }
+  return "Wait for the session to update.";
 }

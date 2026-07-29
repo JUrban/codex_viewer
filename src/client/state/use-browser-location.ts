@@ -1,4 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  DEFAULT_TIMELINE_VISIBILITY,
+  type TimelineVisibility,
+  type TimelineVisibilityKey,
+} from "./timeline-visibility";
 
 export interface BrowserFilters {
   q: string;
@@ -11,7 +16,7 @@ export interface BrowserFilters {
 export interface BrowserLocation {
   filters: BrowserFilters;
   selectedId: string | null;
-  internal: boolean;
+  visibility: TimelineVisibility;
 }
 
 export const EMPTY_FILTERS: BrowserFilters = {
@@ -41,9 +46,12 @@ export function useBrowserLocation() {
     commit({ ...locationRef.current, selectedId });
   }, [commit]);
 
-  const setInternal = useCallback((internal: boolean) => {
-    if (internal === locationRef.current.internal) return;
-    commit({ ...locationRef.current, internal });
+  const setVisibility = useCallback((key: TimelineVisibilityKey, visible: boolean) => {
+    if (visible === locationRef.current.visibility[key]) return;
+    commit({
+      ...locationRef.current,
+      visibility: { ...locationRef.current.visibility, [key]: visible },
+    });
   }, [commit]);
 
   const clearMissingSession = useCallback(() => {
@@ -60,7 +68,7 @@ export function useBrowserLocation() {
     ...location,
     setFilters,
     selectSession,
-    setInternal,
+    setVisibility,
     clearMissingSession,
   };
 }
@@ -76,12 +84,18 @@ function readUrl(): BrowserLocation {
       archived: params.get("archived") === "true",
     },
     selectedId: params.get("session"),
-    internal: params.get("internal") === "true",
+    visibility: {
+      ...DEFAULT_TIMELINE_VISIBILITY,
+      tools: params.get("tools") === "true",
+      context: params.get("context") === "true",
+      reasoning: params.get("reasoning") === "true",
+      internal: params.get("internal") === "true",
+    },
   };
 }
 
 function writeUrl(location: BrowserLocation, replace: boolean): void {
-  const { filters, selectedId, internal } = location;
+  const { filters, selectedId, visibility } = location;
   const params = new URLSearchParams();
   if (filters.q) params.set("q", filters.q);
   if (filters.project) params.set("project", filters.project);
@@ -89,7 +103,9 @@ function writeUrl(location: BrowserLocation, replace: boolean): void {
   if (filters.to) params.set("to", filters.to);
   if (filters.archived) params.set("archived", "true");
   if (selectedId) params.set("session", selectedId);
-  if (internal) params.set("internal", "true");
+  for (const key of Object.keys(DEFAULT_TIMELINE_VISIBILITY) as TimelineVisibilityKey[]) {
+    if (visibility[key]) params.set(key, "true");
+  }
   const next = `${window.location.pathname}${params.size ? `?${params}` : ""}`;
   if (replace) window.history.replaceState(null, "", next);
   else window.history.pushState(null, "", next);

@@ -82,7 +82,6 @@ describe("DefaultSessionRepository", () => {
     })).rejects.toMatchObject<Partial<RepositoryQueryError>>({ code: "invalid_query" });
     const allItems = await repository.getItems(parent.session.id, {
       limit: 200,
-      view: "internal",
     });
     const context = allItems!.items.find((item) => item.kind === "injected-context")!;
     expect(JSON.stringify(allItems)).not.toContain("INJECTED_CONTEXT_DETAIL_CANARY");
@@ -132,22 +131,33 @@ describe("DefaultSessionRepository", () => {
     expect(third!.session.messageCount).toBe(0);
   });
 
-  it("hides summarized reasoning from conversation view but keeps it in internal view", async () => {
+  it("returns every timeline event type in one unfiltered view", async () => {
     const { repository } = await fixtureRepository();
     const list = await repository.list({});
     const session = list.sessions.find((entry) => entry.session.title === "Synthetic trace")!;
-    const conversation = await repository.getItems(session.session.id, {
+    const page = await repository.getItems(session.session.id, {
       limit: 200,
-      view: "conversation",
     });
-    const internal = await repository.getItems(session.session.id, {
-      limit: 200,
-      view: "internal",
-    });
-    expect(conversation?.items.some((item) => item.kind === "reasoning")).toBe(false);
-    expect(internal?.items.find((item) => item.kind === "reasoning")).toEqual(
+    expect(new Set(page?.items.map((item) => item.kind))).toEqual(new Set([
+      "message",
+      "tool",
+      "injected-context",
+      "reasoning",
+      "internal",
+    ]));
+    expect(page?.items.find((item) => item.kind === "reasoning")).toEqual(
       expect.objectContaining({ summary: "REASONING_SUMMARY_CANARY" }),
     );
+  });
+
+  it("accepts item pages up to 512 entries", async () => {
+    const { repository } = await fixtureRepository();
+    const list = await repository.list({});
+    const session = list.sessions.find((entry) => entry.session.title === "Synthetic trace")!;
+    await expect(repository.getItems(session.session.id, { limit: 512 }))
+      .resolves.not.toBeNull();
+    await expect(repository.getItems(session.session.id, { limit: 513 }))
+      .rejects.toMatchObject<Partial<RepositoryQueryError>>({ code: "invalid_query" });
   });
 
   it("searches only permitted fields and reports bounded partial results", async () => {

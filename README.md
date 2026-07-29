@@ -110,7 +110,7 @@ Individual JSONL lines over 8 MiB are skipped. Normalized message text is capped
 at 1,000,000 characters; injected context detail and tool input/output are
 capped at 256,000 characters each. Session previews, item summaries, tool
 previews, and search excerpts use a shared 240-character limit.
-Timeline pages stop at 200 entries or approximately 4 MiB of serialized item
+Timeline pages stop at 512 entries or approximately 4 MiB of serialized item
 content, whichever comes first; a single valid item is always returned so its
 cursor can advance. The first release uses whole-file rereads after a fingerprint
 change; it has no watcher, incremental tail state, or persistent full-text index.

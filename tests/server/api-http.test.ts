@@ -107,19 +107,19 @@ describe("versioned session API", () => {
     expect(detail.session.itemCount).toBeGreaterThan(5);
 
     const firstPageResponse = await fetch(
-      `${base}/api/v1/sessions/${basic.session.id}/items?limit=3&view=internal`,
+      `${base}/api/v1/sessions/${basic.session.id}/items?limit=3`,
     );
     const firstPage = await firstPageResponse.json();
     expect(firstPage.items).toHaveLength(3);
     expect(firstPage.hasMore).toBe(true);
     const secondPage = await fetch(
-      `${base}/api/v1/sessions/${basic.session.id}/items?limit=3&view=internal` +
+      `${base}/api/v1/sessions/${basic.session.id}/items?limit=3` +
       `&afterOrdinal=${firstPage.nextAfterOrdinal}&generation=${firstPage.generation}`,
     );
     expect(secondPage.status).toBe(200);
 
     const allItems = await fetch(
-      `${base}/api/v1/sessions/${basic.session.id}/items?limit=200&view=internal`,
+      `${base}/api/v1/sessions/${basic.session.id}/items?limit=512`,
     ).then((response) => response.json());
     expect(JSON.stringify(allItems)).not.toContain("INJECTED_CONTEXT_DETAIL_CANARY");
     expect(JSON.stringify(allItems)).not.toContain("REASONING_CANARY_NEVER_RENDER");
@@ -210,6 +210,9 @@ describe("versioned session API", () => {
     expect(JSON.parse(body).error.code).toBe("invalid_query");
     expect((await fetch(`${base}/api/v1/sessions?archived=maybe`)).status).toBe(400);
     expect((await fetch(`${base}/api/v1/sessions?offset=1`)).status).toBe(400);
+    expect((await fetch(
+      `${base}/api/v1/sessions/${basic.session.id}/items?limit=513`,
+    )).status).toBe(400);
     expect((await fetch(`${base}/api/v1/sessions/not-valid`)).status).toBe(404);
   });
 

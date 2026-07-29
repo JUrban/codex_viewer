@@ -131,12 +131,7 @@ describe("server architecture boundaries", () => {
       hasMore: false,
       projects: [{ project: "/project", count: 1 }],
     });
-    expect(queries.items(snapshot, "session-one", {
-      view: "conversation",
-    })?.items).toEqual([]);
-    expect(queries.items(snapshot, "session-one", {
-      view: "internal",
-    })?.items).toEqual(timeline);
+    expect(queries.items(snapshot, "session-one", {})?.items).toEqual(timeline);
     expect(() => queries.list(snapshot, { offset: 1 })).toThrowError(
       expect.objectContaining<Partial<RepositoryQueryError>>({ code: "invalid_query" }),
     );

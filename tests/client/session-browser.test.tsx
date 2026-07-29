@@ -280,12 +280,50 @@ describe("session browser", () => {
     render(<App />);
     await user.click(await screen.findByRole("button", { name: /Reader work/ }));
     expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/tool-2/tool"))).toBe(false);
+    expect(screen.queryByText(/exec/)).toBeNull();
+    await user.click(screen.getByRole("checkbox", { name: "Show tool events" }));
+    expect(await screen.findByText(/exec/)).toBeInTheDocument();
     await user.click(await screen.findByRole("button", { name: "Load more events" }));
     expect(await screen.findByText("Finished")).toBeInTheDocument();
     expect(screen.getAllByText(/exec/)).toHaveLength(1);
     await user.click(screen.getByRole("button", { name: "Show tool detail" }));
     expect(await screen.findByText("<unsafe stays text>")).toBeInTheDocument();
     expect(screen.queryByText("unsafe stays text", { selector: "em" })).not.toBeInTheDocument();
+  });
+
+  it("keeps load more available when the loaded range is fully filtered", async () => {
+    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("afterOrdinal=2")) return Promise.resolve(json({
+        ...firstPage,
+        items: [{
+          kind: "message",
+          id: "message-3",
+          ordinal: 3,
+          timestamp: null,
+          role: "assistant",
+          phase: "final",
+          markdown: "Visible on the next page",
+        }],
+        nextAfterOrdinal: null,
+        hasMore: false,
+      }));
+      if (url.includes("/items")) return Promise.resolve(json({
+        ...firstPage,
+        items: [toolItem],
+        nextAfterOrdinal: 2,
+        hasMore: true,
+      }));
+      if (url.endsWith(SESSION_ID)) return Promise.resolve(json(detailBody));
+      return Promise.resolve(json(listBody));
+    }));
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: /Reader work/ }));
+    expect(await screen.findByText(
+      "No visible events in the loaded range. Load more events or change a visibility filter.",
+    )).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Load more events" }));
+    expect(await screen.findByText("Visible on the next page")).toBeInTheDocument();
   });
 
   it("ignores an obsolete timeline page after switching sessions", async () => {
@@ -527,7 +565,7 @@ describe("session browser", () => {
     expect(window.location.search).toContain(`session=${SESSION_ID}`);
   });
 
-  it("uses the current internal view when a refresh finishes after the view changes", async () => {
+  it("keeps client visibility when a refresh finishes after a filter change", async () => {
     let resolveRefresh!: (response: Response) => void;
     const pendingRefresh = new Promise<Response>((resolve) => {
       resolveRefresh = resolve;
@@ -536,18 +574,27 @@ describe("session browser", () => {
     vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => {
       const url = String(input);
       if (url.includes("/items")) {
-        const internalView = url.includes("view=internal");
         return Promise.resolve(json({
           ...firstPage,
-          items: [{
-            kind: "message",
-            id: internalView ? "internal-view" : "conversation-view",
-            ordinal: 1,
-            timestamp: null,
-            role: "assistant",
-            phase: "final",
-            markdown: internalView ? "Internal view" : "Conversation view",
-          }],
+          items: [
+            {
+              kind: "message",
+              id: "conversation-view",
+              ordinal: 1,
+              timestamp: null,
+              role: "assistant",
+              phase: "final",
+              markdown: "Conversation view",
+            },
+            {
+              kind: "internal",
+              id: "internal-view",
+              ordinal: 2,
+              timestamp: null,
+              eventType: "client_filter",
+              summary: "Internal view",
+            },
+          ],
           nextAfterOrdinal: null,
           hasMore: false,
         }));
@@ -564,13 +611,13 @@ describe("session browser", () => {
     await user.click(screen.getByRole("button", { name: "Refresh sessions" }));
     const toggle = screen.getByRole("checkbox", { name: "Show internal events" });
     await user.click(toggle);
-    expect(await screen.findByText("Internal view")).toBeInTheDocument();
+    expect(await screen.findByText(/Internal view/)).toBeInTheDocument();
 
     resolveRefresh(json({ ...listBody, generation: 2 }));
     expect(await screen.findByText("Sessions refreshed · 1 available")).toBeInTheDocument();
     expect(toggle).toBeChecked();
-    expect(screen.getByText("Internal view")).toBeInTheDocument();
-    expect(screen.queryByText("Conversation view")).toBeNull();
+    expect(screen.getByText(/Internal view/)).toBeInTheDocument();
+    expect(screen.getByText("Conversation view")).toBeInTheDocument();
   });
 
   it("clears an initial catalog error after a successful manual refresh", async () => {
@@ -729,22 +776,95 @@ describe("session browser", () => {
     expect(itemCalls).toBe(2);
   });
 
-  it("reloads every time the internal view toggle changes", async () => {
-    const fetchMock = standardFetch();
+  it("filters four technical event types locally and persists them in the URL", async () => {
+    const allKindsPage: ItemPageResponse = {
+      ...firstPage,
+      items: [
+        firstPage.items[0],
+        toolItem,
+        injectedContextItem,
+        {
+          kind: "reasoning",
+          id: "reasoning-5",
+          ordinal: 5,
+          timestamp: null,
+          summary: "Local reasoning summary",
+          truncated: false,
+        },
+        {
+          kind: "internal",
+          id: "internal-6",
+          ordinal: 6,
+          timestamp: null,
+          eventType: "local_filter",
+          summary: "Local internal event",
+        },
+      ],
+      nextAfterOrdinal: null,
+      hasMore: false,
+    };
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/items")) return Promise.resolve(json(allKindsPage));
+      if (url.endsWith(SESSION_ID)) return Promise.resolve(json(detailBody));
+      return Promise.resolve(json(listBody));
+    });
     vi.stubGlobal("fetch", fetchMock);
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: /Reader work/ }));
-    const toggle = await screen.findByRole("checkbox", { name: "Show internal events" });
-    fireEvent.click(toggle);
-    await waitFor(() => expect(fetchMock.mock.calls.some(([url]) => String(url).includes("view=internal"))).toBe(true));
+    expect(await screen.findByText("Hello")).toBeInTheDocument();
+
+    const toolToggle = await screen.findByRole("checkbox", { name: "Show tool events" });
+    const contextToggle = screen.getByRole("checkbox", { name: "Show injected context" });
+    const reasoningToggle = screen.getByRole("checkbox", { name: "Show reasoning summaries" });
+    const internalToggle = screen.getByRole("checkbox", { name: "Show internal events" });
+    expect(toolToggle).not.toBeChecked();
+    expect(contextToggle).not.toBeChecked();
+    expect(reasoningToggle).not.toBeChecked();
+    expect(internalToggle).not.toBeChecked();
+    expect(screen.queryByText(/exec/)).toBeNull();
+    expect(screen.queryByText("AGENTS.md instructions")).toBeNull();
+    expect(screen.queryByText("Local reasoning summary")).toBeNull();
+    expect(screen.queryByText(/Local internal event/)).toBeNull();
+
+    const itemCalls = () => fetchMock.mock.calls.filter(
+      ([url]) => String(url).includes(`/${SESSION_ID}/items`),
+    );
+    expect(itemCalls()).toHaveLength(1);
+    expect(String(itemCalls()[0]![0])).toContain("limit=512");
+    expect(String(itemCalls()[0]![0])).not.toContain("view=");
+    expect(String(itemCalls()[0]![0])).not.toContain("includeTools=");
+
+    fireEvent.click(toolToggle);
+    fireEvent.click(contextToggle);
+    fireEvent.click(reasoningToggle);
+    fireEvent.click(internalToggle);
+    expect(screen.getByText(/exec/)).toBeInTheDocument();
+    expect(screen.getByText("AGENTS.md instructions")).toBeInTheDocument();
+    expect(screen.getByText("Local reasoning summary")).toBeInTheDocument();
+    expect(screen.getByText(/Local internal event/)).toBeInTheDocument();
+    expect(window.location.search).toContain("tools=true");
+    expect(window.location.search).toContain("context=true");
+    expect(window.location.search).toContain("reasoning=true");
     expect(window.location.search).toContain("internal=true");
-    expect(toggle).toBeChecked();
-    fireEvent.click(toggle);
-    await waitFor(() => expect(window.location.search).not.toContain("internal=true"));
-    expect(toggle).not.toBeChecked();
-    fireEvent.click(toggle);
-    await waitFor(() => expect(window.location.search).toContain("internal=true"));
-    expect(toggle).toBeChecked();
+    expect(toolToggle).toBeChecked();
+    expect(contextToggle).toBeChecked();
+    expect(reasoningToggle).toBeChecked();
+    expect(internalToggle).toBeChecked();
+    expect(itemCalls()).toHaveLength(1);
+
+    window.history.pushState(null, "", `/?session=${SESSION_ID}&context=true`);
+    window.dispatchEvent(new PopStateEvent("popstate"));
+    await waitFor(() => expect(toolToggle).not.toBeChecked());
+    expect(window.location.search).not.toContain("tools=true");
+    expect(contextToggle).toBeChecked();
+    expect(reasoningToggle).not.toBeChecked();
+    expect(internalToggle).not.toBeChecked();
+    expect(screen.queryByText(/exec/)).toBeNull();
+    expect(screen.getByText("AGENTS.md instructions")).toBeInTheDocument();
+    expect(screen.queryByText("Local reasoning summary")).toBeNull();
+    expect(screen.queryByText(/Local internal event/)).toBeNull();
+    expect(itemCalls()).toHaveLength(1);
   });
 
   it("renders Markdown without raw HTML, external images, or dangerous links", () => {
