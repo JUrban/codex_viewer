@@ -1,13 +1,13 @@
-import { mkdtemp, mkdir, realpath, symlink, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, realpath, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { opaqueIdForPath, OpaqueIdRegistry } from "../../src/server/security/opaque-id.js";
 import { PathPolicy } from "../../src/server/security/path-policy.js";
+import { createTempDirectory } from "../helpers/temp-directories.js";
 
 describe("PathPolicy", () => {
   it("registers only canonical regular rollouts inside explicit roots", async () => {
-    const home = await mkdtemp(join(tmpdir(), "codex-policy-"));
+    const home = await createTempDirectory("codex-policy-");
     const sessions = join(home, "sessions", "2026", "07", "28");
     await mkdir(sessions, { recursive: true });
     const valid = join(sessions, "rollout-safe.jsonl");

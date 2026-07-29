@@ -1,5 +1,4 @@
-import { cp, mkdtemp, readFile, rename, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { cp, readFile, rename, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { CodexCatalogSource } from "../../src/server/codex/catalog-source.js";
@@ -14,9 +13,10 @@ import {
   RepositoryQueryError,
 } from "../../src/server/repository/session-repository.js";
 import { searchDocuments } from "../../src/server/search/search-document.js";
+import { createTempDirectory } from "../helpers/temp-directories.js";
 
 async function fixtureRepository() {
-  const home = await mkdtemp(join(tmpdir(), "codex-repository-"));
+  const home = await createTempDirectory("codex-repository-");
   await cp(resolve("tests/fixtures/codex-home"), home, { recursive: true });
   return { home, repository: await createSessionRepository(home, true) };
 }

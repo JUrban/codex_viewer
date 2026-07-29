@@ -1,11 +1,11 @@
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { writeFile } from "node:fs/promises";
 import { request } from "node:http";
 import type { AddressInfo } from "node:net";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { loadConfig, LOOPBACK_HOST, type ServerConfig } from "../../src/server/config.js";
 import { createServer } from "../../src/server/http/create-server.js";
+import { createTempDirectory } from "../helpers/temp-directories.js";
 
 const servers: ReturnType<typeof createServer>[] = [];
 
@@ -14,7 +14,7 @@ afterEach(async () => {
 });
 
 async function start() {
-  const clientDirectory = await mkdtemp(join(tmpdir(), "codex-reader-client-"));
+  const clientDirectory = await createTempDirectory("codex-reader-client-");
   await writeFile(join(clientDirectory, "index.html"), "<h1>trace notebook</h1>");
   const config: ServerConfig = {
     host: LOOPBACK_HOST,

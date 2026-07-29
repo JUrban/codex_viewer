@@ -1,13 +1,13 @@
-import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { WholeFileRolloutDecoder } from "../../src/server/codex/rollout-decoder.js";
 import { PathPolicy } from "../../src/server/security/path-policy.js";
+import { createTempDirectory } from "../helpers/temp-directories.js";
 
 describe("WholeFileRolloutDecoder", () => {
   it("keeps physical ordinals, continues after malformed records, and ignores a partial tail", async () => {
-    const home = await mkdtemp(join(tmpdir(), "codex-decode-"));
+    const home = await createTempDirectory("codex-decode-");
     const directory = join(home, "sessions", "2026", "07", "28");
     await mkdir(directory, { recursive: true });
     const path = join(directory, "rollout-decoder.jsonl");

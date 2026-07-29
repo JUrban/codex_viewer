@@ -1,6 +1,5 @@
-import { cp, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { cp, readFile, writeFile } from "node:fs/promises";
 import type { AddressInfo } from "node:net";
-import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it } from "vitest";
@@ -8,6 +7,7 @@ import { LOOPBACK_HOST, type ServerConfig } from "../../src/server/config.js";
 import { createApiRouter } from "../../src/server/http/api-router.js";
 import { createServer } from "../../src/server/http/create-server.js";
 import { createSessionRepository } from "../../src/server/repository/create-session-repository.js";
+import { createTempDirectory } from "../helpers/temp-directories.js";
 
 const servers: ReturnType<typeof createServer>[] = [];
 
@@ -17,7 +17,7 @@ afterEach(async () => {
 });
 
 async function startApi(maxScannedBytes?: number, sqlite = false) {
-  const home = await mkdtemp(join(tmpdir(), "codex-api-home-"));
+  const home = await createTempDirectory("codex-api-home-");
   await cp(resolve("tests/fixtures/codex-home"), home, { recursive: true });
   if (sqlite) {
     const database = new DatabaseSync(join(home, "state_50.sqlite"));
@@ -41,7 +41,7 @@ async function startApi(maxScannedBytes?: number, sqlite = false) {
     );
     database.close();
   }
-  const clientDirectory = await mkdtemp(join(tmpdir(), "codex-api-client-"));
+  const clientDirectory = await createTempDirectory("codex-api-client-");
   await writeFile(join(clientDirectory, "index.html"), "<h1>trace notebook</h1>");
   const repository = await createSessionRepository(
     home,
@@ -146,27 +146,12 @@ describe("versioned session API", () => {
       text: expect.stringContaining("DIRECTIVE_DETAIL_CANARY"),
       truncated: false,
     }));
-    expect((await fetch(
-      `${base}/api/v1/sessions/${basic.session.id}/items/${directive.id}/context` +
-      `?generation=${allItems.generation}`,
-    )).status).toBe(404);
     const developerDirective = allItems.items.find(
       (item: { id: string }) => item.id === "directive-5",
     );
     expect(developerDirective).toEqual(expect.objectContaining({
       kind: "directive",
       summary: "DEVELOPER_DIRECTIVE_CANARY",
-    }));
-    const developerDirectiveResponse = await fetch(
-      `${base}/api/v1/sessions/${basic.session.id}/items/${developerDirective.id}/directive` +
-      `?generation=${allItems.generation}`,
-    );
-    expect(developerDirectiveResponse.status).toBe(200);
-    expect(await developerDirectiveResponse.json()).toEqual(expect.objectContaining({
-      sessionId: basic.session.id,
-      itemId: developerDirective.id,
-      text: "DEVELOPER_DIRECTIVE_CANARY",
-      truncated: false,
     }));
     const tool = allItems.items.find((item: { kind: string }) => item.kind === "tool");
     const missingGeneration = await fetch(

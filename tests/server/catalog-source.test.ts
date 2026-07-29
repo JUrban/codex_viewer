@@ -1,5 +1,4 @@
-import { cp, mkdtemp } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { cp } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { describe, expect, it } from "vitest";
@@ -7,10 +6,11 @@ import { CompositeCatalogSource } from "../../src/server/codex/catalog-source.js
 import { JsonlCatalogSource } from "../../src/server/codex/jsonl-catalog-source.js";
 import { SqliteCatalogSource } from "../../src/server/codex/sqlite-catalog-source.js";
 import { PathPolicy } from "../../src/server/security/path-policy.js";
+import { createTempDirectory } from "../helpers/temp-directories.js";
 
 describe("catalog discovery", () => {
   it("falls back from incompatible SQLite and scans only allowlisted JSONL roots", async () => {
-    const home = await mkdtemp(join(tmpdir(), "codex-catalog-"));
+    const home = await createTempDirectory("codex-catalog-");
     await cp(resolve("tests/fixtures/codex-home"), home, { recursive: true });
     const policy = await PathPolicy.create(home);
     const source = new CompositeCatalogSource(
@@ -29,7 +29,7 @@ describe("catalog discovery", () => {
   });
 
   it("feature-detects a lower compatible database when a newer state file is corrupt", async () => {
-    const home = await mkdtemp(join(tmpdir(), "codex-catalog-sqlite-"));
+    const home = await createTempDirectory("codex-catalog-sqlite-");
     await cp(resolve("tests/fixtures/codex-home"), home, { recursive: true });
     const database = new DatabaseSync(join(home, "state_50.sqlite"));
     database.exec(`
@@ -85,7 +85,7 @@ describe("catalog discovery", () => {
   });
 
   it("does not treat the user thread source as an agent role", async () => {
-    const home = await mkdtemp(join(tmpdir(), "codex-catalog-user-source-"));
+    const home = await createTempDirectory("codex-catalog-user-source-");
     await cp(resolve("tests/fixtures/codex-home"), home, { recursive: true });
     const database = new DatabaseSync(join(home, "state_50.sqlite"));
     database.exec(`

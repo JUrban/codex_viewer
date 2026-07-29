@@ -1,0 +1,77 @@
+import { vi } from "vitest";
+import type { ItemPageResponse, SessionListEntry } from "../../src/shared/api-contract";
+import type {
+  DirectiveItem as Directive,
+  SessionSummary,
+  ToolItem as Tool,
+} from "../../src/shared/domain";
+
+export const SESSION_ID = "abcdefghijklmnopqrstuvwx";
+export const CHILD_ID = "zyxwvutsrqponmlkjihgfedc";
+export const OTHER_ID = "otherabcdefghijklmnopqrs";
+
+export const baseSession: SessionSummary = {
+  id: SESSION_ID, title: "Reader work", preview: "preview", cwd: "/project/reader",
+  createdAt: "2026-07-28T10:00:00Z", updatedAt: "2026-07-28T11:00:00Z",
+  archived: false, parentId: null, childIds: [], sourceState: "complete" as const,
+  agent: null,
+  messageCount: 2, toolCount: 1, warningCount: 0,
+};
+
+export const listBody = {
+  generation: 1,
+  sessions: [{ session: baseSession, matches: [] }],
+  projects: [{ project: "/project/reader", count: 1 }],
+  total: 1, nextOffset: null, hasMore: false,
+  partial: false, warnings: [],
+};
+
+export const detailBody = {
+  generation: 1,
+  session: { ...baseSession, sourceId: "original-session-id", diagnostics: [], itemCount: 3 },
+};
+
+export const toolItem: Tool = {
+  kind: "tool", id: "tool-2", ordinal: 2, timestamp: null, toolName: "exec",
+  status: "completed", preview: "inspect", truncated: false, hasDetail: true,
+};
+
+export const directiveItem: Directive = {
+  kind: "directive",
+  id: "directive-4",
+  ordinal: 4,
+  timestamp: null,
+  summary: "AGENTS.md instructions",
+  charCount: 1_892,
+  truncated: false,
+  hasDetail: true,
+};
+
+export const firstPage: ItemPageResponse = {
+  generation: 1, sourceState: "complete", diagnostics: [],
+  items: [
+    { kind: "message", id: "message-1", ordinal: 1, timestamp: null, role: "user", phase: null, markdown: "Hello" },
+    toolItem,
+  ],
+  nextAfterOrdinal: 2, hasMore: true,
+};
+
+export function standardFetch(detail: unknown = detailBody) {
+  return vi.fn((input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.includes("/items")) return Promise.resolve(json({ ...firstPage, hasMore: false }));
+    if (url.endsWith(SESSION_ID)) return Promise.resolve(json(detail));
+    return Promise.resolve(json(listBody));
+  });
+}
+
+export function entry(session: SessionSummary): SessionListEntry {
+  return { session, matches: [] };
+}
+
+export function json(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "content-type": "application/json" },
+  });
+}
