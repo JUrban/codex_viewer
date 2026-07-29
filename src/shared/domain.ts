@@ -29,6 +29,7 @@ export interface SessionSummary {
 }
 
 export interface SessionDetail extends SessionSummary {
+  sourceId: string | null;
   diagnostics: Diagnostic[];
   itemCount: number;
 }

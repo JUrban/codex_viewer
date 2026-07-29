@@ -11,6 +11,9 @@ export function SessionHeader({ session, internal, onInternalChange }: {
       <p className="eyebrow">Session trace</p>
       <h2 id="session-title">{session.title}</h2>
       <p className="session-meta">{session.cwd ?? "Project unavailable"} · {date} · {session.itemCount} events</p>
+      <p className="session-source-id">
+        Original session ID · <code>{session.sourceId ?? "Unavailable"}</code>
+      </p>
       <label className="check-row internal-toggle"><input type="checkbox" checked={internal}
         onChange={(event) => onInternalChange(event.target.checked)} />Show internal events</label>
     </div>

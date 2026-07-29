@@ -42,6 +42,7 @@ const DEFAULT_LIST_LIMIT = 50;
 const MAX_LIST_LIMIT = 200;
 const DEFAULT_ITEM_LIMIT = 50;
 const MAX_ITEM_LIMIT = 200;
+export const DEFAULT_CATALOG_FRESHNESS_MS = 3_000;
 export const MAX_ITEM_PAGE_BYTES = 4 * 1024 * 1024;
 
 export class RepositoryQueryError extends Error {
@@ -85,6 +86,7 @@ interface RepositorySnapshot {
 export class DefaultSessionRepository implements SessionRepository {
   readonly #coordinator = new RefreshCoordinator<RepositorySnapshot>();
   #snapshot: RepositorySnapshot | null = null;
+  #lastDiscoveryAt = Number.NEGATIVE_INFINITY;
 
   constructor(
     private readonly source: CodexCatalogSource,
@@ -92,10 +94,12 @@ export class DefaultSessionRepository implements SessionRepository {
     private readonly identity: IdentityResolver,
     private readonly normalizer: SessionNormalizer,
     private readonly searchBudget: SearchBudget = DEFAULT_SEARCH_BUDGET,
+    private readonly freshnessMs = DEFAULT_CATALOG_FRESHNESS_MS,
+    private readonly now: () => number = performance.now.bind(performance),
   ) {}
 
   async refresh(): Promise<CatalogGeneration> {
-    return (await this.#coordinator.run(() => this.#rebuild())).generation;
+    return (await this.#coordinator.run(() => this.#discover())).generation;
   }
 
   async getStatus(): Promise<StatusResponse> {
@@ -242,7 +246,17 @@ export class DefaultSessionRepository implements SessionRepository {
   }
 
   async #current(): Promise<RepositorySnapshot> {
-    return this.#coordinator.run(() => this.#rebuild());
+    const snapshot = this.#snapshot;
+    if (snapshot !== null && this.now() - this.#lastDiscoveryAt < this.freshnessMs) {
+      return snapshot;
+    }
+    return this.#coordinator.run(() => this.#discover());
+  }
+
+  async #discover(): Promise<RepositorySnapshot> {
+    const snapshot = await this.#rebuild();
+    this.#lastDiscoveryAt = this.now();
+    return snapshot;
   }
 
   async #rebuild(): Promise<RepositorySnapshot> {
@@ -308,6 +322,7 @@ export class DefaultSessionRepository implements SessionRepository {
     } catch {
       const detail: SessionDetail = {
         id: entry.descriptor.id,
+        sourceId: entry.metadata?.threadId ?? null,
         title: entry.metadata?.title ?? "Unavailable session",
         preview: null,
         cwd: entry.metadata?.cwd ?? null,
@@ -453,7 +468,12 @@ function isIsoTimestamp(value: string): boolean {
 }
 
 function summaryOf(detail: SessionDetail): SessionSummary {
-  const { diagnostics: _diagnostics, itemCount: _itemCount, ...summary } = detail;
+  const {
+    sourceId: _sourceId,
+    diagnostics: _diagnostics,
+    itemCount: _itemCount,
+    ...summary
+  } = detail;
   return { ...summary, childIds: [...summary.childIds] };
 }
 

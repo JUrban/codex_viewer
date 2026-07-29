@@ -8,6 +8,7 @@ import { WholeFileRolloutDecoder } from "../../src/server/codex/rollout-decoder.
 import { DefaultSessionNormalizer } from "../../src/server/codex/session-normalizer.js";
 import { createSessionRepository } from "../../src/server/repository/create-session-repository.js";
 import {
+  DEFAULT_CATALOG_FRESHNESS_MS,
   DefaultSessionRepository,
   MAX_ITEM_PAGE_BYTES,
   RepositoryQueryError,
@@ -21,8 +22,9 @@ async function fixtureRepository() {
 }
 
 describe("DefaultSessionRepository", () => {
-  it("coalesces concurrent refreshes and retains a generation when sources are unchanged", async () => {
+  it("coalesces concurrent refreshes, reuses a fresh snapshot, and permits a forced refresh", async () => {
     let discoveries = 0;
+    let now = 0;
     let release!: () => void;
     const gate = new Promise<void>((resolveGate) => {
       release = resolveGate;
@@ -39,6 +41,9 @@ describe("DefaultSessionRepository", () => {
       new WholeFileRolloutDecoder(),
       new IdentityResolver(),
       new DefaultSessionNormalizer(),
+      undefined,
+      DEFAULT_CATALOG_FRESHNESS_MS,
+      () => now,
     );
 
     const status = repository.getStatus();
@@ -48,7 +53,15 @@ describe("DefaultSessionRepository", () => {
     expect((await list).generation).toBe(1);
     expect(discoveries).toBe(1);
     expect((await repository.getStatus()).generation).toBe(1);
+    expect(discoveries).toBe(1);
+    now = DEFAULT_CATALOG_FRESHNESS_MS - 1;
+    expect((await repository.getStatus()).generation).toBe(1);
+    expect(discoveries).toBe(1);
+    now = DEFAULT_CATALOG_FRESHNESS_MS;
+    expect((await repository.getStatus()).generation).toBe(1);
     expect(discoveries).toBe(2);
+    expect(await repository.refresh()).toBe(1);
+    expect(discoveries).toBe(3);
   });
 
   it("publishes linked summaries, pages one immutable generation, and replaces it after append", async () => {
@@ -91,6 +104,7 @@ describe("DefaultSessionRepository", () => {
       rollout,
       `${previous}{"timestamp":"2026-07-28T10:00:10.000Z","type":"response_item","payload":{"type":"message","role":"assistant","phase":"final","content":[{"type":"output_text","text":"Appended generation"}]}}\n`,
     );
+    await repository.refresh();
     const second = await repository.getSession(parent.session.id);
     expect(second!.generation).toBeGreaterThan(first.generation);
     expect(second!.session.messageCount).toBe(parent.session.messageCount + 1);
@@ -111,6 +125,7 @@ describe("DefaultSessionRepository", () => {
       '{"timestamp":"2026-07-28T13:00:01.000Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"replacement"}]}}\n',
     );
     await rename(replacement, rollout);
+    await repository.refresh();
     const third = await repository.getSession(parent.session.id);
     expect(third!.generation).toBeGreaterThan(second!.generation);
     expect(third!.session.title).toBe("Replacement trace");

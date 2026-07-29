@@ -60,15 +60,16 @@ try {
   const specialPath = paths[0]!;
   const beforeMutation = firstList.generation;
   await writeFile(specialPath, `${await rollout(0, "truncate-replacement", 128)}\n`);
-  const afterTruncate = (await repository.list({ limit: 1 })).generation;
+  const afterTruncate = await repository.refresh();
   const replacement = `${specialPath}.replacement`;
   await writeFile(replacement, `${await rollout(0, "atomic-replacement", 256)}\n`);
   await rename(replacement, specialPath);
-  const afterReplace = (await repository.list({ limit: 1 })).generation;
+  const afterReplace = await repository.refresh();
 
   let permissionProbe: "unavailable" | "portable-skip" = "portable-skip";
   try {
     await chmod(specialPath, 0);
+    await repository.refresh();
     const unavailable = await repository.getSession(selected.session.id);
     if (unavailable?.session.sourceState === "unavailable") permissionProbe = "unavailable";
   } finally {

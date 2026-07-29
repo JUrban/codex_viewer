@@ -81,6 +81,7 @@ export class DefaultSessionNormalizer implements SessionNormalizer {
     const fallbackTitle = metadata.title ?? firstUserTitle(items) ?? "Untitled session";
     const detail: SessionDetail = {
       id: decoded.descriptor.id,
+      sourceId: metadata.threadId,
       title: fallbackTitle,
       preview: firstMessage === undefined ? null : truncateText(firstMessage.markdown, 180).text,
       cwd: metadata.cwd,
@@ -329,7 +330,7 @@ function contentText(value: unknown): string | null {
     .filter((part) => ["input_text", "output_text", "text"].includes(string(part.type) ?? ""))
     .map((part) => string(part.text))
     .filter((part): part is string => part !== null)
-    .join("");
+    .join("\n\n");
   return text.length === 0 ? null : text;
 }
 

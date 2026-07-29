@@ -40,6 +40,7 @@ describe("IdentityResolver and SessionNormalizer", () => {
       truncated: false,
     });
     expect(normalized.detail.messageCount).toBe(3);
+    expect(normalized.detail.sourceId).toBe("basic-session");
     expect(normalized.items.filter((item) => item.kind === "reasoning-unavailable")).toHaveLength(1);
     expect(JSON.stringify(normalized)).not.toContain("REASONING_CANARY_NEVER_RENDER");
     expect(JSON.stringify(normalized)).not.toContain("DEVELOPER_CANARY_NEVER_RENDER");
@@ -78,13 +79,19 @@ describe("IdentityResolver and SessionNormalizer", () => {
             type: "response_item",
             payload: {
               type: "message", role: "user",
-              content: [{ type: "input_text", text: "Actual user input" }],
+              content: [
+                { type: "input_text", text: "Actual user" },
+                { type: "input_text", text: "input" },
+              ],
             },
           },
         },
         {
           ordinal: 3,
-          value: { type: "event_msg", payload: { type: "user_message", message: "Actual user input" } },
+          value: {
+            type: "event_msg",
+            payload: { type: "user_message", message: "Actual user\n\ninput" },
+          },
         },
         {
           ordinal: 4,
@@ -92,7 +99,10 @@ describe("IdentityResolver and SessionNormalizer", () => {
             type: "response_item",
             payload: {
               type: "message", role: "assistant", phase: "commentary",
-              content: [{ type: "output_text", text: "Canonical assistant" }],
+              content: [
+                { type: "output_text", text: "Canonical" },
+                { type: "text", text: "assistant" },
+              ],
             },
           },
         },
@@ -100,7 +110,11 @@ describe("IdentityResolver and SessionNormalizer", () => {
           ordinal: 5,
           value: {
             type: "event_msg",
-            payload: { type: "agent_message", phase: "commentary", message: "Canonical assistant" },
+            payload: {
+              type: "agent_message",
+              phase: "commentary",
+              message: "Canonical\n\nassistant",
+            },
           },
         },
         {
@@ -132,10 +146,12 @@ describe("IdentityResolver and SessionNormalizer", () => {
       summary: "Internal event: propagated_agent_message",
     }));
     expect(normalized.detail).toEqual(expect.objectContaining({
-      title: "Actual user input",
-      preview: "Actual user input",
+      title: "Actual user",
+      preview: "Actual user\n\ninput",
       messageCount: 2,
     }));
+    expect(normalized.items.filter((item) => item.kind === "message").map((item) => item.markdown))
+      .toEqual(["Actual user\n\ninput", "Canonical\n\nassistant"]);
     expect(JSON.stringify(normalized.items)).not.toContain("INJECTED_ONLY_SECRET");
     expect(JSON.stringify(normalized.items)).not.toContain("Propagated parent text");
   });

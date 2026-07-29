@@ -34,7 +34,7 @@ const listBody = {
 };
 const detailBody = {
   generation: 1,
-  session: { ...baseSession, diagnostics: [], itemCount: 3 },
+  session: { ...baseSession, sourceId: "original-session-id", diagnostics: [], itemCount: 3 },
 };
 const toolItem: Tool = {
   kind: "tool", id: "tool-2", ordinal: 2, timestamp: null, toolName: "exec",
@@ -103,6 +103,7 @@ describe("session browser", () => {
     expect(signals.some((signal) => signal.aborted)).toBe(true);
     await user.click(await screen.findByRole("button", { name: /Reader work/ }));
     expect(window.location.search).toContain(`session=${SESSION_ID}`);
+    expect(await screen.findByText("original-session-id")).toBeInTheDocument();
     expect(await screen.findByRole("list", { name: "Session timeline" })).toBeInTheDocument();
   });
 

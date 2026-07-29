@@ -113,6 +113,8 @@ Timeline pages stop at 200 entries or approximately 4 MiB of serialized item
 content, whichever comes first; a single valid item is always returned so its
 cursor can advance. The first release uses whole-file rereads after a fingerprint
 change; it has no watcher, incremental tail state, or persistent full-text index.
+Successful catalog discovery is reused for three seconds so a detail request and its
+immediately following item or lazy-detail request do not rescan the same catalog.
 
 ## Verification
 

@@ -60,7 +60,7 @@ async function startApi(maxScannedBytes?: number, sqlite = false) {
   servers.push(server);
   await new Promise<void>((resolveListen) => server.listen(0, LOOPBACK_HOST, resolveListen));
   const { port } = server.address() as AddressInfo;
-  return { base: `http://${LOOPBACK_HOST}:${port}`, home };
+  return { base: `http://${LOOPBACK_HOST}:${port}`, home, repository };
 }
 
 describe("versioned session API", () => {
@@ -87,11 +87,13 @@ describe("versioned session API", () => {
       (entry: { session: { title: string } }) => entry.session.title === "Synthetic trace",
     );
     expect(basic.session.id).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(basic.session.sourceId).toBeUndefined();
     expect(JSON.stringify(list)).not.toContain("DEVELOPER_CANARY_NEVER_RENDER");
 
     const detailResponse = await fetch(`${base}/api/v1/sessions/${basic.session.id}`);
     const detail = await detailResponse.json();
     expect(detail.session.title).toBe("Synthetic trace");
+    expect(detail.session.sourceId).toBe("basic-session");
     expect(detail.session.itemCount).toBeGreaterThan(5);
 
     const firstPageResponse = await fetch(
@@ -143,7 +145,7 @@ describe("versioned session API", () => {
   });
 
   it("rejects invalid queries safely and reports a stale snapshot cursor after file change", async () => {
-    const { base, home } = await startApi();
+    const { base, home, repository } = await startApi();
     const list = await fetch(`${base}/api/v1/sessions`).then((response) => response.json());
     const basic = list.sessions.find(
       (entry: { session: { title: string } }) => entry.session.title === "Synthetic trace",
@@ -161,6 +163,7 @@ describe("versioned session API", () => {
       rollout,
       `${previous}{"timestamp":"2026-07-28T10:00:10.000Z","type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"new"}]}}\n`,
     );
+    await repository.refresh();
     const stale = await fetch(
       `${base}/api/v1/sessions/${basic.session.id}/items?afterOrdinal=${page.nextAfterOrdinal}` +
       `&generation=${page.generation}`,
