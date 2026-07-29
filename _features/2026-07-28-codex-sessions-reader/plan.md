@@ -24,10 +24,10 @@ The first release deliberately does not edit, delete, resume, export, synchroniz
 - [x] (2026-07-28 13:22Z) Milestone 1: established the npm/TypeScript project, browser-safe shared contracts, trace-notebook fixture shell, and secure loopback production server; typecheck, 4 tests, build, HTTP smoke, socket inspection, and desktop/mobile browser inspection passed.
 - [x] (2026-07-28 13:40Z) Milestone 2: implemented allowlisted path registration and opaque IDs, feature-detected SQLite metadata with JSONL fallback, tolerant whole-file rollout decoding, identity resolution, bounded tool pairing, safe normalization, and synthetic fixture coverage; typecheck, 14 tests, build, and diff-check passed.
 - [x] (2026-07-28 13:58Z) Milestone 3: implemented single-flight generation-consistent repository snapshots, whole-file fingerprint caching, bounded allowlisted search, and the versioned read-only HTTP API; typecheck, 22 tests, build, production API smoke, and diff-check passed.
-- [x] (2026-07-28 14:11Z) Milestone 4: replaced the fixture shell with the responsive real-data session browser, generation-safe paging and lazy tools, safe Markdown, URL-backed filters, hidden-aware live polling, and verified desktop/mobile browser behavior; typecheck, 30 tests, build, diff-check, and Playwright inspection passed.
+- [x] (2026-07-28 14:11Z) Milestone 4: replaced the fixture shell with the responsive real-data session browser, generation-safe paging and lazy tools, safe Markdown, URL-backed filters, hidden-aware polling, and verified desktop/mobile browser behavior; typecheck, 30 tests, build, diff-check, and Playwright inspection passed.
 - [x] (2026-07-28 14:31Z) Milestone 5 implementation and integration: added generation-scoped catalog pagination, bounded item-page bytes, disposable 100 MB+ scale validation, complete operator/security documentation, real local read-only/browser smoke coverage, and sequence-isolated catalog paging across filter changes; typecheck, all 34 tests, build, benchmark, and diff-check passed.
 - [x] (2026-07-28 14:36Z) Phase 7 simplifier: removed redundant repository lookups and impossible branches, named message/tool status decisions, and made same-generation page merging explicit without changing behavior; typecheck, all 34 tests, build, and diff-check passed.
-- [ ] Milestone 5 quality review: run three focused reviewers, present findings to the user, and record their disposition.
+- [x] (2026-07-29 00:35Z) Milestone 5 quality review: the simplifier and three focused reviewers completed; the user approved all five consolidated Important findings. Targeted re-review then exposed and closed four second-order request-lifecycle races. Timeline request isolation, session/generation-scoped tool state, bounded stale retry, reachable visible-only polling, neutral unknown-phase labeling, and nine regressions are complete; typecheck, all 43 tests, production build, and diff-check pass.
 
 ## Review Scope
 
@@ -41,13 +41,15 @@ Review must cover all code and documentation introduced for the reader, includin
 - `109ad1b` — Milestone 3 generation-consistent repository, bounded search, versioned read APIs, and integration tests.
 - `0b5e80a` — Milestone 4 responsive browser, URL state, generation-safe paging, safe Markdown, lazy tools, and client tests.
 - `f43412a` — Milestone 5 generation-scoped catalog pagination, bounded item pages, concurrency hardening, scale benchmark, complete operating documentation, and regressions.
+- `5a889cb` — Phase 7 behavior-preserving simplification of repository paging, normalization/status branches, message labeling, and client page merging.
 
 ### Uncommitted changes to review
 
-- `_features/2026-07-28-codex-sessions-reader/plan.md` — review-scope bookkeeping and the Phase 7 simplifier decision.
-- `src/server/repository/session-repository.ts` — simplified catalog-page construction and tool-detail guards without changing generation or response semantics.
-- `src/server/codex/session-normalizer.ts`, `src/server/codex/tool-accumulator.ts` — named message and tool-status branches in place of nested conditional expressions.
-- `src/client/components/MessageItem.tsx`, `src/client/state/use-session-browser.ts` — named message labeling and explicit same-generation list-page merging.
+- `_features/2026-07-28-codex-sessions-reader/plan.md` — Phase 7 findings, user disposition, implementation decisions, and validation.
+- `src/client/state/use-session-browser.ts` — shared cancellation/sequence isolation for navigation, polling, and timeline pagination; stable stale restart callback; reachable selected-session polling.
+- `src/client/components/Timeline.tsx`, `src/client/components/ToolItem.tsx` — session-scoped tool component identity and generation-scoped detail/stale state.
+- `src/client/components/MessageItem.tsx`, `src/client/components/SessionReader.tsx`, `src/client/styles/app.css`, `src/shared/domain.ts` — neutral unknown-phase labels and removal of the unreachable `live` state.
+- `tests/client/session-browser.test.tsx` — nine Phase 7 regressions covering timeline races, tool identity/retry, unknown phases, polling lifecycle/page retention, loading settlement, and idempotent reselection.
 
 ## Surprises & Discoveries
 
@@ -122,6 +124,24 @@ Review must cover all code and documentation introduced for the reader, includin
 
 - Observation: Generation consistency alone does not isolate concurrent catalog requests when filters change without a source refresh.
   Evidence: An in-flight “load more” response could share the new filter's generation and merge obsolete summaries into the replacement list. The browser now aborts page requests and uses a list sequence token across every filter reset; a deferred-response regression proves the obsolete page is ignored.
+
+- Observation: Timeline paging needs the same request identity boundary as first-page navigation.
+  Evidence: All three reviewers independently found that an old manual page could append after a session or view change, and its stale handler could reopen the old session. Navigation, polling, restart, and manual paging now share one abort controller and sequence; a deferred A-to-B regression proves the old page is ignored.
+
+- Observation: Timeline item IDs are session-local, so a React key based only on `tool-${ordinal}` can preserve sensitive detail across sessions.
+  Evidence: Tool detail is local component state and tool IDs repeat naturally. Timeline keys now include the session ID, detail resets when generation changes, and a same-ordinal cross-session regression proves the first session's output disappears.
+
+- Observation: The declared `live` source state had no server-side producer.
+  Evidence: The normalizer emitted only `complete` or `partial`, while the client polled only `live`; the prior polling test constructed an impossible response. The client now polls any selected readable session every eight seconds only while visible, and the unreachable state was removed from the shared contract.
+
+- Observation: Cancelling a timer does not cancel an async timer callback that has already passed its `await`.
+  Evidence: Targeted re-review showed an old polling effect could reschedule itself after cleanup. Poll effects now carry a disposed flag, defer while another timeline request owns the controller, and have regressions for navigation during an active poll.
+
+- Observation: A quiet refresh must preserve user-expanded pagination when its generation is unchanged.
+  Evidence: Replacing `items` with the refreshed first page every eight seconds would discard manually loaded events. The client now refreshes detail but retains pages for the same generation, restarting only when a new generation is published.
+
+- Observation: Request invalidation must either start a successor or settle loading.
+  Evidence: Clearing selection, filter-only history navigation, and reselecting the same session exposed paths where an aborted request had no successor. Null selection now settles loading, history changes invalidate only when timeline identity changes, and repeated selection/internal values are idempotent.
 
 ## Decision Log
 
@@ -209,15 +229,23 @@ Review must cover all code and documentation introduced for the reader, includin
   Rationale: Directly carrying matched sessions removes an impossible second lookup branch, while named message/tool status branches and explicit same-generation merging reduce cognitive load. The broader mechanisms encode tested concurrency and security behavior and do not justify simplification risk.
   Date/Author: 2026-07-28 / Codex code simplifier
 
+- Decision: Fix all five consolidated Phase 7 findings before completion.
+  Rationale: Four findings could display stale or semantically incorrect content, including cross-session tool text, and the fifth made active-session refresh unreachable. The user approved the recommended full-fix disposition.
+  Date/Author: 2026-07-29 / User and Codex
+
+- Decision: Poll every selected readable session at low frequency while the document is visible instead of attempting to infer a `live` file state.
+  Rationale: The current sources do not expose a reliable activity marker. One selected-session refresh every eight seconds is simple, bounded, and makes append updates reachable without adding a watcher or heuristic state.
+  Date/Author: 2026-07-29 / Codex
+
 ## Outcomes & Retrospective
 
 Milestones 1 through 3 delivered a runnable, read-only ingestion and API backend. The production process serves the built fixture shell only from loopback and rejects unsafe request sources and mutation methods. Discovery admits only canonical rollout files below explicit session roots, opportunistically enriches them from the highest compatible read-only SQLite state, and remains functional with JSONL alone. Whole-file decoding tolerates malformed middle lines and pending tails; normalization keeps user and assistant messages without mirrored duplicates, emits unavailable reasoning markers without retaining ciphertext, pairs completed and pending tools under explicit limits, and exposes only safe internal summaries.
 
 The repository now publishes catalog, normalized sessions, relationships, fingerprints, tool details, and search documents as one process-local generation. Concurrent reads share one refresh, unchanged sources retain their generation, and append or replacement publishes a complete new snapshot. The `/api/v1` status, list, detail, paged-items, and lazy tool endpoints expose only browser-safe contracts. Search can match title, cwd, and user/assistant messages but structurally excludes developer content, reasoning, tools, and internal payloads; explicit budgets report partial results.
 
-Milestone 4 adds the real browser experience: URL-persistent search/project/date/archive filters and selection, recursively nested parent-child grouping with visible orphans, cancellation of obsolete requests, generation-safe incremental paging, low-frequency visible-only polling for live sessions, and lazy plain-text tools. Markdown uses `react-markdown` plus GFM without raw HTML, blocks unsafe schemes, and replaces images without loading them. The responsive master-detail UI keeps the trace gutter as its sole signature motif, exposes semantic labels in addition to color, and retains visible keyboard focus and reduced-motion behavior. Thirty tests pass. Production Playwright inspection against the real local Codex home found 21 sessions, exercised a real reader, confirmed only local requests and zero final console errors, and measured desktop and 390 px layouts without page-level horizontal overflow. Screenshots remained under `/private/tmp`.
+Milestone 4 adds the real browser experience: URL-persistent search/project/date/archive filters and selection, recursively nested parent-child grouping with visible orphans, cancellation of obsolete requests, generation-safe incremental paging, low-frequency visible-only polling for the selected readable session, and lazy plain-text tools. Markdown uses `react-markdown` plus GFM without raw HTML, blocks unsafe schemes, and replaces images without loading them. The responsive master-detail UI keeps the trace gutter as its sole signature motif, exposes semantic labels in addition to color, and retains visible keyboard focus and reduced-motion behavior. Production Playwright inspection against the real local Codex home found 21 sessions, exercised a real reader, confirmed only local requests and zero final console errors, and measured desktop and 390 px layouts without page-level horizontal overflow. Screenshots remained under `/private/tmp`.
 
-Milestone 5 implementation closes the large-catalog reachability gap with generation-scoped list pagination, isolates obsolete list pages when filters change, and caps timeline pages by serialized item bytes. The disposable benchmark generates 3,000 sessions and more than 100 MB exclusively under `/private/tmp`, exercises long messages, large tools, partial tails, corrupt SQLite, truncation, and replacement, prints bounded performance/response metrics, and removes the corpus. The README now covers installation, configuration, security, search scope, compatibility, troubleshooting, verification, and uninstall. Real-home smoke remained read-only, listened only on `127.0.0.1`, rejected forged Host and Origin with 403, made no external browser requests, and recovered expanded tool detail after synthetic stale generations. The Phase 7 simplifier reduced local expression and control-flow complexity while deliberately retaining the tested snapshot, generation, normalization, and request-isolation architecture. Typecheck, all 34 tests, production build, and diff-check pass. The three focused quality reviews remain intentionally pending.
+Milestone 5 closes the large-catalog reachability gap with generation-scoped list pagination, isolates obsolete list and timeline pages when navigation state changes, and caps timeline pages by serialized item bytes. The disposable benchmark generates 3,000 sessions and more than 100 MB exclusively under `/private/tmp`, exercises long messages, large tools, partial tails, corrupt SQLite, truncation, and replacement, prints bounded performance/response metrics, and removes the corpus. The README now covers installation, configuration, security, search scope, compatibility, troubleshooting, verification, and uninstall. Real-home smoke remained read-only, listened only on `127.0.0.1`, rejected forged Host and Origin with 403, made no external browser requests, and recovered expanded tool detail after synthetic stale generations. Phase 7 simplified local control flow, then fixed every user-approved review finding and every second-order issue from targeted re-review: tool content cannot persist across sessions or generations, stale detail waits for a new generation, selected readable sessions actually poll while visible without reviving disposed effects or discarding loaded pages, request loading always has a successor or settles, and unknown assistant phases remain semantically neutral. Typecheck, all 43 tests, production build, and diff-check pass.
 
 ## Context and Orientation
 
@@ -320,7 +348,7 @@ This milestone is complete when the API is usable independently with `curl`, all
 
 ### Milestone 4 - Build the responsive session browser
 
-Replace fixture client state with `src/client/api/client.ts` and `src/client/state/use-session-browser.ts`. Use native `fetch`, an `AbortController`, URL search parameters, and small React hooks rather than a client data framework. Search input is debounced; navigation cancels obsolete requests; the selected session and filters survive refresh and browser history. Poll only the selected live session at a low frequency, and stop polling when the document is hidden or the session is no longer live.
+Replace fixture client state with `src/client/api/client.ts` and `src/client/state/use-session-browser.ts`. Use native `fetch`, an `AbortController`, URL search parameters, and small React hooks rather than a client data framework. Search input is debounced; navigation cancels obsolete requests; the selected session and filters survive refresh and browser history. Poll only the selected readable session at a low frequency, and stop polling when the document is hidden, the session is unavailable, or it is no longer selected.
 
 Build `SessionFilters`, `SessionTree`, `SessionReader`, `SessionHeader`, `TraceGutter`, `Timeline`, `MessageItem`, `ToolItem`, `InternalEventItem`, `DiagnosticNotice`, `EmptyState`, and `ErrorState` under `src/client/components/`. Parent sessions appear at the top level with nested children; missing parents leave clearly labeled orphan sessions instead of hiding data. The master-detail layout becomes a single-column list/detail flow on narrow screens.
 
@@ -569,7 +597,11 @@ Milestone 5 implementation validation:
     tool retry: injected stale-generation tool response restarted and re-expanded detail with Input visible and no user alert
     cleanup: production listener stopped; playwright-cli reported no browser sessions; generated scale corpus removed
     simplifier validation: typecheck, 9 files / 34 tests, production build, and diff-check passed after behavior-preserving cleanup
-    remaining validation gate: run the three focused Phase 7 reviews
+    Phase 7 review: no Critical findings; five consolidated Important findings approved for repair by the user
+    targeted re-review: four second-order request-lifecycle findings fixed and regression-tested
+    review-fix validation: typecheck, 9 files / 43 tests, production build, and diff-check passed
+    review-fix proofs: old A timeline page ignored after selecting B; same-ordinal tool output isolated by session; stale tool generation requested once; new generation retried; null assistant phase labeled neutrally; selected readable session polls only while visible; disposed poll cannot revive; same-generation poll retains later pages; null selection settles loading; repeated selection is idempotent
+    remaining validation gate: none
 
 The first visual pass retained only the semantic trace rail as the signature motif. Desktop and narrow screenshots were kept in `/private/tmp` for critique and were not added to the repository. The only initial browser console error was a missing favicon request; an empty data favicon removed that irrelevant request without adding an asset or network dependency.
 
@@ -591,7 +623,7 @@ The first visual pass retained only the semantic trace rail as the signature mot
       archived: boolean;
       parentId: SessionId | null;
       childIds: SessionId[];
-      sourceState: "complete" | "live" | "partial" | "unavailable";
+      sourceState: "complete" | "partial" | "unavailable";
       messageCount: number;
       toolCount: number;
       warningCount: number;

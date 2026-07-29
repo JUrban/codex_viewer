@@ -19,7 +19,7 @@ export function SessionReader({ detail, page, items, internal, onInternalChange,
     <SessionHeader session={detail.session} internal={internal} onInternalChange={onInternalChange} />
     <DiagnosticNotice diagnostics={page?.diagnostics ?? detail.session.diagnostics} />
     {!items.length && !loading
-      ? <EmptyState title="This session has no visible events">Try showing internal events, or wait for the live session to update.</EmptyState>
+      ? <EmptyState title="This session has no visible events">Try showing internal events, or wait for the session to update.</EmptyState>
       : <Timeline items={items} sessionId={detail.session.id}
           generation={page?.generation ?? detail.generation} hasMore={page?.hasMore ?? false}
           loading={loading} onLoadMore={onLoadMore} onStale={onStale} />}

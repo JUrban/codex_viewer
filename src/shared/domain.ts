@@ -2,7 +2,7 @@ export type SessionId = string;
 export type ItemId = string;
 export type CatalogGeneration = number;
 
-export type SourceState = "complete" | "live" | "partial" | "unavailable";
+export type SourceState = "complete" | "partial" | "unavailable";
 export type DiagnosticSeverity = "info" | "warning" | "error";
 
 export interface Diagnostic {
@@ -70,4 +70,3 @@ export type TimelineItem =
   | ToolItem
   | ReasoningUnavailableItem
   | InternalEventItem;
-

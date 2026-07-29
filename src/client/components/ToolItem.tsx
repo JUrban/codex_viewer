@@ -12,8 +12,16 @@ export function ToolItem({ item, sessionId, generation, onStale }: {
   const [open, setOpen] = useState(false);
   const [detail, setDetail] = useState<ToolDetailResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [staleGeneration, setStaleGeneration] = useState<number | null>(null);
+
   useEffect(() => {
-    if (!open || !item.hasDetail || detail) return;
+    setDetail(null);
+    setError(null);
+    setStaleGeneration(null);
+  }, [generation]);
+
+  useEffect(() => {
+    if (!open || !item.hasDetail || detail || staleGeneration === generation) return;
     const controller = new AbortController();
     void api.tool(sessionId, item.id, generation, controller.signal)
       .then(setDetail)
@@ -21,13 +29,14 @@ export function ToolItem({ item, sessionId, generation, onStale }: {
         if (controller.signal.aborted) return;
         if (reason instanceof ApiClientError && reason.code === "stale_generation") {
           setError(null);
+          setStaleGeneration(generation);
           onStale();
           return;
         }
         setError(reason instanceof Error ? reason.message : "Tool detail unavailable");
       });
     return () => controller.abort();
-  }, [detail, generation, item.hasDetail, item.id, onStale, open, sessionId]);
+  }, [detail, generation, item.hasDetail, item.id, onStale, open, sessionId, staleGeneration]);
 
   return <article className="tool-body">
     <p className="event-label">Tool · {item.ordinal} · {item.status}</p>

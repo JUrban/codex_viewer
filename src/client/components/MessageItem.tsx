@@ -27,5 +27,7 @@ export function MessageItem({ item }: { item: Message }) {
 
 function messageLabel(item: Message): string {
   if (item.role === "user") return "User";
-  return item.phase === "commentary" ? "Assistant commentary" : "Assistant final";
+  if (item.phase === "commentary") return "Assistant commentary";
+  if (item.phase === "final") return "Assistant final";
+  return "Assistant";
 }

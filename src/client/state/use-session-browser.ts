@@ -80,6 +80,18 @@ export function useSessionBrowser() {
   const listPageAbort = useRef<AbortController | null>(null);
   const listSequence = useRef(0);
   const loadSequence = useRef(0);
+  const pageRef = useRef(page);
+  const selectedIdRef = useRef(selectedId);
+  const internalRef = useRef(internal);
+  pageRef.current = page;
+  selectedIdRef.current = selectedId;
+  internalRef.current = internal;
+
+  const invalidateTimelineRequests = useCallback(() => {
+    navigationAbort.current?.abort();
+    navigationAbort.current = null;
+    loadSequence.current += 1;
+  }, []);
 
   useEffect(() => {
     const timer = window.setTimeout(() => setDebouncedQuery(filters.q), 250);
@@ -99,18 +111,25 @@ export function useSessionBrowser() {
   }, [internal, selectedId, updateLocation]);
 
   const selectSession = useCallback((id: string | null) => {
+    if (id === selectedId) return;
+    invalidateTimelineRequests();
     setSelectedIdState(id);
     updateLocation(filters, id, internal);
-  }, [filters, internal, updateLocation]);
+  }, [filters, internal, invalidateTimelineRequests, selectedId, updateLocation]);
 
   const setInternal = useCallback((value: boolean) => {
+    if (value === internal) return;
+    invalidateTimelineRequests();
     setInternalState(value);
     updateLocation(filters, selectedId, value);
-  }, [filters, selectedId, updateLocation]);
+  }, [filters, invalidateTimelineRequests, selectedId, updateLocation]);
 
   useEffect(() => {
     const onPopState = () => {
       const next = readUrl();
+      if (next.selectedId !== selectedIdRef.current || next.internal !== internalRef.current) {
+        invalidateTimelineRequests();
+      }
       setFiltersState(next.filters);
       setDebouncedQuery(next.filters.q);
       setSelectedIdState(next.selectedId);
@@ -118,7 +137,7 @@ export function useSessionBrowser() {
     };
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
-  }, []);
+  }, [invalidateTimelineRequests]);
 
   useEffect(() => {
     listPageAbort.current?.abort();
@@ -190,6 +209,7 @@ export function useSessionBrowser() {
     if (!quiet) setReaderLoading(true);
     try {
       const nextDetail = await api.session(id, controller.signal);
+      let resolvedDetail = nextDetail;
       let nextPage: ItemPageResponse;
       try {
         nextPage = await api.items(id, {
@@ -200,44 +220,54 @@ export function useSessionBrowser() {
       } catch (reason) {
         if (!(reason instanceof ApiClientError) || reason.code !== "stale_generation") throw reason;
         const restartedDetail = await api.session(id, controller.signal);
+        resolvedDetail = restartedDetail;
         nextPage = await api.items(id, {
           generation: restartedDetail.generation,
           limit: 50,
           view: internal ? "internal" : "conversation",
         }, controller.signal);
-        if (sequence === loadSequence.current) setDetail(restartedDetail);
       }
       if (sequence !== loadSequence.current) return;
-      setDetail((current) => current?.generation === nextPage.generation ? current : nextDetail);
-      setPage(nextPage);
-      setItems(nextPage.items);
+      setDetail(resolvedDetail);
+      if (!quiet || pageRef.current?.generation !== nextPage.generation) {
+        setPage(nextPage);
+        setItems(nextPage.items);
+      }
       setError(null);
     } catch (reason) {
       if (!controller.signal.aborted && sequence === loadSequence.current) setError(messageFor(reason));
     } finally {
+      if (navigationAbort.current === controller) navigationAbort.current = null;
       if (!controller.signal.aborted && sequence === loadSequence.current) setReaderLoading(false);
     }
   }, [internal]);
 
   useEffect(() => {
     if (!selectedId) {
-      navigationAbort.current?.abort();
+      invalidateTimelineRequests();
       setDetail(null);
       setPage(null);
       setItems([]);
+      setReaderLoading(false);
       return;
     }
     void loadSession(selectedId);
-    return () => navigationAbort.current?.abort();
-  }, [loadSession, selectedId]);
+    return invalidateTimelineRequests;
+  }, [invalidateTimelineRequests, loadSession, selectedId]);
 
   useEffect(() => {
-    if (!selectedId || detail?.session.sourceState !== "live") return;
+    if (!selectedId || !detail || detail.session.sourceState === "unavailable") return;
     let timer: number | undefined;
+    let disposed = false;
     const schedule = () => {
-      if (!document.hidden) timer = window.setTimeout(async () => {
+      if (!disposed && !document.hidden) timer = window.setTimeout(async () => {
+        timer = undefined;
+        if (navigationAbort.current !== null) {
+          schedule();
+          return;
+        }
         await loadSession(selectedId, true);
-        schedule();
+        if (!disposed) schedule();
       }, 8_000);
     };
     const onVisibility = () => {
@@ -248,6 +278,7 @@ export function useSessionBrowser() {
     schedule();
     document.addEventListener("visibilitychange", onVisibility);
     return () => {
+      disposed = true;
       if (timer !== undefined) window.clearTimeout(timer);
       document.removeEventListener("visibilitychange", onVisibility);
     };
@@ -255,6 +286,10 @@ export function useSessionBrowser() {
 
   const loadMore = useCallback(async () => {
     if (!selectedId || !page?.hasMore || page.nextAfterOrdinal === null) return;
+    navigationAbort.current?.abort();
+    const controller = new AbortController();
+    navigationAbort.current = controller;
+    const sequence = ++loadSequence.current;
     setReaderLoading(true);
     try {
       const next = await api.items(selectedId, {
@@ -262,28 +297,39 @@ export function useSessionBrowser() {
         generation: page.generation,
         limit: 50,
         view: internal ? "internal" : "conversation",
-      });
+      }, controller.signal);
+      if (sequence !== loadSequence.current) return;
       setItems((current) => {
         const seen = new Set(current.map((item) => item.id));
         return [...current, ...next.items.filter((item) => !seen.has(item.id))];
       });
       setPage(next);
+      setError(null);
     } catch (reason) {
+      if (controller.signal.aborted || sequence !== loadSequence.current) return;
       if (reason instanceof ApiClientError && reason.code === "stale_generation") {
         await loadSession(selectedId);
       } else {
         setError(messageFor(reason));
       }
     } finally {
-      setReaderLoading(false);
+      if (navigationAbort.current === controller) navigationAbort.current = null;
+      if (!controller.signal.aborted && sequence === loadSequence.current) {
+        setReaderLoading(false);
+      }
     }
   }, [internal, loadSession, page, selectedId]);
+
+  const restartSession = useCallback(
+    () => selectedId ? loadSession(selectedId) : Promise.resolve(),
+    [loadSession, selectedId],
+  );
 
   return {
     filters, setFilters, selectedId, selectSession, internal, setInternal,
     list, detail, page, items, listLoading, readerLoading, error,
     clearError: () => setError(null), loadMore, loadMoreSessions,
-    restartSession: () => selectedId ? loadSession(selectedId) : Promise.resolve(),
+    restartSession,
   };
 }
 

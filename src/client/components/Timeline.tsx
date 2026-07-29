@@ -15,7 +15,7 @@ export function Timeline({ items, sessionId, generation, hasMore, loading, onLoa
 }) {
   return <>
     <ol className="timeline" aria-label="Session timeline">
-      {items.map((item) => <li className={`trace-event ${classFor(item)}`} key={item.id}>
+      {items.map((item) => <li className={`trace-event ${classFor(item)}`} key={`${sessionId}:${item.id}`}>
         <TraceGutter item={item} />
         {item.kind === "message" ? <MessageItem item={item} /> : null}
         {item.kind === "tool" ? <ToolItem item={item} sessionId={sessionId} generation={generation} onStale={onStale} /> : null}

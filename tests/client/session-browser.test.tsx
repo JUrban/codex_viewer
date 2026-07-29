@@ -1,16 +1,19 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "../../src/client/App";
 import { MessageItem, safeUrlTransform } from "../../src/client/components/MessageItem";
 import { groupSessions } from "../../src/client/components/SessionTree";
-import type { SessionListEntry } from "../../src/shared/api-contract";
-import type { SessionSummary } from "../../src/shared/domain";
+import { Timeline } from "../../src/client/components/Timeline";
+import { ToolItem } from "../../src/client/components/ToolItem";
+import type { ItemPageResponse, SessionListEntry } from "../../src/shared/api-contract";
+import type { SessionSummary, ToolItem as Tool } from "../../src/shared/domain";
 
 const SESSION_ID = "abcdefghijklmnopqrstuvwx";
 const CHILD_ID = "zyxwvutsrqponmlkjihgfedc";
+const OTHER_ID = "otherabcdefghijklmnopqrs";
 const baseSession: SessionSummary = {
   id: SESSION_ID, title: "Reader work", preview: "preview", cwd: "/project/reader",
   createdAt: "2026-07-28T10:00:00Z", updatedAt: "2026-07-28T11:00:00Z",
@@ -28,11 +31,15 @@ const detailBody = {
   generation: 1,
   session: { ...baseSession, diagnostics: [], itemCount: 3 },
 };
-const firstPage = {
+const toolItem: Tool = {
+  kind: "tool", id: "tool-2", ordinal: 2, timestamp: null, toolName: "exec",
+  status: "completed", preview: "inspect", truncated: false, hasDetail: true,
+};
+const firstPage: ItemPageResponse = {
   generation: 1, sourceState: "complete", diagnostics: [],
   items: [
     { kind: "message", id: "message-1", ordinal: 1, timestamp: null, role: "user", phase: null, markdown: "Hello" },
-    { kind: "tool", id: "tool-2", ordinal: 2, timestamp: null, toolName: "exec", status: "completed", preview: "inspect", truncated: false, hasDetail: true },
+    toolItem,
   ],
   nextAfterOrdinal: 2, hasMore: true,
 };
@@ -112,6 +119,111 @@ describe("session browser", () => {
     await user.click(screen.getByRole("button", { name: "Show tool detail" }));
     expect(await screen.findByText("<unsafe stays text>")).toBeInTheDocument();
     expect(screen.queryByText("unsafe stays text", { selector: "em" })).not.toBeInTheDocument();
+  });
+
+  it("ignores an obsolete timeline page after switching sessions", async () => {
+    let resolveOldPage!: (response: Response) => void;
+    const oldPage = new Promise<Response>((resolve) => {
+      resolveOldPage = resolve;
+    });
+    const other = { ...baseSession, id: OTHER_ID, title: "Other session" };
+    const otherDetail = {
+      generation: 1,
+      session: { ...other, diagnostics: [], itemCount: 1 },
+    };
+    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes(SESSION_ID) && url.includes("afterOrdinal=2")) return oldPage;
+      if (url.includes(OTHER_ID) && url.includes("/items")) return Promise.resolve(json({
+        ...firstPage,
+        items: [{
+          kind: "message", id: "message-1", ordinal: 1, timestamp: null,
+          role: "assistant", phase: "final", markdown: "Other timeline",
+        }],
+        nextAfterOrdinal: null,
+        hasMore: false,
+      }));
+      if (url.endsWith(OTHER_ID)) return Promise.resolve(json(otherDetail));
+      if (url.includes(SESSION_ID) && url.includes("/items")) return Promise.resolve(json(firstPage));
+      if (url.endsWith(SESSION_ID)) return Promise.resolve(json(detailBody));
+      return Promise.resolve(json({
+        ...listBody,
+        sessions: [entry(baseSession), entry(other)],
+        total: 2,
+      }));
+    }));
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(await screen.findByRole("button", { name: /Reader work/ }));
+    await screen.findByText("Hello");
+    await user.click(screen.getByRole("button", { name: "Load more events" }));
+    await user.click(screen.getByRole("button", { name: /Other session/ }));
+    expect(await screen.findByText("Other timeline")).toBeInTheDocument();
+    resolveOldPage(json({
+      ...firstPage,
+      items: [{
+        kind: "message", id: "message-3", ordinal: 3, timestamp: null,
+        role: "assistant", phase: "final", markdown: "Obsolete timeline",
+      }],
+      nextAfterOrdinal: null,
+      hasMore: false,
+    }));
+    await waitFor(() => expect(screen.queryByText("Obsolete timeline")).toBeNull());
+    expect(screen.getByText("Other timeline")).toBeInTheDocument();
+  });
+
+  it("isolates tool detail by session identity", async () => {
+    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      return Promise.resolve(json({
+        generation: 1,
+        sessionId: url.includes(OTHER_ID) ? OTHER_ID : SESSION_ID,
+        itemId: "tool-2",
+        input: null,
+        output: url.includes(OTHER_ID) ? "Other tool detail" : "Reader tool detail",
+        truncated: false,
+      }));
+    }));
+    const props = {
+      items: [toolItem],
+      generation: 1,
+      hasMore: false,
+      loading: false,
+      onLoadMore: vi.fn(),
+      onStale: vi.fn(),
+    };
+    const { rerender } = render(<Timeline {...props} sessionId={SESSION_ID} />);
+    fireEvent.click(screen.getByRole("button", { name: "Show tool detail" }));
+    expect(await screen.findByText("Reader tool detail")).toBeInTheDocument();
+    rerender(<Timeline {...props} sessionId={OTHER_ID} />);
+    fireEvent.click(screen.getByRole("button", { name: "Show tool detail" }));
+    expect(await screen.findByText("Other tool detail")).toBeInTheDocument();
+    expect(screen.queryByText("Reader tool detail")).toBeNull();
+  });
+
+  it("waits for a new generation before retrying stale tool detail", async () => {
+    const onStale = vi.fn();
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("generation=1")) {
+        return Promise.resolve(json({ error: { code: "stale_generation", message: "stale" } }, 409));
+      }
+      return Promise.resolve(json({
+        generation: 2, sessionId: SESSION_ID, itemId: "tool-2",
+        input: null, output: "Fresh tool detail", truncated: false,
+      }));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const { rerender } = render(
+      <ToolItem item={toolItem} sessionId={SESSION_ID} generation={1} onStale={onStale} />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Show tool detail" }));
+    await waitFor(() => expect(onStale).toHaveBeenCalledTimes(1));
+    rerender(<ToolItem item={toolItem} sessionId={SESSION_ID} generation={1} onStale={onStale} />);
+    await act(async () => Promise.resolve());
+    expect(fetchMock.mock.calls.filter(([url]) => String(url).includes("generation=1"))).toHaveLength(1);
+    rerender(<ToolItem item={toolItem} sessionId={SESSION_ID} generation={2} onStale={onStale} />);
+    expect(await screen.findByText("Fresh tool detail")).toBeInTheDocument();
   });
 
   it("loads catalog pages beyond the first 200 summaries", async () => {
@@ -232,12 +344,178 @@ describe("session browser", () => {
     expect(safeUrlTransform("file:///tmp/secret")).toBe("");
   });
 
-  it("does not schedule live polling while the page is hidden", async () => {
-    Object.defineProperty(document, "hidden", { configurable: true, value: true });
-    const live = { ...baseSession, sourceState: "live" as const };
-    const fetchMock = standardFetch({
-      ...detailBody, session: { ...live, diagnostics: [], itemCount: 2 },
+  it("labels an assistant message with an unknown phase neutrally", () => {
+    render(<MessageItem item={{
+      kind: "message", id: "message-10", ordinal: 10, timestamp: null,
+      role: "assistant", phase: null, markdown: "Unclassified",
+    }} />);
+    expect(screen.getByText("Assistant · 10")).toBeInTheDocument();
+    expect(screen.queryByText(/Assistant final/)).toBeNull();
+  });
+
+  it("polls the selected session while visible", async () => {
+    vi.useFakeTimers();
+    const fetchMock = standardFetch();
+    vi.stubGlobal("fetch", fetchMock);
+    render(<App />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
     });
+    fireEvent.click(screen.getByRole("button", { name: /Reader work/ }));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(screen.getByText("Hello")).toBeInTheDocument();
+    const detailCalls = () => fetchMock.mock.calls.filter(([url]) => String(url).endsWith(SESSION_ID)).length;
+    const before = detailCalls();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(8_000);
+    });
+    expect(detailCalls()).toBeGreaterThan(before);
+  });
+
+  it("preserves loaded pages during a same-generation poll", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("afterOrdinal=2")) return Promise.resolve(json({
+        ...firstPage,
+        items: [{
+          kind: "message", id: "message-3", ordinal: 3, timestamp: null,
+          role: "assistant", phase: "final", markdown: "Later event",
+        }],
+        nextAfterOrdinal: null,
+        hasMore: false,
+      }));
+      if (url.includes("/items")) return Promise.resolve(json(firstPage));
+      if (url.endsWith(SESSION_ID)) return Promise.resolve(json(detailBody));
+      return Promise.resolve(json(listBody));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<App />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Reader work/ }));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Load more events" }));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(screen.getByText("Later event")).toBeInTheDocument();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(8_000);
+    });
+    expect(screen.getByText("Later event")).toBeInTheDocument();
+  });
+
+  it("does not revive a disposed session poll after navigation", async () => {
+    vi.useFakeTimers();
+    let resolvePoll!: (response: Response) => void;
+    const pendingPoll = new Promise<Response>((resolve) => {
+      resolvePoll = resolve;
+    });
+    let readerDetailCalls = 0;
+    const other = { ...baseSession, id: OTHER_ID, title: "Other session" };
+    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith(SESSION_ID)) {
+        readerDetailCalls += 1;
+        return readerDetailCalls === 1 ? Promise.resolve(json(detailBody)) : pendingPoll;
+      }
+      if (url.includes(OTHER_ID) && url.includes("/items")) return Promise.resolve(json({
+        ...firstPage,
+        items: [{
+          kind: "message", id: "message-1", ordinal: 1, timestamp: null,
+          role: "assistant", phase: "final", markdown: "Other timeline",
+        }],
+        nextAfterOrdinal: null,
+        hasMore: false,
+      }));
+      if (url.endsWith(OTHER_ID)) return Promise.resolve(json({
+        generation: 1,
+        session: { ...other, diagnostics: [], itemCount: 1 },
+      }));
+      if (url.includes(SESSION_ID) && url.includes("/items")) {
+        return Promise.resolve(json({ ...firstPage, hasMore: false }));
+      }
+      return Promise.resolve(json({
+        ...listBody,
+        sessions: [entry(baseSession), entry(other)],
+        total: 2,
+      }));
+    }));
+    render(<App />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Reader work/ }));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    act(() => {
+      vi.advanceTimersByTime(8_000);
+    });
+    await act(async () => Promise.resolve());
+    expect(readerDetailCalls).toBe(2);
+    fireEvent.click(screen.getByRole("button", { name: /Other session/ }));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(screen.getByText("Other timeline")).toBeInTheDocument();
+    resolvePoll(json(detailBody));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+      await vi.advanceTimersByTimeAsync(8_000);
+    });
+    expect(readerDetailCalls).toBe(2);
+    expect(screen.getByText("Other timeline")).toBeInTheDocument();
+  });
+
+  it("settles reader loading when navigation clears the selection", async () => {
+    let resolveDetail!: (response: Response) => void;
+    const pendingDetail = new Promise<Response>((resolve) => {
+      resolveDetail = resolve;
+    });
+    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith(SESSION_ID)) return pendingDetail;
+      return Promise.resolve(json(listBody));
+    }));
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: /Reader work/ }));
+    expect(await screen.findByText("Opening session…")).toBeInTheDocument();
+    window.history.pushState(null, "", "/");
+    window.dispatchEvent(new PopStateEvent("popstate"));
+    expect(await screen.findByText("Choose a session")).toBeInTheDocument();
+    resolveDetail(json(detailBody));
+  });
+
+  it("does not orphan an active load when the selected session is clicked again", async () => {
+    let resolveDetail!: (response: Response) => void;
+    const pendingDetail = new Promise<Response>((resolve) => {
+      resolveDetail = resolve;
+    });
+    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith(SESSION_ID)) return pendingDetail;
+      if (url.includes("/items")) return Promise.resolve(json({ ...firstPage, hasMore: false }));
+      return Promise.resolve(json(listBody));
+    }));
+    render(<App />);
+    const session = await screen.findByRole("button", { name: /Reader work/ });
+    fireEvent.click(session);
+    expect(await screen.findByText("Opening session…")).toBeInTheDocument();
+    fireEvent.click(session);
+    resolveDetail(json(detailBody));
+    expect(await screen.findByText("Hello")).toBeInTheDocument();
+  });
+
+  it("does not schedule session polling while the page is hidden", async () => {
+    Object.defineProperty(document, "hidden", { configurable: true, value: true });
+    const fetchMock = standardFetch();
     vi.stubGlobal("fetch", fetchMock);
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: /Reader work/ }));
