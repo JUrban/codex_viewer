@@ -1,5 +1,5 @@
 import type { ToolItem } from "../../shared/domain.js";
-import { MAX_TOOL_DETAIL_CHARS, MAX_TOOL_PREVIEW_CHARS, truncateText } from "./limits.js";
+import { MAX_PREVIEW_CHARS, MAX_TOOL_DETAIL_CHARS, truncateText } from "./limits.js";
 
 export interface ToolCall {
   callId: string;
@@ -44,9 +44,9 @@ export class ToolAccumulator {
       const input = truncateNullable(call.input);
       const result = truncateNullable(output?.output ?? null);
       const previewSource = output?.output ?? call.input;
-      const preview = previewSource === null ? null : truncateText(previewSource, MAX_TOOL_PREVIEW_CHARS).text;
+      const preview = previewSource === null ? null : truncateText(previewSource, MAX_PREVIEW_CHARS).text;
       const truncated = input.truncated || result.truncated ||
-        (previewSource !== null && previewSource.length > MAX_TOOL_PREVIEW_CHARS);
+        (previewSource !== null && previewSource.length > MAX_PREVIEW_CHARS);
       const status = toolStatus(output);
       return {
         item: {

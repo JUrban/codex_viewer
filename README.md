@@ -98,6 +98,8 @@ The JSONL reader supports the observed Codex rollout record families and
 degrades unknown records to safe summaries or diagnostics. A malformed middle
 line does not hide later complete records. An unterminated final line is treated
 as a pending live-write fragment until its newline arrives.
+The complete decode, normalization, deduplication, and visibility policy is
+documented in [Session JSONL filtering rules](docs/session-jsonl-filtering.md).
 
 SQLite is optional metadata, not the correctness boundary. The reader opens
 compatible `state_<number>.sqlite` files read-only, feature-detects the
@@ -106,7 +108,8 @@ corrupt, or from an unknown schema generation.
 
 Individual JSONL lines over 8 MiB are skipped. Normalized message text is capped
 at 1,000,000 characters; injected context detail and tool input/output are
-capped at 256,000 characters each.
+capped at 256,000 characters each. Session previews, item summaries, tool
+previews, and search excerpts use a shared 240-character limit.
 Timeline pages stop at 200 entries or approximately 4 MiB of serialized item
 content, whichever comes first; a single valid item is always returned so its
 cursor can advance. The first release uses whole-file rereads after a fingerprint

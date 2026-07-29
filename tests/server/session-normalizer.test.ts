@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { IdentityResolver } from "../../src/server/codex/identity-resolver.js";
 import {
   MAX_INJECTED_CONTEXT_CHARS,
+  MAX_PREVIEW_CHARS,
   MAX_TOOL_DETAIL_CHARS,
 } from "../../src/server/codex/limits.js";
 import { WholeFileRolloutDecoder, type DecodedRollout } from "../../src/server/codex/rollout-decoder.js";
@@ -173,6 +174,68 @@ describe("IdentityResolver and SessionNormalizer", () => {
     expect(JSON.stringify(normalized.items)).not.toContain("Propagated parent text");
   });
 
+  it("accepts only allowlisted message content parts and does not guess string content", () => {
+    const descriptor = {
+      id: "strict-message-content-session",
+      canonicalPath: "/synthetic/rollout-strict-message-content.jsonl",
+      archived: false,
+      size: 1,
+      mtimeMs: 1,
+      device: 1,
+      inode: 1,
+    };
+    const normalized = new DefaultSessionNormalizer().normalize({
+      descriptor,
+      diagnostics: [],
+      incompleteTail: false,
+      records: [
+        {
+          ordinal: 1,
+          value: {
+            type: "response_item",
+            payload: {
+              type: "message",
+              role: "assistant",
+              content: "STRING_CONTENT_MUST_NOT_RENDER",
+            },
+          },
+        },
+        {
+          ordinal: 2,
+          value: {
+            type: "response_item",
+            payload: {
+              type: "message",
+              role: "assistant",
+              content: [
+                { type: "image_url", text: "NON_TEXT_PART_MUST_NOT_RENDER" },
+                { type: "output_text", text: "Allowed assistant text" },
+              ],
+            },
+          },
+        },
+      ],
+    }, {
+      threadId: null,
+      title: null,
+      cwd: null,
+      createdAt: null,
+      updatedAt: null,
+      parentThreadId: null,
+      archived: false,
+    });
+
+    expect(normalized.items).toEqual([
+      expect.objectContaining({
+        kind: "message",
+        ordinal: 2,
+        markdown: "Allowed assistant text",
+      }),
+    ]);
+    expect(JSON.stringify(normalized)).not.toContain("STRING_CONTENT_MUST_NOT_RENDER");
+    expect(JSON.stringify(normalized)).not.toContain("NON_TEXT_PART_MUST_NOT_RENDER");
+  });
+
   it("pairs completed tools, leaves unmatched calls pending, and bounds detail", async () => {
     const normalized = await normalize("rollout-2026-07-28T10-00-00-basic-session.jsonl");
     const tools = normalized.items.filter((item) => item.kind === "tool");
@@ -224,6 +287,17 @@ describe("IdentityResolver and SessionNormalizer", () => {
             },
           },
         },
+        {
+          ordinal: 4,
+          value: {
+            type: "response_item",
+            payload: {
+              type: "message",
+              role: "assistant",
+              content: [{ type: "output_text", text: oversized }],
+            },
+          },
+        },
       ],
     };
     const normalized = new DefaultSessionNormalizer().normalize(decoded, {
@@ -236,10 +310,16 @@ describe("IdentityResolver and SessionNormalizer", () => {
       archived: false,
     });
     const detail = normalized.toolDetails.get("tool-1");
+    const tool = normalized.items.find((item) => item.id === "tool-1");
+    const contextItem = normalized.items.find((item) => item.id === "context-3");
+    expect(tool?.kind === "tool" ? tool.preview : null).toHaveLength(MAX_PREVIEW_CHARS);
     expect(detail?.input).toHaveLength(MAX_TOOL_DETAIL_CHARS);
     expect(detail?.output).toHaveLength(MAX_TOOL_DETAIL_CHARS);
     expect(detail?.truncated).toBe(true);
     const context = normalized.injectedContextDetails.get("context-3");
+    expect(normalized.detail.preview).toHaveLength(MAX_PREVIEW_CHARS);
+    expect(contextItem?.kind === "injected-context" ? contextItem.summary : null)
+      .toHaveLength(MAX_PREVIEW_CHARS);
     expect(context?.text).toHaveLength(MAX_INJECTED_CONTEXT_CHARS);
     expect(context?.truncated).toBe(true);
   });

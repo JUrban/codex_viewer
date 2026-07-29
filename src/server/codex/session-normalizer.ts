@@ -12,8 +12,8 @@ import { isObject } from "./rollout-decoder.js";
 import type { SessionMetadata } from "./identity-resolver.js";
 import {
   MAX_INJECTED_CONTEXT_CHARS,
-  MAX_INTERNAL_SUMMARY_CHARS,
   MAX_MESSAGE_CHARS,
+  MAX_PREVIEW_CHARS,
   truncateText,
 } from "./limits.js";
 import {
@@ -84,7 +84,9 @@ export class DefaultSessionNormalizer implements SessionNormalizer {
       id: decoded.descriptor.id,
       sourceId: metadata.threadId,
       title: fallbackTitle,
-      preview: firstMessage === undefined ? null : truncateText(firstMessage.markdown, 180).text,
+      preview: firstMessage === undefined
+        ? null
+        : truncateText(firstMessage.markdown, MAX_PREVIEW_CHARS).text,
       cwd: metadata.cwd,
       createdAt: metadata.createdAt,
       updatedAt: metadata.updatedAt,
@@ -305,7 +307,7 @@ function messageItem(candidate: MessageCandidate): MessageItem {
 
 function injectedSummary(value: string): string {
   const firstLine = value.split(/\r?\n/).map((line) => line.trim()).find(Boolean);
-  return truncateText(firstLine ?? "Injected user-role context", MAX_INTERNAL_SUMMARY_CHARS).text;
+  return truncateText(firstLine ?? "Injected user-role context", MAX_PREVIEW_CHARS).text;
 }
 
 function toolCall(
@@ -339,7 +341,7 @@ function toolOutput(payload: Record<string, unknown>): ToolOutput | null {
 }
 
 function contentText(value: unknown): string | null {
-  if (!Array.isArray(value)) return string(value);
+  if (!Array.isArray(value)) return null;
   const text = value
     .filter(isObject)
     .filter((part) => ["input_text", "output_text", "text"].includes(string(part.type) ?? ""))
@@ -396,7 +398,7 @@ function internalItem(ordinal: number, timestamp: string | null, eventType: stri
     ordinal,
     timestamp,
     eventType: safeType,
-    summary: truncateText(`Internal event: ${safeType}`, MAX_INTERNAL_SUMMARY_CHARS).text,
+    summary: truncateText(`Internal event: ${safeType}`, MAX_PREVIEW_CHARS).text,
   };
 }
 

@@ -1,7 +1,7 @@
 import type { ApiWarning, SearchMatch } from "../../shared/api-contract.js";
 import type { MessageItem, SessionId } from "../../shared/domain.js";
 import type { NormalizedSession } from "../codex/session-normalizer.js";
-import { truncateText } from "../codex/limits.js";
+import { MAX_PREVIEW_CHARS, truncateText } from "../codex/limits.js";
 
 export const MAX_SEARCH_QUERY_CHARS = 200;
 
@@ -22,7 +22,7 @@ export interface SearchBudget {
 export const DEFAULT_SEARCH_BUDGET: SearchBudget = {
   maxScannedBytes: 16 * 1024 * 1024,
   maxResults: 200,
-  maxExcerptChars: 240,
+  maxExcerptChars: MAX_PREVIEW_CHARS,
   maxDurationMs: 75,
 };
 
