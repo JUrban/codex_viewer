@@ -72,17 +72,28 @@ export class SessionQueryService {
     validateListQuery(query);
     const offset = query.offset ?? 0;
     assertGeneration(snapshot.generation, query.generation, offset > 0);
-    const search = query.q === undefined
-      ? { matches: null, partial: false, warnings: [] }
-      : searchDocuments(snapshot.documents, query.q, this.searchBudget);
-    const matchedSessions: NormalizedSession[] = [];
-    const projects = new Map<string, number>();
+    const structurallyEligible: NormalizedSession[] = [];
+    const eligibleIds = new Set<string>();
     for (const id of snapshot.orderedIds) {
       const normalized = snapshot.sessions.get(id);
-      if (normalized === undefined) continue;
+      if (normalized === undefined || !passesStructuralFilters(normalized.session, query)) {
+        continue;
+      }
+      structurallyEligible.push(normalized);
+      eligibleIds.add(id);
+    }
+    const search = query.q === undefined
+      ? { matches: null, partial: false, warnings: [] }
+      : searchDocuments(
+          snapshot.documents.filter((document) => eligibleIds.has(document.sessionId)),
+          query.q,
+          this.searchBudget,
+        );
+    const matchedSessions: NormalizedSession[] = [];
+    const projects = new Map<string, number>();
+    for (const normalized of structurallyEligible) {
       const session = normalized.session;
-      if (!passesFilters(session, query)) continue;
-      if (search.matches !== null && !search.matches.has(id)) continue;
+      if (search.matches !== null && !search.matches.has(session.id)) continue;
       if (session.cwd !== null) projects.set(session.cwd, (projects.get(session.cwd) ?? 0) + 1);
       matchedSessions.push(normalized);
     }
@@ -186,9 +197,12 @@ function itemDetail<T>(
   return details.get(itemId) ?? null;
 }
 
-function passesFilters(session: DomainSession, query: SessionListQuery): boolean {
+function passesStructuralFilters(session: DomainSession, query: SessionListQuery): boolean {
+  const archiveScope = query.archiveScope ?? "active";
   if (query.project !== undefined && session.cwd !== query.project) return false;
-  if (query.archived !== undefined && session.archived !== query.archived) return false;
+  if (archiveScope !== "all" && session.archived !== (archiveScope === "archived")) {
+    return false;
+  }
   const timestamp = session.updatedAt ?? session.createdAt;
   const instant = timestamp === null ? null : Date.parse(timestamp);
   if (query.from !== undefined && (instant === null || instant < Date.parse(query.from))) return false;
@@ -197,6 +211,17 @@ function passesFilters(session: DomainSession, query: SessionListQuery): boolean
 }
 
 function validateListQuery(query: SessionListQuery): void {
+  if (
+    query.archiveScope !== undefined &&
+    query.archiveScope !== "active" &&
+    query.archiveScope !== "archived" &&
+    query.archiveScope !== "all"
+  ) {
+    throw new RepositoryQueryError(
+      "invalid_query",
+      "archiveScope must be active, archived, or all",
+    );
+  }
   if (query.q !== undefined) {
     const trimmed = query.q.trim();
     if (trimmed.length === 0 || trimmed.length > MAX_SEARCH_QUERY_CHARS) {

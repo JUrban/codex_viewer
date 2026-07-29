@@ -20,19 +20,7 @@ export function SessionFilters({ filters, projects, onChange }: SessionFiltersPr
         onChange={(event) => patch({ q: event.target.value })}
         placeholder="Title, project, or message"
       />
-      <div className="filter-grid">
-        <label>
-          Project
-          <select
-            value={filters.project}
-            onChange={(event) => patch({ project: event.target.value })}
-          >
-            <option value="">All projects</option>
-            {projects.map(({ project, count }) => (
-              <option value={project} key={project}>{project} ({count})</option>
-            ))}
-          </select>
-        </label>
+      <div className="date-grid">
         <label>
           From
           <input
@@ -50,14 +38,41 @@ export function SessionFilters({ filters, projects, onChange }: SessionFiltersPr
           />
         </label>
       </div>
-      <label className="check-row">
-        <input
-          type="checkbox"
-          checked={filters.archived}
-          onChange={(event) => patch({ archived: event.target.checked })}
-        />
-        Archived only
+      <label className="project-filter">
+        Project
+        <select
+          value={filters.project}
+          onChange={(event) => patch({ project: event.target.value })}
+        >
+          <option value="">All projects</option>
+          {projects.map(({ project, count }) => (
+            <option value={project} key={project}>{project} ({count})</option>
+          ))}
+        </select>
       </label>
+      <fieldset className="filter-section archive-scope">
+        <legend>Session state</legend>
+        <div className="archive-scope-options">
+          {ARCHIVE_SCOPES.map(({ value, label }) => (
+            <label key={value}>
+              <input
+                type="radio"
+                name="archive-scope"
+                value={value}
+                checked={filters.archiveScope === value}
+                onChange={() => patch({ archiveScope: value })}
+              />
+              <span>{label}</span>
+            </label>
+          ))}
+        </div>
+      </fieldset>
     </form>
   );
 }
+
+const ARCHIVE_SCOPES = [
+  { value: "active", label: "Active" },
+  { value: "archived", label: "Archived" },
+  { value: "all", label: "All" },
+] as const;

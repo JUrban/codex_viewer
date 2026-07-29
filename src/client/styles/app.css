@@ -37,10 +37,38 @@
   background: var(--paper);
   border: 1px solid #aebfc3;
 }
-.filter-grid { display: grid; grid-template-columns: 1fr 1fr; gap: .65rem; margin-top: .75rem; }
-.filter-grid label:first-child { grid-column: 1 / -1; }
-.filter-grid label { font-size: .7rem; color: var(--ink-soft); }
-.filter-grid input, .filter-grid select { display: block; margin-top: .3rem; }
+.filter-section {
+  padding: 0; margin: .8rem 0 0; border: 0;
+}
+.filter-section legend, .project-filter, .date-grid label {
+  color: var(--ink-soft); font-size: .7rem;
+}
+.filter-section legend { margin-bottom: .3rem; }
+.date-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: .65rem; margin-top: .8rem;
+}
+.date-grid input, .project-filter select { display: block; margin-top: .3rem; }
+.project-filter { display: block; margin-top: .75rem; }
+.archive-scope-options {
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
+  border: 1px solid #aebfc3;
+}
+.archive-scope-options label { position: relative; min-width: 0; }
+.archive-scope-options label + label { border-left: 1px solid #aebfc3; }
+.archive-scope-options input {
+  position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden;
+  clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap;
+}
+.archive-scope-options span {
+  display: block; padding: .5rem .25rem; color: var(--ink-soft); background: var(--paper);
+  font-family: var(--mono-font); font-size: .68rem; text-align: center; cursor: pointer;
+}
+.archive-scope-options input:checked + span {
+  color: var(--paper); background: var(--current);
+}
+.archive-scope-options input:focus-visible + span {
+  position: relative; z-index: 1; outline: 2px solid var(--signal); outline-offset: 2px;
+}
 .check-row { display: flex; align-items: center; gap: .45rem; margin-top: .7rem; font-size: .78rem; }
 .check-row input { width: auto; accent-color: var(--current); }
 .session-toolbar {
@@ -96,6 +124,12 @@
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .session .session-subtitle { color: #31474f; font-family: var(--body-font); font-size: .72rem; }
+.archive-label {
+  display: inline-block; padding: .08rem .3rem; color: #704727; background: #f4e5d4;
+  border: 1px solid #d6b995; font-family: var(--mono-font); font-size: .58rem;
+  font-weight: 650; letter-spacing: .05em; line-height: 1.2; text-transform: uppercase;
+}
+.session > .archive-label { margin-top: .32rem; }
 .session .session-meta-line { display: flex; align-items: center; gap: .35rem; }
 .agent-label {
   display: inline-block; max-width: 8rem; padding: .08rem .28rem;
@@ -114,6 +148,10 @@
   overflow-wrap: anywhere; font-size: clamp(1.8rem, 3vw, 2.6rem);
   -webkit-box-orient: vertical; -webkit-line-clamp: 2;
 }
+.session-heading-flags {
+  display: flex; align-items: center; gap: .55rem; margin-bottom: .25rem;
+}
+.session-heading-flags .eyebrow { margin: 0; }
 .session-source-id {
   margin-top: .45rem; color: var(--ink-soft); font-size: .72rem;
 }

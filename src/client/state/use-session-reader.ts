@@ -196,6 +196,7 @@ export function useSessionReader(
   useSessionPolling(
     selectedId !== null &&
       state.detail !== null &&
+      !state.detail.session.archived &&
       state.detail.session.sourceState !== "unavailable",
     pollSession,
     POLL_INTERVAL_MS,

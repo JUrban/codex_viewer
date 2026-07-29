@@ -54,8 +54,9 @@ user and assistant messages, then independently filters `directive`, `tool`,
 `token`, and `internal` items. Those four technical
 event kinds are hidden by default and can be enabled without reloading the
 timeline. Enabled kinds are stored in the page URL as one comma-separated
-`show` parameter. The archived-only list filter remains client state and is
-sent to the list API without being stored in the page URL.
+`show` parameter. The session list uses an explicit `active | archived | all`
+archive scope. Active is the default; non-default scopes are stored in the
+page URL as `archiveScope`.
 
 ## Truncation and paging
 

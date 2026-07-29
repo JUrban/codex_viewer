@@ -77,7 +77,7 @@ export function useSessionList(filters: BrowserFilters) {
         if (loadAbort.current === controller) loadAbort.current = null;
       });
     return () => controller.abort();
-  }, [debouncedQuery, filters.archived, filters.from, filters.project, filters.to]);
+  }, [debouncedQuery, filters.archiveScope, filters.from, filters.project, filters.to]);
 
   const loadMoreSessions = useCallback(async () => {
     const current = state.data;
@@ -204,7 +204,7 @@ function listQuery(filters: BrowserFilters, q: string): SessionListQuery {
     project: filters.project || undefined,
     from: filters.from ? new Date(`${filters.from}T00:00:00`).toISOString() : undefined,
     to: filters.to ? new Date(`${filters.to}T23:59:59.999`).toISOString() : undefined,
-    archived: filters.archived || undefined,
+    archiveScope: filters.archiveScope,
     limit: LIST_PAGE_SIZE,
   };
 }

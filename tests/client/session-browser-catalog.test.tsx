@@ -48,33 +48,73 @@ describe("session catalog interactions", () => {
     expect(await screen.findByRole("list", { name: "Session timeline" })).toBeInTheDocument();
   });
 
-  it("keeps the archived-only filter out of the page URL while sending it to the list API", async () => {
+  it("uses a URL-backed three-state archive scope and labels archived sessions", async () => {
     const listUrls: string[] = [];
+    const archivedSession = {
+      ...baseSession,
+      archived: true,
+      title: "Archived reader work",
+    };
     vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => {
       const url = String(input);
       if (url.includes("/api/v1/sessions?")) listUrls.push(url);
-      return Promise.resolve(json(listBody));
+      if (url.endsWith(SESSION_ID)) {
+        return Promise.resolve(json({
+          ...detailBody,
+          session: { ...detailBody.session, ...archivedSession },
+        }));
+      }
+      if (url.includes("/items")) return Promise.resolve(json(firstPage));
+      return Promise.resolve(json(
+        url.includes("archiveScope=archived")
+          ? {
+              ...listBody,
+              sessions: [entry(archivedSession)],
+            }
+          : listBody,
+      ));
     }));
     const user = userEvent.setup();
     render(<App />);
-    const archived = await screen.findByRole("checkbox", { name: "Archived only" });
-  
+    const active = await screen.findByRole("radio", { name: "Active" });
+    const archived = screen.getByRole("radio", { name: "Archived" });
+    const all = screen.getByRole("radio", { name: "All" });
+
+    expect(active).toBeChecked();
+    expect(all).not.toBeChecked();
+    expect(listUrls.some((url) => url.includes("archiveScope=active"))).toBe(true);
+    expect(window.location.search).toBe("");
+
     await user.click(archived);
     await waitFor(() => {
-      expect(listUrls.some((url) => url.includes("archived=true"))).toBe(true);
+      expect(listUrls.some((url) => url.includes("archiveScope=archived"))).toBe(true);
     });
     expect(archived).toBeChecked();
-    expect(window.location.search).toBe("");
-  
+    expect(window.location.search).toContain("archiveScope=archived");
+    expect(await screen.findByRole("button", { name: /Archived reader work.*Archived/ }))
+      .toBeInTheDocument();
+
     await user.type(screen.getByRole("searchbox"), "reader");
     await waitFor(() => expect(window.location.search).toContain("q=reader"));
-    expect(window.location.search).not.toContain("archived");
     await waitFor(() => {
       expect(listUrls.some((url) =>
-        url.includes("archived=true") && url.includes("q=reader")
+        url.includes("archiveScope=archived") && url.includes("q=reader")
       )).toBe(true);
     });
     expect(archived).toBeChecked();
+
+    await user.click(screen.getByRole("button", { name: /Archived reader work.*Archived/ }));
+    expect(await screen.findByRole("heading", { name: "Archived reader work" }))
+      .toBeInTheDocument();
+    expect(screen.getAllByText("Archived")).toHaveLength(3);
+
+    await user.click(all);
+    expect(all).toBeChecked();
+    expect(window.location.search).toContain("archiveScope=all");
+
+    window.history.replaceState(null, "", "/?archiveScope=archived");
+    window.dispatchEvent(new PopStateEvent("popstate"));
+    await waitFor(() => expect(archived).toBeChecked());
   });
 
   it("loads catalog pages beyond the first 200 summaries", async () => {

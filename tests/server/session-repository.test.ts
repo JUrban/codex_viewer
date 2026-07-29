@@ -1,4 +1,4 @@
-import { cp, readFile, rename, writeFile } from "node:fs/promises";
+import { cp, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { CodexCatalogSource } from "../../src/server/codex/catalog-source.js";
@@ -67,7 +67,12 @@ describe("DefaultSessionRepository", () => {
   it("publishes linked summaries, pages one immutable generation, and replaces it after append", async () => {
     const { home, repository } = await fixtureRepository();
     const first = await repository.list({});
-    expect(first.sessions).toHaveLength(4);
+    expect(first.sessions).toHaveLength(3);
+    expect(first.sessions.every((entry) => !entry.session.archived)).toBe(true);
+    const archived = await repository.list({ archiveScope: "archived" });
+    expect(archived.sessions).toHaveLength(1);
+    expect(archived.sessions[0]?.session.archived).toBe(true);
+    expect((await repository.list({ archiveScope: "all" })).sessions).toHaveLength(4);
     const parent = first.sessions.find((entry) => entry.session.title === "Synthetic trace")!;
     const child = first.sessions.find((entry) => entry.session.cwd === "/synthetic/child")!;
     expect(child.session.parentId).toBe(parent.session.id);
@@ -192,6 +197,55 @@ describe("DefaultSessionRepository", () => {
 
     const resultBudget = await repository.list({ q: "synthetic", limit: 1 });
     expect(resultBudget.sessions).toHaveLength(1);
+  });
+
+  it("applies archive scope before bounded full-text search", async () => {
+    const home = await createTempDirectory("codex-archive-search-");
+    await cp(resolve("tests/fixtures/codex-home"), home, { recursive: true });
+    const archivedRollout = join(
+      home,
+      "archived_sessions/rollout-2026-07-20T08-00-00-archived-session.jsonl",
+    );
+    const archivedSource = await readFile(archivedRollout, "utf8");
+    await writeFile(
+      archivedRollout,
+      `${archivedSource}{"timestamp":"2026-07-20T08:00:01.000Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"${"x".repeat(2_000)}"}]}}\n`,
+    );
+    const repository = await createSessionRepository(home, true, {
+      maxScannedBytes: 1_000,
+      maxResults: 200,
+      maxExcerptChars: 240,
+      maxDurationMs: 1_000,
+    });
+
+    const result = await repository.list({
+      archiveScope: "active",
+      q: "Synthetic trace",
+    });
+    expect(result.sessions).toHaveLength(1);
+    expect(result.partial).toBe(false);
+  });
+
+  it("discovers an archived root created after repository startup", async () => {
+    const home = await createTempDirectory("codex-late-archive-");
+    await mkdir(join(home, "sessions"), { recursive: true });
+    await writeFile(
+      join(home, "sessions/rollout-active.jsonl"),
+      '{"timestamp":"2026-07-28T10:00:00.000Z","type":"session_meta","payload":{"id":"active-session","title":"Active trace"}}\n',
+    );
+    const repository = await createSessionRepository(home, true);
+    expect((await repository.list({ archiveScope: "all" })).sessions).toHaveLength(1);
+
+    await mkdir(join(home, "archived_sessions"), { recursive: true });
+    await writeFile(
+      join(home, "archived_sessions/rollout-archived.jsonl"),
+      '{"timestamp":"2026-07-20T10:00:00.000Z","type":"session_meta","payload":{"id":"archived-session","title":"Late archive"}}\n',
+    );
+    await repository.refresh();
+
+    const archived = await repository.list({ archiveScope: "archived" });
+    expect(archived.sessions).toHaveLength(1);
+    expect(archived.sessions[0]?.session.title).toBe("Late archive");
   });
 
   it("compares time filters as instants and rejects an inverted range", async () => {

@@ -19,7 +19,16 @@ describe("application shell", () => {
     render(<App />);
     expect(screen.getByRole("navigation", { name: "Sessions" })).toBeInTheDocument();
     expect(screen.getByRole("searchbox", { name: "Find a session" })).toBeInTheDocument();
-    expect(await screen.findByRole("heading", { name: "No sessions match" })).toBeInTheDocument();
+    const from = screen.getByLabelText("From");
+    expect(screen.getByLabelText("To")).toBeInTheDocument();
+    const project = screen.getByRole("combobox", { name: "Project" });
+    const sessionState = screen.getByRole("group", { name: "Session state" });
+    expect(from.compareDocumentPosition(project) & Node.DOCUMENT_POSITION_FOLLOWING)
+      .toBeTruthy();
+    expect(project.compareDocumentPosition(sessionState) & Node.DOCUMENT_POSITION_FOLLOWING)
+      .toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "No active sessions match" }))
+      .toBeInTheDocument();
   });
 
   it("shows a useful API error", async () => {

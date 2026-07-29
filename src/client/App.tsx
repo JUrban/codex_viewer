@@ -62,8 +62,8 @@ function SessionIndex({ browser }: { browser: SessionBrowser }) {
       {browser.listLoading ? <p className="loading" role="status">Finding sessions…</p> : null}
       {!browser.listLoading && browser.list && sessions.length === 0
         ? (
-            <EmptyState title="No sessions match">
-              Clear a filter or search for a different phrase.
+            <EmptyState title={emptyTitle(browser.filters.archiveScope)}>
+              {emptyMessage(browser.filters.archiveScope)}
             </EmptyState>
           )
         : (
@@ -93,6 +93,18 @@ function SessionIndex({ browser }: { browser: SessionBrowser }) {
         : null}
     </aside>
   );
+}
+
+function emptyTitle(scope: SessionBrowser["filters"]["archiveScope"]): string {
+  if (scope === "active") return "No active sessions match";
+  if (scope === "archived") return "No archived sessions match";
+  return "No sessions match";
+}
+
+function emptyMessage(scope: SessionBrowser["filters"]["archiveScope"]): string {
+  if (scope === "active") return "Try All sessions, or clear another filter.";
+  if (scope === "archived") return "Try All sessions, or clear another filter.";
+  return "Clear a filter or search for a different phrase.";
 }
 
 function RefreshFeedback({

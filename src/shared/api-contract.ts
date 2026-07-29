@@ -30,12 +30,14 @@ export interface StatusResponse {
   warningCount: number;
 }
 
+export type ArchiveScope = "active" | "archived" | "all";
+
 export interface SessionListQuery {
   q?: string;
   project?: string;
   from?: string;
   to?: string;
-  archived?: boolean;
+  archiveScope?: ArchiveScope;
   offset?: number;
   limit?: number;
   generation?: CatalogGeneration;

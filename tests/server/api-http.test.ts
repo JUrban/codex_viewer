@@ -100,6 +100,19 @@ describe("versioned session API", () => {
     });
     expect(agentSearch.sessions[0].matches[0].field).toBe("title");
 
+    const active = await fetch(`${base}/api/v1/sessions?archiveScope=active`)
+      .then((response) => response.json());
+    const archived = await fetch(`${base}/api/v1/sessions?archiveScope=archived`)
+      .then((response) => response.json());
+    const all = await fetch(`${base}/api/v1/sessions?archiveScope=all`)
+      .then((response) => response.json());
+    expect(active.sessions.every(
+      (entry: { session: { archived: boolean } }) => !entry.session.archived,
+    )).toBe(true);
+    expect(archived.sessions).toHaveLength(1);
+    expect(archived.sessions[0].session.archived).toBe(true);
+    expect(all.total).toBe(active.total + archived.total);
+
     const detailResponse = await fetch(`${base}/api/v1/sessions/${basic.session.id}`);
     const detail = await detailResponse.json();
     expect(detail.session.title).toBe("Synthetic trace");
@@ -203,7 +216,8 @@ describe("versioned session API", () => {
     const body = await invalid.text();
     expect(body).not.toContain(canary);
     expect(JSON.parse(body).error.code).toBe("invalid_query");
-    expect((await fetch(`${base}/api/v1/sessions?archived=maybe`)).status).toBe(400);
+    expect((await fetch(`${base}/api/v1/sessions?archived=true`)).status).toBe(400);
+    expect((await fetch(`${base}/api/v1/sessions?archiveScope=maybe`)).status).toBe(400);
     expect((await fetch(`${base}/api/v1/sessions?offset=1`)).status).toBe(400);
     expect((await fetch(
       `${base}/api/v1/sessions/${basic.session.id}/items?limit=513`,

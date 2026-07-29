@@ -46,6 +46,46 @@ describe("session polling and failures", () => {
     expect(detailCalls()).toBeGreaterThan(before);
   });
 
+  it("does not poll an archived session but keeps manual refresh available", async () => {
+    vi.useFakeTimers();
+    const archivedSession = { ...baseSession, archived: true };
+    const archivedDetail = {
+      ...detailBody,
+      session: { ...detailBody.session, archived: true },
+    };
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/items")) return Promise.resolve(json({ ...firstPage, hasMore: false }));
+      if (url.endsWith(SESSION_ID)) return Promise.resolve(json(archivedDetail));
+      return Promise.resolve(json({
+        ...listBody,
+        sessions: [entry(archivedSession)],
+      }));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<App />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Reader work/ }));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    const detailCalls = () =>
+      fetchMock.mock.calls.filter(([url]) => String(url).endsWith(SESSION_ID)).length;
+    const before = detailCalls();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(16_000);
+    });
+    expect(detailCalls()).toBe(before);
+
+    fireEvent.click(screen.getByRole("button", { name: "Refresh sessions" }));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(detailCalls()).toBe(before + 1);
+  });
+
   it("preserves loaded pages during a same-generation poll", async () => {
     vi.useFakeTimers();
     const fetchMock = vi.fn((input: RequestInfo | URL) => {

@@ -1,4 +1,7 @@
-import { CompositeCatalogSource } from "../codex/catalog-source.js";
+import {
+  CompositeCatalogSource,
+  type CodexCatalogSource,
+} from "../codex/catalog-source.js";
 import { IdentityResolver } from "../codex/identity-resolver.js";
 import { JsonlCatalogSource } from "../codex/jsonl-catalog-source.js";
 import { WholeFileRolloutDecoder } from "../codex/rollout-decoder.js";
@@ -13,11 +16,15 @@ export async function createSessionRepository(
   disableSqlite = false,
   searchBudget?: SearchBudget,
 ): Promise<DefaultSessionRepository> {
-  const policy = await PathPolicy.create(codexHome);
-  const source = new CompositeCatalogSource(
-    new JsonlCatalogSource(policy),
-    new SqliteCatalogSource(codexHome, policy, disableSqlite),
-  );
+  const source: CodexCatalogSource = {
+    async discover() {
+      const policy = await PathPolicy.create(codexHome);
+      return new CompositeCatalogSource(
+        new JsonlCatalogSource(policy),
+        new SqliteCatalogSource(codexHome, policy, disableSqlite),
+      ).discover();
+    },
+  };
   return new DefaultSessionRepository(
     source,
     new WholeFileRolloutDecoder(),

@@ -27,7 +27,10 @@ export function SessionHeader({
   return (
     <header className="reader-header">
       <div>
-        <p className="eyebrow">Session trace</p>
+        <div className="session-heading-flags">
+          <p className="eyebrow">Session trace</p>
+          {session.archived ? <span className="archive-label">Archived</span> : null}
+        </div>
         <h2 id="session-title">{session.title}</h2>
         <p className="session-meta">
           {session.cwd ?? "Project unavailable"} · {updatedAt} · {session.itemCount} events

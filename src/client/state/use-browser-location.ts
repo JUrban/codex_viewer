@@ -4,13 +4,14 @@ import {
   type TimelineVisibility,
   type TimelineVisibilityKey,
 } from "./timeline-visibility";
+import type { ArchiveScope } from "../../shared/api-contract";
 
 export interface BrowserFilters {
   q: string;
   project: string;
   from: string;
   to: string;
-  archived: boolean;
+  archiveScope: ArchiveScope;
 }
 
 export interface BrowserLocation {
@@ -24,7 +25,7 @@ export const EMPTY_FILTERS: BrowserFilters = {
   project: "",
   from: "",
   to: "",
-  archived: false,
+  archiveScope: "active",
 };
 
 export function useBrowserLocation() {
@@ -65,7 +66,7 @@ export function useBrowserLocation() {
 
   useEffect(() => {
     const onPopState = () => {
-      setLocation(readUrl(locationRef.current.filters.archived));
+      setLocation(readUrl());
     };
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
@@ -80,7 +81,7 @@ export function useBrowserLocation() {
   };
 }
 
-function readUrl(archived = false): BrowserLocation {
+function readUrl(): BrowserLocation {
   const params = new URLSearchParams(window.location.search);
   const shown = new Set((params.get("show") ?? "").split(",").filter(Boolean));
   return {
@@ -89,7 +90,7 @@ function readUrl(archived = false): BrowserLocation {
       project: params.get("project") ?? "",
       from: params.get("from") ?? "",
       to: params.get("to") ?? "",
-      archived,
+      archiveScope: parseArchiveScope(params.get("archiveScope")),
     },
     selectedId: params.get("session"),
     visibility: {
@@ -109,6 +110,9 @@ function writeUrl(location: BrowserLocation, replace: boolean): void {
   if (filters.project) params.set("project", filters.project);
   if (filters.from) params.set("from", filters.from);
   if (filters.to) params.set("to", filters.to);
+  if (filters.archiveScope !== "active") {
+    params.set("archiveScope", filters.archiveScope);
+  }
   if (selectedId) params.set("session", selectedId);
   const shown = VISIBILITY_URL_VALUES
     .filter(({ key }) => visibility[key])
@@ -135,5 +139,10 @@ function sameUrlFilters(left: BrowserFilters, right: BrowserFilters): boolean {
   return left.q === right.q &&
     left.project === right.project &&
     left.from === right.from &&
-    left.to === right.to;
+    left.to === right.to &&
+    left.archiveScope === right.archiveScope;
+}
+
+function parseArchiveScope(value: string | null): ArchiveScope {
+  return value === "archived" || value === "all" ? value : "active";
 }
