@@ -8,6 +8,7 @@ export const MAX_SEARCH_QUERY_CHARS = 200;
 export interface SearchDocument {
   sessionId: SessionId;
   title: string;
+  agentTerms: string[];
   cwd: string;
   messages: string[];
 }
@@ -36,6 +37,9 @@ export function buildSearchDocument(normalized: NormalizedSession): SearchDocume
   return {
     sessionId: normalized.detail.id,
     title: normalized.detail.title,
+    agentTerms: normalized.detail.agent === null
+      ? []
+      : Object.values(normalized.detail.agent).filter((value): value is string => value !== null),
     cwd: normalized.detail.cwd ?? "",
     messages: normalized.items
       .filter((item): item is MessageItem => item.kind === "message")
@@ -99,7 +103,7 @@ export function searchDocuments(
 
 function fields(document: SearchDocument): Array<["title" | "cwd" | "message", string[]]> {
   return [
-    ["title", [document.title]],
+    ["title", [document.title, ...(document.agentTerms ?? [])]],
     ["cwd", [document.cwd]],
     ["message", document.messages],
   ];

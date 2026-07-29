@@ -90,6 +90,16 @@ describe("versioned session API", () => {
     expect(basic.session.sourceId).toBeUndefined();
     expect(JSON.stringify(list)).not.toContain("DEVELOPER_CONTEXT_CANARY");
 
+    const agentSearch = await fetch(`${base}/api/v1/sessions?q=widget_review`)
+      .then((response) => response.json());
+    expect(agentSearch.sessions).toHaveLength(1);
+    expect(agentSearch.sessions[0].session.agent).toEqual({
+      taskName: "widget_review",
+      nickname: "Sagan",
+      role: "reviewer",
+    });
+    expect(agentSearch.sessions[0].matches[0].field).toBe("title");
+
     const detailResponse = await fetch(`${base}/api/v1/sessions/${basic.session.id}`);
     const detail = await detailResponse.json();
     expect(detail.session.title).toBe("Synthetic trace");

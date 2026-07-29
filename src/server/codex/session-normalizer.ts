@@ -94,6 +94,7 @@ export class DefaultSessionNormalizer implements SessionNormalizer {
       archived: metadata.archived,
       parentId: metadata.parentThreadId,
       childIds: [],
+      agent: metadata.agent ?? null,
       sourceState: decoded.incompleteTail || warningCount > 0 ? "partial" : "complete",
       messageCount,
       toolCount,

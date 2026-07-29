@@ -1,4 +1,4 @@
-import type { Diagnostic } from "../../shared/domain.js";
+import type { AgentIdentity, Diagnostic } from "../../shared/domain.js";
 import type { RolloutDescriptor } from "../security/path-policy.js";
 import { JsonlCatalogSource } from "./jsonl-catalog-source.js";
 import { SqliteCatalogSource } from "./sqlite-catalog-source.js";
@@ -11,6 +11,7 @@ export interface CatalogMetadata {
   updatedAt: string | null;
   parentThreadId: string | null;
   archived: boolean | null;
+  agent?: AgentIdentity | null;
 }
 
 export interface CatalogEntry {

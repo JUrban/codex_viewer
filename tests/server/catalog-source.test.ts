@@ -39,11 +39,16 @@ describe("catalog discovery", () => {
         title TEXT,
         cwd TEXT,
         parent_thread_id TEXT,
-        archived INTEGER
+        archived INTEGER,
+        agent_nickname TEXT,
+        agent_role TEXT,
+        agent_path TEXT,
+        thread_source TEXT
       )
     `);
     database.prepare(
-      "INSERT INTO threads (id, rollout_path, title, cwd, parent_thread_id, archived) VALUES (?, ?, ?, ?, ?, ?)",
+      "INSERT INTO threads (id, rollout_path, title, cwd, parent_thread_id, archived, " +
+      "agent_nickname, agent_role, agent_path, thread_source) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     ).run(
       "basic-session",
       join(home, "sessions/2026/07/28/rollout-2026-07-28T10-00-00-basic-session.jsonl"),
@@ -51,6 +56,10 @@ describe("catalog discovery", () => {
       "/synthetic/sqlite-project",
       null,
       0,
+      "Ada",
+      "reviewer",
+      "/root/sqlite_review",
+      "subagent",
     );
     database.close();
 
@@ -66,7 +75,46 @@ describe("catalog discovery", () => {
       .toEqual(expect.objectContaining({
         title: "Title from SQLite",
         cwd: "/synthetic/sqlite-project",
+        agent: {
+          taskName: "sqlite_review",
+          nickname: "Ada",
+          role: "reviewer",
+        },
       }));
     expect(discovery.diagnostics).toEqual([]);
+  });
+
+  it("does not treat the user thread source as an agent role", async () => {
+    const home = await mkdtemp(join(tmpdir(), "codex-catalog-user-source-"));
+    await cp(resolve("tests/fixtures/codex-home"), home, { recursive: true });
+    const database = new DatabaseSync(join(home, "state_50.sqlite"));
+    database.exec(`
+      CREATE TABLE threads (
+        id TEXT PRIMARY KEY,
+        rollout_path TEXT NOT NULL,
+        agent_nickname TEXT,
+        agent_role TEXT,
+        agent_path TEXT,
+        thread_source TEXT
+      )
+    `);
+    database.prepare(
+      "INSERT INTO threads (id, rollout_path, agent_nickname, agent_role, agent_path, thread_source) " +
+      "VALUES (?, ?, ?, ?, ?, ?)",
+    ).run(
+      "basic-session",
+      join(home, "sessions/2026/07/28/rollout-2026-07-28T10-00-00-basic-session.jsonl"),
+      null,
+      null,
+      null,
+      "user",
+    );
+    database.close();
+
+    const policy = await PathPolicy.create(home);
+    const discovery = await new SqliteCatalogSource(home, policy).discover();
+    expect(discovery.compatible).toBe(true);
+    expect(discovery.entries).toHaveLength(1);
+    expect(discovery.entries[0]?.metadata?.agent).toBeNull();
   });
 });

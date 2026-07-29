@@ -453,6 +453,11 @@ describe("IdentityResolver and SessionNormalizer", () => {
     const normalized = await normalize("rollout-2026-07-28T11-00-00-child-session.jsonl");
     expect(normalized.detail.cwd).toBe("/synthetic/child");
     expect(normalized.detail.parentId).toBe("basic-session");
+    expect(normalized.detail.agent).toEqual({
+      taskName: "widget_review",
+      nickname: "Sagan",
+      role: "reviewer",
+    });
   });
 
   it("keeps valid records after a malformed middle line and marks the source partial", async () => {

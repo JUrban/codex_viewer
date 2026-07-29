@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "../../src/client/App";
 import { InjectedContextItem } from "../../src/client/components/InjectedContextItem";
 import { MessageItem, safeUrlTransform } from "../../src/client/components/MessageItem";
-import { groupSessions } from "../../src/client/components/SessionTree";
+import { groupSessions, SessionTree } from "../../src/client/components/SessionTree";
 import { Timeline } from "../../src/client/components/Timeline";
 import { ToolItem } from "../../src/client/components/ToolItem";
 import type { ItemPageResponse, SessionListEntry } from "../../src/shared/api-contract";
@@ -23,6 +23,7 @@ const baseSession: SessionSummary = {
   id: SESSION_ID, title: "Reader work", preview: "preview", cwd: "/project/reader",
   createdAt: "2026-07-28T10:00:00Z", updatedAt: "2026-07-28T11:00:00Z",
   archived: false, parentId: null, childIds: [], sourceState: "complete" as const,
+  agent: null,
   messageCount: 2, toolCount: 1, warningCount: 0,
 };
 const listBody = {
@@ -185,6 +186,53 @@ describe("session browser", () => {
     expect(groups[0]?.children[0]?.root.session.title).toBe("Child");
     expect(groups[0]?.children[0]?.children[0]?.root.session.title).toBe("Grandchild");
     expect(groups[1]).toMatchObject({ orphan: true, root: { session: { title: "Orphan" } } });
+  });
+
+  it("collapses child sessions and presents structured agent task identity", async () => {
+    const child = entry({
+      ...baseSession,
+      id: CHILD_ID,
+      parentId: SESSION_ID,
+      title: "Inspect the repository implementation",
+      agent: { taskName: "repository_review", nickname: "Sagan", role: "reviewer" },
+    });
+    const entries = [entry({ ...baseSession, childIds: [CHILD_ID] }), child];
+    const user = userEvent.setup();
+    const { rerender } = render(
+      <SessionTree entries={entries} selectedId={null} onSelect={vi.fn()} />,
+    );
+
+    expect(screen.queryByRole("button", { name: /repository_review/ })).toBeNull();
+    const disclosure = screen.getByRole("button", { name: /Expand 1 child sessions/ });
+    expect(disclosure).toHaveAttribute("aria-expanded", "false");
+    await user.click(disclosure);
+    expect(screen.getByRole("button", { name: /repository_review/ })).toHaveTextContent(
+      "Inspect the repository implementation",
+    );
+    expect(screen.getByText("reviewer")).toBeInTheDocument();
+    expect(screen.getByText("Sagan")).toBeInTheDocument();
+
+    rerender(<SessionTree entries={[...entries]} selectedId={null} onSelect={vi.fn()} />);
+    expect(screen.getByRole("button", { name: /repository_review/ })).toBeInTheDocument();
+  });
+
+  it("reveals selected descendants and search results through nested branches", () => {
+    const child = entry({ ...baseSession, id: CHILD_ID, parentId: SESSION_ID, title: "Child" });
+    const grandchild = entry({
+      ...baseSession,
+      id: "grandchildabcdefghijklmn",
+      parentId: CHILD_ID,
+      title: "Grandchild",
+    });
+    const entries = [entry(baseSession), child, grandchild];
+    const { rerender } = render(
+      <SessionTree entries={entries} selectedId={grandchild.session.id} onSelect={vi.fn()} />,
+    );
+    expect(screen.getByRole("button", { name: /Grandchild/ })).toBeInTheDocument();
+    rerender(
+      <SessionTree entries={entries} selectedId={null} revealMatches onSelect={vi.fn()} />,
+    );
+    expect(screen.getByRole("button", { name: /Grandchild/ })).toBeInTheDocument();
   });
 
   it("keeps filters and selection in the URL and cancels obsolete list requests", async () => {
@@ -446,6 +494,174 @@ describe("session browser", () => {
     expect(await screen.findByRole("button", { name: /Later session/ })).toBeInTheDocument();
     expect(fetchMock.mock.calls.some(([url]) =>
       String(url).includes("offset=1") && String(url).includes("generation=1"))).toBe(true);
+  });
+
+  it("refreshes the catalog and selected timeline without clearing the current UI", async () => {
+    let detailCalls = 0;
+    let itemCalls = 0;
+    let listCalls = 0;
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/items")) {
+        itemCalls += 1;
+        return Promise.resolve(json({ ...firstPage, generation: detailCalls || 1 }));
+      }
+      if (url.endsWith(SESSION_ID)) {
+        detailCalls += 1;
+        return Promise.resolve(json({ ...detailBody, generation: detailCalls }));
+      }
+      listCalls += 1;
+      return Promise.resolve(json({ ...listBody, generation: listCalls > 1 ? 2 : 1 }));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(await screen.findByRole("button", { name: /Reader work/ }));
+    expect(await screen.findByText("Hello")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Refresh sessions" }));
+    expect(screen.getByRole("button", { name: /Reader work/ })).toBeInTheDocument();
+    expect(await screen.findByText("Sessions refreshed · 1 available")).toBeInTheDocument();
+    expect(listCalls).toBe(2);
+    expect(detailCalls).toBe(2);
+    expect(itemCalls).toBe(2);
+    expect(window.location.search).toContain(`session=${SESSION_ID}`);
+  });
+
+  it("uses the current internal view when a refresh finishes after the view changes", async () => {
+    let resolveRefresh!: (response: Response) => void;
+    const pendingRefresh = new Promise<Response>((resolve) => {
+      resolveRefresh = resolve;
+    });
+    let listCalls = 0;
+    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/items")) {
+        const internalView = url.includes("view=internal");
+        return Promise.resolve(json({
+          ...firstPage,
+          items: [{
+            kind: "message",
+            id: internalView ? "internal-view" : "conversation-view",
+            ordinal: 1,
+            timestamp: null,
+            role: "assistant",
+            phase: "final",
+            markdown: internalView ? "Internal view" : "Conversation view",
+          }],
+          nextAfterOrdinal: null,
+          hasMore: false,
+        }));
+      }
+      if (url.endsWith(SESSION_ID)) return Promise.resolve(json(detailBody));
+      listCalls += 1;
+      return listCalls === 2 ? pendingRefresh : Promise.resolve(json(listBody));
+    }));
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(await screen.findByRole("button", { name: /Reader work/ }));
+    expect(await screen.findByText("Conversation view")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Refresh sessions" }));
+    const toggle = screen.getByRole("checkbox", { name: "Show internal events" });
+    await user.click(toggle);
+    expect(await screen.findByText("Internal view")).toBeInTheDocument();
+
+    resolveRefresh(json({ ...listBody, generation: 2 }));
+    expect(await screen.findByText("Sessions refreshed · 1 available")).toBeInTheDocument();
+    expect(toggle).toBeChecked();
+    expect(screen.getByText("Internal view")).toBeInTheDocument();
+    expect(screen.queryByText("Conversation view")).toBeNull();
+  });
+
+  it("clears an initial catalog error after a successful manual refresh", async () => {
+    let listCalls = 0;
+    vi.stubGlobal("fetch", vi.fn(() => {
+      listCalls += 1;
+      if (listCalls === 1) {
+        return Promise.resolve(json({
+          error: { code: "internal_error", message: "Catalog unavailable" },
+        }, 500));
+      }
+      return Promise.resolve(json(listBody));
+    }));
+    const user = userEvent.setup();
+    render(<App />);
+    expect(await screen.findByRole("alert")).toHaveTextContent("Catalog unavailable");
+    await user.click(screen.getByRole("button", { name: "Refresh sessions" }));
+    expect(await screen.findByText("Sessions refreshed · 1 available")).toBeInTheDocument();
+    expect(screen.queryByText("Catalog unavailable")).toBeNull();
+    expect(screen.getByText("Choose a session")).toBeInTheDocument();
+  });
+
+  it("keeps the existing session list when a manual refresh fails", async () => {
+    let listCalls = 0;
+    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => {
+      if (String(input).includes("/api/v1/sessions?")) {
+        listCalls += 1;
+      }
+      if (listCalls > 1) {
+        return Promise.resolve(json({
+          error: { code: "internal_error", message: "Refresh unavailable" },
+        }, 500));
+      }
+      return Promise.resolve(json(listBody));
+    }));
+    const user = userEvent.setup();
+    render(<App />);
+    expect(await screen.findByRole("button", { name: /Reader work/ })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Refresh sessions" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Refresh unavailable Try refreshing again.",
+    );
+    expect(screen.getByRole("button", { name: /Reader work/ })).toBeInTheDocument();
+  });
+
+  it("replaces a missing session deep link instead of adding a history entry", async () => {
+    window.history.replaceState(null, "", `/?session=${SESSION_ID}`);
+    const replaceState = vi.spyOn(window.history, "replaceState");
+    const pushState = vi.spyOn(window.history, "pushState");
+    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith(SESSION_ID)) {
+        return Promise.resolve(json({
+          error: { code: "session_not_found", message: "Session not found" },
+        }, 404));
+      }
+      return Promise.resolve(json(listBody));
+    }));
+
+    render(<App />);
+    expect(await screen.findByText("Choose a session")).toBeInTheDocument();
+    expect(window.location.search).toBe("");
+    expect(replaceState).toHaveBeenCalledWith(null, "", "/");
+    expect(pushState).not.toHaveBeenCalled();
+    replaceState.mockRestore();
+    pushState.mockRestore();
+  });
+
+  it("ends the manual refresh state when a filter supersedes it", async () => {
+    let resolveRefresh!: (response: Response) => void;
+    const refresh = new Promise<Response>((resolve) => {
+      resolveRefresh = resolve;
+    });
+    let listCalls = 0;
+    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/api/v1/sessions?")) {
+        listCalls += 1;
+        if (listCalls === 2) return refresh;
+      }
+      return Promise.resolve(json(listBody));
+    }));
+    const user = userEvent.setup();
+    render(<App />);
+    expect(await screen.findByRole("button", { name: /Reader work/ })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Refresh sessions" }));
+    expect(screen.getByRole("button", { name: "Refresh sessions" })).toBeDisabled();
+    await user.type(screen.getByRole("searchbox"), "new");
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Refresh sessions" })).toBeEnabled());
+    resolveRefresh(json({ ...listBody, generation: 2 }));
   });
 
   it("does not merge an obsolete catalog page after filters change", async () => {

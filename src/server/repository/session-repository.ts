@@ -331,6 +331,7 @@ export class DefaultSessionRepository implements SessionRepository {
         archived: entry.metadata?.archived ?? entry.descriptor.archived,
         parentId: null,
         childIds: [],
+        agent: entry.metadata?.agent ?? null,
         sourceState: "unavailable",
         messageCount: 0,
         toolCount: 0,

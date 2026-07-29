@@ -16,6 +16,8 @@ export interface BrowserFilters {
   archived: boolean;
 }
 
+type SessionLoadResult = "loaded" | "missing" | "failed";
+
 const EMPTY_FILTERS: BrowserFilters = {
   q: "",
   project: "",
@@ -50,7 +52,12 @@ function readUrl(): { filters: BrowserFilters; selectedId: string | null; intern
   };
 }
 
-function writeUrl(filters: BrowserFilters, selectedId: string | null, internal: boolean): void {
+function writeUrl(
+  filters: BrowserFilters,
+  selectedId: string | null,
+  internal: boolean,
+  replace = false,
+): void {
   const params = new URLSearchParams();
   if (filters.q) params.set("q", filters.q);
   if (filters.project) params.set("project", filters.project);
@@ -60,7 +67,11 @@ function writeUrl(filters: BrowserFilters, selectedId: string | null, internal: 
   if (selectedId) params.set("session", selectedId);
   if (internal) params.set("internal", "true");
   const next = `${window.location.pathname}${params.size ? `?${params}` : ""}`;
-  window.history.pushState(null, "", next);
+  if (replace) {
+    window.history.replaceState(null, "", next);
+  } else {
+    window.history.pushState(null, "", next);
+  }
 }
 
 export function useSessionBrowser() {
@@ -75,17 +86,24 @@ export function useSessionBrowser() {
   const [items, setItems] = useState<TimelineItem[]>([]);
   const [listLoading, setListLoading] = useState(true);
   const [readerLoading, setReaderLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshError, setRefreshError] = useState<string | null>(null);
+  const [refreshMessage, setRefreshMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const navigationAbort = useRef<AbortController | null>(null);
+  const listAbort = useRef<AbortController | null>(null);
   const listPageAbort = useRef<AbortController | null>(null);
+  const refreshAbort = useRef<AbortController | null>(null);
   const listSequence = useRef(0);
   const loadSequence = useRef(0);
   const pageRef = useRef(page);
   const selectedIdRef = useRef(selectedId);
   const internalRef = useRef(internal);
+  const filtersRef = useRef(filters);
   pageRef.current = page;
   selectedIdRef.current = selectedId;
   internalRef.current = internal;
+  filtersRef.current = filters;
 
   const invalidateTimelineRequests = useCallback(() => {
     navigationAbort.current?.abort();
@@ -139,8 +157,15 @@ export function useSessionBrowser() {
   }, [invalidateTimelineRequests]);
 
   useEffect(() => {
+    refreshAbort.current?.abort();
+    refreshAbort.current = null;
+    setRefreshing(false);
+    setRefreshError(null);
+    setRefreshMessage(null);
+    listAbort.current?.abort();
     listPageAbort.current?.abort();
     const controller = new AbortController();
+    listAbort.current = controller;
     const sequence = ++listSequence.current;
     setListLoading(true);
     const query = listQuery(filters, debouncedQuery);
@@ -153,6 +178,7 @@ export function useSessionBrowser() {
         setError(messageFor(reason));
       }
     }).finally(() => {
+      if (listAbort.current === controller) listAbort.current = null;
       if (!controller.signal.aborted && sequence === listSequence.current) {
         setListLoading(false);
       }
@@ -200,7 +226,10 @@ export function useSessionBrowser() {
     }
   }, [debouncedQuery, filters, list]);
 
-  const loadSession = useCallback(async (id: string, quiet = false) => {
+  const loadSession = useCallback(async (
+    id: string,
+    quiet = false,
+  ): Promise<SessionLoadResult> => {
     navigationAbort.current?.abort();
     const controller = new AbortController();
     navigationAbort.current = controller;
@@ -214,7 +243,7 @@ export function useSessionBrowser() {
         nextPage = await api.items(id, {
           generation: nextDetail.generation,
           limit: 50,
-          view: internal ? "internal" : "conversation",
+          view: internalRef.current ? "internal" : "conversation",
         }, controller.signal);
       } catch (reason) {
         if (!(reason instanceof ApiClientError) || reason.code !== "stale_generation") throw reason;
@@ -223,23 +252,42 @@ export function useSessionBrowser() {
         nextPage = await api.items(id, {
           generation: restartedDetail.generation,
           limit: 50,
-          view: internal ? "internal" : "conversation",
+          view: internalRef.current ? "internal" : "conversation",
         }, controller.signal);
       }
-      if (sequence !== loadSequence.current) return;
+      if (sequence !== loadSequence.current) return "failed";
       setDetail(resolvedDetail);
       if (!quiet || pageRef.current?.generation !== nextPage.generation) {
         setPage(nextPage);
         setItems(nextPage.items);
       }
       setError(null);
+      return "loaded";
     } catch (reason) {
-      if (!controller.signal.aborted && sequence === loadSequence.current) setError(messageFor(reason));
+      let result: SessionLoadResult = "failed";
+      if (!controller.signal.aborted && sequence === loadSequence.current) {
+        if (
+          reason instanceof ApiClientError &&
+          reason.status === 404 &&
+          reason.code === "session_not_found" &&
+          selectedIdRef.current === id
+        ) {
+          setSelectedIdState(null);
+          setDetail(null);
+          setPage(null);
+          setItems([]);
+          writeUrl(filtersRef.current, null, internalRef.current, true);
+          result = "missing";
+        } else {
+          setError(messageFor(reason));
+        }
+      }
+      return result;
     } finally {
       if (navigationAbort.current === controller) navigationAbort.current = null;
       if (!controller.signal.aborted && sequence === loadSequence.current) setReaderLoading(false);
     }
-  }, [internal]);
+  }, []);
 
   useEffect(() => {
     if (!selectedId) {
@@ -252,7 +300,7 @@ export function useSessionBrowser() {
     }
     void loadSession(selectedId);
     return invalidateTimelineRequests;
-  }, [invalidateTimelineRequests, loadSession, selectedId]);
+  }, [internal, invalidateTimelineRequests, loadSession, selectedId]);
 
   useEffect(() => {
     if (!selectedId || !detail || detail.session.sourceState === "unavailable") return;
@@ -324,11 +372,54 @@ export function useSessionBrowser() {
     [loadSession, selectedId],
   );
 
+  const refreshSessions = useCallback(async () => {
+    if (refreshAbort.current !== null) return;
+    listAbort.current?.abort();
+    listPageAbort.current?.abort();
+    invalidateTimelineRequests();
+    const controller = new AbortController();
+    refreshAbort.current = controller;
+    const sequence = ++listSequence.current;
+    setRefreshing(true);
+    setRefreshError(null);
+    setRefreshMessage(null);
+    try {
+      const next = await api.sessions(
+        listQuery(filtersRef.current, debouncedQuery),
+        controller.signal,
+      );
+      if (controller.signal.aborted || sequence !== listSequence.current) return;
+      setList(next);
+      setListLoading(false);
+      setError(null);
+      const selected = selectedIdRef.current;
+      const loadResult = selected === null ? "loaded" : await loadSession(selected);
+      if (controller.signal.aborted || sequence !== listSequence.current) return;
+      if (loadResult === "missing") {
+        setRefreshMessage("Sessions refreshed · the selected session is no longer available");
+      } else if (loadResult === "loaded") {
+        setRefreshMessage(`Sessions refreshed · ${next.total} available`);
+      }
+    } catch (reason) {
+      if (!controller.signal.aborted && sequence === listSequence.current) {
+        setRefreshError(messageFor(reason));
+      }
+    } finally {
+      if (refreshAbort.current === controller) {
+        refreshAbort.current = null;
+        setRefreshing(false);
+      }
+    }
+  }, [debouncedQuery, invalidateTimelineRequests, loadSession]);
+
+  useEffect(() => () => refreshAbort.current?.abort(), []);
+
   return {
     filters, setFilters, selectedId, selectSession, internal, setInternal,
-    list, detail, page, items, listLoading, readerLoading, error,
+    list, detail, page, items, listLoading, readerLoading, refreshing,
+    refreshError, refreshMessage, error,
     clearError: () => setError(null), loadMore, loadMoreSessions,
-    restartSession,
+    restartSession, refreshSessions,
   };
 }
 

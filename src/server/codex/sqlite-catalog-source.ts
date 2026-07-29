@@ -1,8 +1,9 @@
 import { lstat, readdir, realpath } from "node:fs/promises";
 import { relative, resolve, sep } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import type { Diagnostic } from "../../shared/domain.js";
+import type { AgentIdentity, Diagnostic } from "../../shared/domain.js";
 import type { PathPolicy } from "../security/path-policy.js";
+import { nonEmptyAgentIdentity, taskNameFromAgentPath } from "./agent-identity.js";
 import type { CatalogEntry, CatalogMetadata } from "./catalog-source.js";
 
 const KNOWN_COLUMNS = [
@@ -14,6 +15,10 @@ const KNOWN_COLUMNS = [
   "updated_at",
   "parent_thread_id",
   "archived",
+  "agent_nickname",
+  "agent_role",
+  "agent_path",
+  "thread_source",
 ] as const;
 
 export interface SqliteDiscovery {
@@ -97,7 +102,22 @@ function metadataFromRow(row: Record<string, unknown>): CatalogMetadata {
     updatedAt: timestamp(row.updated_at),
     parentThreadId: text(row.parent_thread_id),
     archived: typeof row.archived === "number" ? row.archived !== 0 : null,
+    agent: agentFromRow(row),
   };
+}
+
+function agentFromRow(row: Record<string, unknown>): AgentIdentity | null {
+  const agentPath = text(row.agent_path);
+  const threadSource = text(row.thread_source);
+  const role = text(row.agent_role) ??
+    (threadSource !== "subagent" && threadSource !== "cli" && threadSource !== "user"
+      ? threadSource
+      : null);
+  return nonEmptyAgentIdentity({
+    taskName: taskNameFromAgentPath(agentPath),
+    nickname: text(row.agent_nickname),
+    role,
+  });
 }
 
 function text(value: unknown): string | null {

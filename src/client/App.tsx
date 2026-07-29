@@ -19,10 +19,26 @@ export function App() {
         <SessionFilters filters={browser.filters} projects={browser.list?.projects ?? []}
           onChange={browser.setFilters} />
         {browser.list?.warnings.length ? <DiagnosticNotice diagnostics={browser.list.warnings} /> : null}
+        <div className="session-toolbar">
+          <p className="section-label">Sessions · {browser.list?.total ?? 0}</p>
+          <button type="button" className="refresh-sessions"
+            disabled={browser.listLoading || browser.refreshing}
+            aria-label="Refresh sessions"
+            onClick={() => void browser.refreshSessions()}>
+            <span aria-hidden="true" className={browser.refreshing ? "refresh-mark active" : "refresh-mark"}>↻</span>
+            {browser.refreshing ? "Refreshing…" : "Refresh"}
+          </button>
+        </div>
+        <div className="refresh-feedback" aria-live="polite">
+          {browser.refreshError
+            ? <p className="refresh-error" role="alert">{browser.refreshError} Try refreshing again.</p>
+            : browser.refreshMessage ? <p>{browser.refreshMessage}</p> : null}
+        </div>
         {browser.listLoading ? <p className="loading" role="status">Finding sessions…</p> : null}
         {!browser.listLoading && browser.list && !browser.list.sessions.length
           ? <EmptyState title="No sessions match">Clear a filter or search for a different phrase.</EmptyState>
           : <SessionTree entries={browser.list?.sessions ?? []} selectedId={browser.selectedId}
+              revealMatches={browser.filters.q.trim().length > 0}
               onSelect={browser.selectSession} />}
         {browser.list?.hasMore ? <button className="load-more" type="button"
           disabled={browser.listLoading} onClick={() => void browser.loadMoreSessions()}>

@@ -12,6 +12,12 @@ export interface Diagnostic {
   ordinal: number | null;
 }
 
+export interface AgentIdentity {
+  taskName: string | null;
+  nickname: string | null;
+  role: string | null;
+}
+
 export interface SessionSummary {
   id: SessionId;
   title: string;
@@ -22,6 +28,7 @@ export interface SessionSummary {
   archived: boolean;
   parentId: SessionId | null;
   childIds: SessionId[];
+  agent: AgentIdentity | null;
   sourceState: SourceState;
   messageCount: number;
   toolCount: number;
