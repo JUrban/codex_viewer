@@ -174,6 +174,131 @@ describe("IdentityResolver and SessionNormalizer", () => {
     expect(JSON.stringify(normalized.items)).not.toContain("Propagated parent text");
   });
 
+  it("shows turn context safely and retains allowlisted total and last token usage", () => {
+    const descriptor = {
+      id: "internal-detail-session",
+      canonicalPath: "/synthetic/rollout-internal-detail.jsonl",
+      archived: false,
+      size: 1,
+      mtimeMs: 1,
+      device: 1,
+      inode: 1,
+    };
+    const normalized = new DefaultSessionNormalizer().normalize({
+      descriptor,
+      diagnostics: [],
+      incompleteTail: false,
+      records: [
+        {
+          ordinal: 1,
+          value: {
+            timestamp: "2026-07-28T20:00:00Z",
+            type: "turn_context",
+            payload: {
+              cwd: "/TURN_CONTEXT_MUST_NOT_RENDER",
+              model: "MODEL_MUST_NOT_RENDER",
+            },
+          },
+        },
+        {
+          ordinal: 2,
+          value: {
+            timestamp: "2026-07-28T20:00:01Z",
+            type: "event_msg",
+            payload: {
+              type: "token_count",
+              info: {
+                total_token_usage: {
+                  total_tokens: 12_345,
+                  input_tokens: 10_000,
+                  cached_input_tokens: 4_000,
+                  cache_write_input_tokens: 500,
+                  output_tokens: 2_000,
+                  reasoning_output_tokens: 345,
+                  UNKNOWN_TOKEN_FIELD_MUST_NOT_RENDER: 99,
+                },
+                last_token_usage: {
+                  total_tokens: 678,
+                  input_tokens: 500,
+                  cached_input_tokens: 100,
+                  cache_write_input_tokens: -1,
+                  output_tokens: 150,
+                  reasoning_output_tokens: "28",
+                },
+              },
+              rate_limits: { secret: "RATE_LIMIT_MUST_NOT_RENDER" },
+            },
+          },
+        },
+        {
+          ordinal: 3,
+          value: {
+            type: "event_msg",
+            payload: { type: "token_count", rate_limits: { used_percent: 25 } },
+          },
+        },
+      ],
+    }, {
+      threadId: null,
+      title: null,
+      cwd: null,
+      createdAt: null,
+      updatedAt: null,
+      parentThreadId: null,
+      archived: false,
+    });
+
+    expect(normalized.items).toEqual([
+      {
+        kind: "internal",
+        id: "internal-1",
+        ordinal: 1,
+        timestamp: "2026-07-28T20:00:00Z",
+        eventType: "turn_context",
+        summary: "Internal event: turn_context",
+      },
+      {
+        kind: "internal",
+        id: "internal-2",
+        ordinal: 2,
+        timestamp: "2026-07-28T20:00:01Z",
+        eventType: "token_count",
+        summary: "Internal event: token_count",
+        tokenUsage: {
+          total: {
+            totalTokens: 12_345,
+            inputTokens: 10_000,
+            cachedInputTokens: 4_000,
+            cacheWriteInputTokens: 500,
+            outputTokens: 2_000,
+            reasoningOutputTokens: 345,
+          },
+          last: {
+            totalTokens: 678,
+            inputTokens: 500,
+            cachedInputTokens: 100,
+            cacheWriteInputTokens: null,
+            outputTokens: 150,
+            reasoningOutputTokens: null,
+          },
+        },
+      },
+      {
+        kind: "internal",
+        id: "internal-3",
+        ordinal: 3,
+        timestamp: null,
+        eventType: "token_count",
+        summary: "Internal event: token_count",
+      },
+    ]);
+    const serialized = JSON.stringify(normalized);
+    expect(serialized).not.toContain("TURN_CONTEXT_MUST_NOT_RENDER");
+    expect(serialized).not.toContain("MODEL_MUST_NOT_RENDER");
+    expect(serialized).not.toContain("UNKNOWN_TOKEN_FIELD_MUST_NOT_RENDER");
+    expect(serialized).not.toContain("RATE_LIMIT_MUST_NOT_RENDER");
+  });
+
   it("accepts only allowlisted message content parts and does not guess string content", () => {
     const descriptor = {
       id: "strict-message-content-session",

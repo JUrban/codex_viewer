@@ -486,5 +486,12 @@ function cloneDetail(detail: SessionDetail): SessionDetail {
 }
 
 function cloneItem(item: TimelineItem): TimelineItem {
-  return { ...item };
+  if (item.kind !== "internal" || item.tokenUsage === undefined) return { ...item };
+  return {
+    ...item,
+    tokenUsage: {
+      total: item.tokenUsage.total === null ? null : { ...item.tokenUsage.total },
+      last: item.tokenUsage.last === null ? null : { ...item.tokenUsage.last },
+    },
+  };
 }

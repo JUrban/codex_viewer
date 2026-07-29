@@ -70,10 +70,23 @@ export interface ReasoningItem extends TimelineItemBase {
   truncated: boolean;
 }
 
+export interface TokenUsageCounters {
+  totalTokens: number | null;
+  inputTokens: number | null;
+  cachedInputTokens: number | null;
+  cacheWriteInputTokens: number | null;
+  outputTokens: number | null;
+  reasoningOutputTokens: number | null;
+}
+
 export interface InternalEventItem extends TimelineItemBase {
   kind: "internal";
   eventType: string;
   summary: string;
+  tokenUsage?: {
+    total: TokenUsageCounters | null;
+    last: TokenUsageCounters | null;
+  };
 }
 
 export type TimelineItem =

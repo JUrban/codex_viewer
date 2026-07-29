@@ -16,7 +16,8 @@ timeline items. Keep it synchronized with `rollout-decoder.ts`,
 
 ## Record normalization
 
-- `session_meta` and `turn_context` records do not become timeline items.
+- `session_meta` records do not become timeline items. A `turn_context` record
+  becomes an `internal` item without retaining its payload.
 - A `response_item` message is accepted only when its role is `user`,
   `assistant`, or `developer`.
 - Message content includes only `input_text`, `output_text`, and `text` parts.
@@ -34,6 +35,9 @@ timeline items. Keep it synchronized with `rollout-decoder.ts`,
   `unmatched_user_event` and `unmatched_agent_event` internal items. Their
   original message text is not retained. Invalid message events become safe
   `internal` summaries of their event type.
+- A `token_count` event remains internal. When present, only the non-negative
+  integer token counters in `total_token_usage` and `last_token_usage` are
+  retained. Rate limits and unknown payload fields are discarded.
 - A reasoning response without a non-blank summary is dropped. A reasoning
   response with a summary becomes a `reasoning` item.
 - Recognized tool calls become tool items. Outputs are attached by `call_id`;

@@ -6,6 +6,7 @@ import type {
   ReasoningItem,
   SessionDetail,
   TimelineItem,
+  TokenUsageCounters,
 } from "../../shared/domain.js";
 import type { DecodedRecord, DecodedRollout } from "./rollout-decoder.js";
 import { isObject } from "./rollout-decoder.js";
@@ -126,10 +127,14 @@ function consumeRecord(
   if (record.value.type === "event_msg" && isObject(payload)) {
     const eventMessage = eventMessageCandidate(record.ordinal, timestamp, payload);
     if (eventMessage !== null) eventMessages.push(eventMessage);
-    else fixedItems.push(internalItem(record.ordinal, timestamp, string(payload.type) ?? "event"));
+    else fixedItems.push(internalItemFromPayload(record.ordinal, timestamp, payload));
     return;
   }
-  if (record.value.type === "session_meta" || record.value.type === "turn_context") return;
+  if (record.value.type === "session_meta") return;
+  if (record.value.type === "turn_context") {
+    fixedItems.push(internalItem(record.ordinal, timestamp, "turn_context"));
+    return;
+  }
   const eventType = string(record.value.type);
   if (eventType !== null) fixedItems.push(internalItem(record.ordinal, timestamp, eventType));
   else diagnostics.push({
@@ -400,6 +405,40 @@ function internalItem(ordinal: number, timestamp: string | null, eventType: stri
     eventType: safeType,
     summary: truncateText(`Internal event: ${safeType}`, MAX_PREVIEW_CHARS).text,
   };
+}
+
+function internalItemFromPayload(
+  ordinal: number,
+  timestamp: string | null,
+  payload: Record<string, unknown>,
+): InternalEventItem {
+  const eventType = string(payload.type) ?? "event";
+  const item = internalItem(ordinal, timestamp, eventType);
+  if (eventType !== "token_count" || !isObject(payload.info)) return item;
+  const total = tokenUsageCounters(payload.info.total_token_usage);
+  const last = tokenUsageCounters(payload.info.last_token_usage);
+  return total === null && last === null
+    ? item
+    : { ...item, tokenUsage: { total, last } };
+}
+
+function tokenUsageCounters(value: unknown): TokenUsageCounters | null {
+  if (!isObject(value)) return null;
+  const counters: TokenUsageCounters = {
+    totalTokens: tokenCount(value.total_tokens),
+    inputTokens: tokenCount(value.input_tokens),
+    cachedInputTokens: tokenCount(value.cached_input_tokens),
+    cacheWriteInputTokens: tokenCount(value.cache_write_input_tokens),
+    outputTokens: tokenCount(value.output_tokens),
+    reasoningOutputTokens: tokenCount(value.reasoning_output_tokens),
+  };
+  return Object.values(counters).some((count) => count !== null) ? counters : null;
+}
+
+function tokenCount(value: unknown): number | null {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0
+    ? value
+    : null;
 }
 
 function firstUserTitle(items: TimelineItem[]): string | null {

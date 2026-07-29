@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "../../src/client/App";
@@ -88,6 +88,87 @@ describe("session browser", () => {
 
     expect(screen.getByText("Reasoning summary · 3")).toBeInTheDocument();
     expect(screen.getByText("Visible reasoning summary", { selector: "strong" })).toBeInTheDocument();
+  });
+
+  it("renders detailed total and last token usage in separate groups", () => {
+    render(<Timeline
+      items={[{
+        kind: "internal",
+        id: "internal-7",
+        ordinal: 7,
+        timestamp: null,
+        eventType: "token_count",
+        summary: "Internal event: token_count",
+        tokenUsage: {
+          total: {
+            totalTokens: 12_345,
+            inputTokens: 10_000,
+            cachedInputTokens: 4_000,
+            cacheWriteInputTokens: 500,
+            outputTokens: 2_000,
+            reasoningOutputTokens: 345,
+          },
+          last: {
+            totalTokens: 678,
+            inputTokens: 500,
+            cachedInputTokens: 100,
+            cacheWriteInputTokens: null,
+            outputTokens: 150,
+            reasoningOutputTokens: null,
+          },
+        },
+      }]}
+      sessionId={SESSION_ID}
+      generation={1}
+      hasMore={false}
+      loading={false}
+      onLoadMore={vi.fn()}
+      onStale={vi.fn()}
+    />);
+
+    const total = screen.getByRole("region", { name: "Total token usage" });
+    const last = screen.getByRole("region", { name: "Last token usage" });
+    expect(within(total).getByText("12,345")).toBeInTheDocument();
+    expect(within(total).getByText("4,000")).toBeInTheDocument();
+    expect(within(total).getByText("500")).toBeInTheDocument();
+    expect(within(last).getByText("678")).toBeInTheDocument();
+    expect(within(last).getByText("150")).toBeInTheDocument();
+    expect(within(last).queryByText("Cache write input")).toBeNull();
+    expect(within(last).queryByText("Reasoning output")).toBeNull();
+  });
+
+  it("renders unavailable token usage groups without affecting ordinary internal events", () => {
+    render(<Timeline
+      items={[
+        {
+          kind: "internal",
+          id: "internal-8",
+          ordinal: 8,
+          timestamp: null,
+          eventType: "token_count",
+          summary: "Internal event: token_count",
+          tokenUsage: { total: null, last: null },
+        },
+        {
+          kind: "internal",
+          id: "internal-9",
+          ordinal: 9,
+          timestamp: null,
+          eventType: "turn_context",
+          summary: "Internal event: turn_context",
+        },
+      ]}
+      sessionId={SESSION_ID}
+      generation={1}
+      hasMore={false}
+      loading={false}
+      onLoadMore={vi.fn()}
+      onStale={vi.fn()}
+    />);
+
+    expect(screen.getAllByText("Unavailable")).toHaveLength(2);
+    expect(screen.getByText("turn_context").closest("p"))
+      .toHaveTextContent("turn_context — Internal event: turn_context");
   });
 
   it("groups children and preserves missing-parent sessions", () => {

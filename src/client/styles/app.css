@@ -94,6 +94,13 @@
 }
 .tool-detail { margin-top: .8rem; }
 .tool-detail h4 { margin: 1rem 0 .35rem; font-family: var(--mono-font); font-size: .72rem; text-transform: uppercase; }
+.token-usage { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.5rem; margin-top: .8rem; }
+.token-usage h4 { margin: 0 0 .45rem; font-family: var(--mono-font); font-size: .72rem; text-transform: uppercase; }
+.token-usage dl { margin: 0; font-family: var(--mono-font); font-size: .78rem; }
+.token-usage dl > div { display: flex; justify-content: space-between; gap: 1rem; padding: .18rem 0; border-bottom: 1px solid var(--mist); }
+.token-usage dt { color: var(--ink-soft); }
+.token-usage dd { margin: 0; font-variant-numeric: tabular-nums; }
+.token-usage-unavailable { margin: 0; color: var(--ink-soft); font-size: .8rem; }
 .truncated, .partial-notice { color: #7a4f2d; font-size: .8rem; }
 .load-more { margin-left: 2.25rem; }
 .diagnostics, .error-state {
@@ -108,6 +115,7 @@
   .app-shell { display: block; width: 100%; overflow: hidden; }
   .session-index { width: 100%; max-width: 100vw; max-height: none; overflow: hidden; border-right: 0; border-bottom: 1px solid var(--mist); }
   .session-list { display: grid; width: 100%; max-width: calc(100vw - 3rem); grid-auto-flow: column; grid-auto-columns: minmax(15rem, 78vw); overflow-x: auto; }
+  .token-usage { grid-template-columns: 1fr; }
   .child-list { margin-left: 0; }
   .reader { padding-top: 2.5rem; }
   .reader-header { display: block; }
