@@ -5,6 +5,7 @@ import { IdentityResolver } from "../../src/server/codex/identity-resolver.js";
 import {
   MAX_INJECTED_CONTEXT_CHARS,
   MAX_PREVIEW_CHARS,
+  MAX_SESSION_TITLE_CHARS,
   MAX_TOOL_DETAIL_CHARS,
 } from "../../src/server/codex/limits.js";
 import { WholeFileRolloutDecoder, type DecodedRollout } from "../../src/server/codex/rollout-decoder.js";
@@ -24,12 +25,12 @@ async function normalize(fileName: string) {
 describe("IdentityResolver and SessionNormalizer", () => {
   it("uses response messages as canonical and classifies injected user and developer context", async () => {
     const normalized = await normalize("rollout-2026-07-28T10-00-00-basic-session.jsonl");
-    const messages = normalized.items.filter((item) => item.kind === "message");
+    const messages = normalized.timeline.filter((item) => item.kind === "message");
     expect(messages).toHaveLength(3);
     expect(messages.filter((item) => item.role === "user")).toHaveLength(1);
     expect(messages.filter((item) => item.role === "assistant")).toHaveLength(2);
     expect(messages.find((item) => item.markdown === "Final synthetic answer.")?.phase).toBe("final");
-    const contexts = normalized.items.filter((item) => item.kind === "injected-context");
+    const contexts = normalized.timeline.filter((item) => item.kind === "injected-context");
     expect(contexts).toHaveLength(2);
     expect(contexts[0]).toEqual(expect.objectContaining({
       id: "context-4",
@@ -51,9 +52,9 @@ describe("IdentityResolver and SessionNormalizer", () => {
       text: "DEVELOPER_CONTEXT_CANARY",
       truncated: false,
     });
-    expect(normalized.detail.messageCount).toBe(3);
-    expect(normalized.detail.sourceId).toBe("basic-session");
-    expect(normalized.items.filter((item) => item.kind === "reasoning")).toEqual([
+    expect(normalized.session.messageCount).toBe(3);
+    expect(normalized.session.sourceId).toBe("basic-session");
+    expect(normalized.timeline.filter((item) => item.kind === "reasoning")).toEqual([
       expect.objectContaining({
         id: "reasoning-6",
         summary: "REASONING_SUMMARY_CANARY",
@@ -63,7 +64,37 @@ describe("IdentityResolver and SessionNormalizer", () => {
     expect(JSON.stringify(normalized)).not.toContain("REASONING_CANARY_NEVER_RENDER");
     expect(JSON.stringify(normalized)).not.toContain("EMPTY_REASONING_CANARY_NEVER_RENDER");
     expect(JSON.stringify(normalized)).not.toContain("INTERNAL_PAYLOAD_CANARY");
-    expect(normalized.detail.title).toBe("Synthetic trace");
+    expect(normalized.session.title).toBe("Synthetic trace");
+  });
+
+  it("bounds catalog titles to the first non-empty line", () => {
+    const longLine = "A catalog title that should stay compact ".repeat(8);
+    const normalized = new DefaultSessionNormalizer().normalize({
+      descriptor: {
+        id: "long-title-session",
+        canonicalPath: "/synthetic/rollout-long-title.jsonl",
+        archived: false,
+        size: 1,
+        mtimeMs: 1,
+        device: 1,
+        inode: 1,
+      },
+      diagnostics: [],
+      incompleteTail: false,
+      records: [],
+    }, {
+      threadId: "long-title-session",
+      title: ` \n\n ${longLine}\nIgnored title continuation`,
+      cwd: null,
+      createdAt: null,
+      updatedAt: null,
+      parentThreadId: null,
+      archived: false,
+    });
+
+    expect(normalized.session.title).toBe(longLine.trim().slice(0, MAX_SESSION_TITLE_CHARS));
+    expect(normalized.session.title).toHaveLength(MAX_SESSION_TITLE_CHARS);
+    expect(normalized.session.title).not.toContain("\n");
   });
 
   it("reduces unmatched message events to internal summaries", () => {
@@ -153,25 +184,25 @@ describe("IdentityResolver and SessionNormalizer", () => {
       archived: false,
     });
 
-    expect(normalized.items.map((item) => [item.ordinal, item.kind])).toEqual([
+    expect(normalized.timeline.map((item) => [item.ordinal, item.kind])).toEqual([
       [1, "injected-context"],
       [2, "message"],
       [4, "message"],
       [6, "internal"],
     ]);
-    expect(normalized.items[3]).toEqual(expect.objectContaining({
+    expect(normalized.timeline[3]).toEqual(expect.objectContaining({
       eventType: "unmatched_agent_event",
       summary: "Internal event: unmatched_agent_event",
     }));
-    expect(normalized.detail).toEqual(expect.objectContaining({
+    expect(normalized.session).toEqual(expect.objectContaining({
       title: "Actual user",
       preview: "Actual user\n\ninput",
       messageCount: 2,
     }));
-    expect(normalized.items.filter((item) => item.kind === "message").map((item) => item.markdown))
+    expect(normalized.timeline.filter((item) => item.kind === "message").map((item) => item.markdown))
       .toEqual(["Actual user\n\ninput", "Canonical\n\nassistant"]);
-    expect(JSON.stringify(normalized.items)).not.toContain("INJECTED_ONLY_SECRET");
-    expect(JSON.stringify(normalized.items)).not.toContain("Propagated parent text");
+    expect(JSON.stringify(normalized.timeline)).not.toContain("INJECTED_ONLY_SECRET");
+    expect(JSON.stringify(normalized.timeline)).not.toContain("Propagated parent text");
   });
 
   it("shows turn context safely and retains allowlisted total and last token usage", () => {
@@ -248,7 +279,7 @@ describe("IdentityResolver and SessionNormalizer", () => {
       archived: false,
     });
 
-    expect(normalized.items).toEqual([
+    expect(normalized.timeline).toEqual([
       {
         kind: "internal",
         id: "internal-1",
@@ -350,7 +381,7 @@ describe("IdentityResolver and SessionNormalizer", () => {
       archived: false,
     });
 
-    expect(normalized.items).toEqual([
+    expect(normalized.timeline).toEqual([
       expect.objectContaining({
         kind: "message",
         ordinal: 2,
@@ -363,7 +394,7 @@ describe("IdentityResolver and SessionNormalizer", () => {
 
   it("pairs completed tools, leaves unmatched calls pending, and bounds detail", async () => {
     const normalized = await normalize("rollout-2026-07-28T10-00-00-basic-session.jsonl");
-    const tools = normalized.items.filter((item) => item.kind === "tool");
+    const tools = normalized.timeline.filter((item) => item.kind === "tool");
     expect(tools.map((item) => [item.toolName, item.status])).toEqual([
       ["inspect_widget", "completed"],
       ["pending_widget", "pending"],
@@ -435,14 +466,14 @@ describe("IdentityResolver and SessionNormalizer", () => {
       archived: false,
     });
     const detail = normalized.toolDetails.get("tool-1");
-    const tool = normalized.items.find((item) => item.id === "tool-1");
-    const contextItem = normalized.items.find((item) => item.id === "context-3");
+    const tool = normalized.timeline.find((item) => item.id === "tool-1");
+    const contextItem = normalized.timeline.find((item) => item.id === "context-3");
     expect(tool?.kind === "tool" ? tool.preview : null).toHaveLength(MAX_PREVIEW_CHARS);
     expect(detail?.input).toHaveLength(MAX_TOOL_DETAIL_CHARS);
     expect(detail?.output).toHaveLength(MAX_TOOL_DETAIL_CHARS);
     expect(detail?.truncated).toBe(true);
     const context = normalized.injectedContextDetails.get("context-3");
-    expect(normalized.detail.preview).toHaveLength(MAX_PREVIEW_CHARS);
+    expect(normalized.session.preview).toHaveLength(MAX_PREVIEW_CHARS);
     expect(contextItem?.kind === "injected-context" ? contextItem.summary : null)
       .toHaveLength(MAX_PREVIEW_CHARS);
     expect(context?.text).toHaveLength(MAX_INJECTED_CONTEXT_CHARS);
@@ -451,9 +482,9 @@ describe("IdentityResolver and SessionNormalizer", () => {
 
   it("chooses filename-matching metadata when duplicate metadata records exist", async () => {
     const normalized = await normalize("rollout-2026-07-28T11-00-00-child-session.jsonl");
-    expect(normalized.detail.cwd).toBe("/synthetic/child");
-    expect(normalized.detail.parentId).toBe("basic-session");
-    expect(normalized.detail.agent).toEqual({
+    expect(normalized.session.cwd).toBe("/synthetic/child");
+    expect(normalized.session.parentId).toBe("basic-session");
+    expect(normalized.session.agent).toEqual({
       taskName: "widget_review",
       nickname: "Sagan",
       role: "reviewer",
@@ -462,10 +493,10 @@ describe("IdentityResolver and SessionNormalizer", () => {
 
   it("keeps valid records after a malformed middle line and marks the source partial", async () => {
     const normalized = await normalize("rollout-2026-07-28T12-00-00-malformed-session.jsonl");
-    expect(normalized.items.filter((item) => item.kind === "message")).toHaveLength(1);
-    expect(normalized.items.filter((item) => item.kind === "injected-context")).toHaveLength(1);
-    expect(normalized.detail.sourceState).toBe("partial");
-    expect(normalized.detail.diagnostics).toEqual([
+    expect(normalized.timeline.filter((item) => item.kind === "message")).toHaveLength(1);
+    expect(normalized.timeline.filter((item) => item.kind === "injected-context")).toHaveLength(1);
+    expect(normalized.session.sourceState).toBe("partial");
+    expect(normalized.session.diagnostics).toEqual([
       expect.objectContaining({ code: "malformed_json", ordinal: 3 }),
     ]);
   });

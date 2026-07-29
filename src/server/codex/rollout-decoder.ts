@@ -48,12 +48,7 @@ export class WholeFileRolloutDecoder implements RolloutDecoder {
         newline = buffered.indexOf("\n");
       }
       if (Buffer.byteLength(buffered, "utf8") > MAX_JSONL_LINE_BYTES) {
-        diagnostics.push({
-          code: "line_too_large",
-          severity: "warning",
-          message: "A rollout record exceeded the decode limit and was skipped.",
-          ordinal: ordinal + 1,
-        });
+        diagnostics.push(lineTooLargeDiagnostic(ordinal + 1));
         buffered = "";
         droppingOversizedLine = true;
       }
@@ -77,12 +72,7 @@ function decodeLine(
 ): void {
   if (line.length === 0) return;
   if (Buffer.byteLength(line, "utf8") > MAX_JSONL_LINE_BYTES) {
-    diagnostics.push({
-      code: "line_too_large",
-      severity: "warning",
-      message: "A rollout record exceeded the decode limit and was skipped.",
-      ordinal,
-    });
+    diagnostics.push(lineTooLargeDiagnostic(ordinal));
     return;
   }
   try {
@@ -105,6 +95,15 @@ function decodeLine(
       ordinal,
     });
   }
+}
+
+function lineTooLargeDiagnostic(ordinal: number): Diagnostic {
+  return {
+    code: "line_too_large",
+    severity: "warning",
+    message: "A rollout record exceeded the decode limit and was skipped.",
+    ordinal,
+  };
 }
 
 export function isObject(value: unknown): value is Record<string, unknown> {

@@ -1,12 +1,13 @@
-import type { ApiWarning, SearchMatch } from "../../shared/api-contract.js";
-import type { MessageItem, SessionId } from "../../shared/domain.js";
-import type { NormalizedSession } from "../codex/session-normalizer.js";
+import type {
+  DomainMessageRecord as MessageItem,
+  NormalizedSession,
+} from "../domain/session-domain.js";
 import { MAX_PREVIEW_CHARS, truncateText } from "../codex/limits.js";
 
 export const MAX_SEARCH_QUERY_CHARS = 200;
 
 export interface SearchDocument {
-  sessionId: SessionId;
+  sessionId: string;
   title: string;
   agentTerms: string[];
   cwd: string;
@@ -28,20 +29,31 @@ export const DEFAULT_SEARCH_BUDGET: SearchBudget = {
 };
 
 export interface SearchResult {
-  matches: Map<SessionId, SearchMatch[]>;
+  matches: Map<string, SearchMatch[]>;
   partial: boolean;
-  warnings: ApiWarning[];
+  warnings: SearchWarning[];
+}
+
+export interface SearchMatch {
+  field: "title" | "cwd" | "message";
+  excerpt: string;
+}
+
+export interface SearchWarning {
+  code: string;
+  message: string;
 }
 
 export function buildSearchDocument(normalized: NormalizedSession): SearchDocument {
+  const { session: detail, timeline: items } = normalized;
   return {
-    sessionId: normalized.detail.id,
-    title: normalized.detail.title,
-    agentTerms: normalized.detail.agent === null
+    sessionId: detail.id,
+    title: detail.title,
+    agentTerms: detail.agent === null
       ? []
-      : Object.values(normalized.detail.agent).filter((value): value is string => value !== null),
-    cwd: normalized.detail.cwd ?? "",
-    messages: normalized.items
+      : Object.values(detail.agent).filter((value): value is string => value !== null),
+    cwd: detail.cwd ?? "",
+    messages: items
       .filter((item): item is MessageItem => item.kind === "message")
       .map((item) => item.markdown),
   };
@@ -58,7 +70,7 @@ export function searchDocuments(
   now: () => number = performance.now.bind(performance),
 ): SearchResult {
   const query = normalizeSearchText(rawQuery.trim());
-  const matches = new Map<SessionId, SearchMatch[]>();
+  const matches = new Map<string, SearchMatch[]>();
   let scannedBytes = 0;
   let partialCode: string | null = null;
   const startedAt = now();

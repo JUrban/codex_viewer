@@ -6,7 +6,7 @@ import { ReasoningItem } from "./ReasoningItem";
 import { ToolItem } from "./ToolItem";
 import { TraceGutter } from "./TraceGutter";
 
-export function Timeline({ items, sessionId, generation, hasMore, loading, onLoadMore, onStale }: {
+interface TimelineProps {
   items: TimelineItem[];
   sessionId: string;
   generation: number;
@@ -14,24 +14,78 @@ export function Timeline({ items, sessionId, generation, hasMore, loading, onLoa
   loading: boolean;
   onLoadMore: () => void;
   onStale: () => void;
-}) {
-  return <>
-    <ol className="timeline" aria-label="Session timeline">
-      {items.map((item) => <li className={`trace-event ${classFor(item)}`} key={`${sessionId}:${item.id}`}>
-        <TraceGutter item={item} />
-        {item.kind === "message" ? <MessageItem item={item} /> : null}
-        {item.kind === "tool" ? <ToolItem item={item} sessionId={sessionId} generation={generation} onStale={onStale} /> : null}
-        {item.kind === "injected-context"
-          ? <InjectedContextItem item={item} sessionId={sessionId} generation={generation} onStale={onStale} />
-          : null}
-        {item.kind === "internal" ? <InternalEventItem item={item} /> : null}
-        {item.kind === "reasoning" ? <ReasoningItem item={item} /> : null}
-      </li>)}
-    </ol>
-    {hasMore ? <button className="load-more" type="button" disabled={loading} onClick={onLoadMore}>
-      {loading ? "Loading…" : "Load more events"}
-    </button> : null}
-  </>;
+}
+
+export function Timeline({
+  items,
+  sessionId,
+  generation,
+  hasMore,
+  loading,
+  onLoadMore,
+  onStale,
+}: TimelineProps) {
+  return (
+    <>
+      <ol className="timeline" aria-label="Session timeline">
+        {items.map((item) => (
+          <li
+            className={`trace-event ${classFor(item)}`}
+            key={`${sessionId}:${item.id}`}
+          >
+            <TraceGutter item={item} />
+            <TimelineContent
+              item={item}
+              sessionId={sessionId}
+              generation={generation}
+              onStale={onStale}
+            />
+          </li>
+        ))}
+      </ol>
+      {hasMore
+        ? (
+            <button className="load-more" type="button" disabled={loading} onClick={onLoadMore}>
+              {loading ? "Loading…" : "Load more events"}
+            </button>
+          )
+        : null}
+    </>
+  );
+}
+
+function TimelineContent({
+  item,
+  sessionId,
+  generation,
+  onStale,
+}: Pick<TimelineProps, "sessionId" | "generation" | "onStale"> & { item: TimelineItem }) {
+  switch (item.kind) {
+    case "message":
+      return <MessageItem item={item} />;
+    case "tool":
+      return (
+        <ToolItem
+          item={item}
+          sessionId={sessionId}
+          generation={generation}
+          onStale={onStale}
+        />
+      );
+    case "injected-context":
+      return (
+        <InjectedContextItem
+          item={item}
+          sessionId={sessionId}
+          generation={generation}
+          onStale={onStale}
+        />
+      );
+    case "internal":
+      return <InternalEventItem item={item} />;
+    case "reasoning":
+      return <ReasoningItem item={item} />;
+  }
 }
 
 function classFor(item: TimelineItem): string {

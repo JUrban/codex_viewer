@@ -1,4 +1,7 @@
-import type { ToolItem } from "../../shared/domain.js";
+import type {
+  DomainToolDetail as NormalizedToolDetail,
+  DomainToolRecord as ToolItem,
+} from "../domain/session-domain.js";
 import { MAX_PREVIEW_CHARS, MAX_TOOL_DETAIL_CHARS, truncateText } from "./limits.js";
 
 export interface ToolCall {
@@ -13,12 +16,6 @@ export interface ToolOutput {
   callId: string;
   output: string | null;
   failed: boolean;
-}
-
-export interface NormalizedToolDetail {
-  input: string | null;
-  output: string | null;
-  truncated: boolean;
 }
 
 export interface AccumulatedTool {
@@ -44,10 +41,10 @@ export class ToolAccumulator {
       const input = truncateNullable(call.input);
       const result = truncateNullable(output?.output ?? null);
       const previewSource = output?.output ?? call.input;
-      const preview = previewSource === null ? null : truncateText(previewSource, MAX_PREVIEW_CHARS).text;
-      const truncated = input.truncated || result.truncated ||
-        (previewSource !== null && previewSource.length > MAX_PREVIEW_CHARS);
-      const status = toolStatus(output);
+      const preview = previewSource === null
+        ? { text: null, truncated: false }
+        : truncateText(previewSource, MAX_PREVIEW_CHARS);
+      const truncated = input.truncated || result.truncated || preview.truncated;
       return {
         item: {
           kind: "tool",
@@ -55,8 +52,8 @@ export class ToolAccumulator {
           ordinal: call.ordinal,
           timestamp: call.timestamp,
           toolName: call.toolName,
-          status,
-          preview,
+          status: toolStatus(output),
+          preview: preview.text,
           truncated,
           hasDetail: call.input !== null || output?.output != null,
         },

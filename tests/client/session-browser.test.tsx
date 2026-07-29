@@ -942,6 +942,71 @@ describe("session browser", () => {
     await vi.advanceTimersByTimeAsync(16_000);
     expect(fetchMock.mock.calls).toHaveLength(count);
   });
+
+  it("keeps the reader usable when the independent session list request fails", async () => {
+    window.history.replaceState(null, "", `/?session=${SESSION_ID}`);
+    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/api/v1/sessions?")) {
+        return Promise.resolve(json({
+          error: { code: "internal_error", message: "Catalog failed" },
+        }, 500));
+      }
+      if (url.endsWith(SESSION_ID)) return Promise.resolve(json(detailBody));
+      return Promise.resolve(json({ ...firstPage, hasMore: false }));
+    }));
+
+    render(<App />);
+    expect(await screen.findByText("Hello")).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent("Catalog failed");
+    expect(screen.getByRole("list", { name: "Session timeline" })).toBeInTheDocument();
+  });
+
+  it("keeps the successful list when opening the reader fails", async () => {
+    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith(SESSION_ID)) {
+        return Promise.resolve(json({
+          error: { code: "internal_error", message: "Reader failed" },
+        }, 500));
+      }
+      return Promise.resolve(json(listBody));
+    }));
+
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: /Reader work/ }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Reader failed");
+    expect(screen.getByRole("button", { name: /Reader work/ })).toBeInTheDocument();
+  });
+
+  it("preserves the current reader content when a visible poll fails", async () => {
+    vi.useFakeTimers();
+    let detailCalls = 0;
+    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith(SESSION_ID)) {
+        detailCalls += 1;
+        return detailCalls === 1
+          ? Promise.resolve(json(detailBody))
+          : Promise.resolve(json({
+              error: { code: "internal_error", message: "Poll failed" },
+            }, 500));
+      }
+      if (url.includes("/items")) {
+        return Promise.resolve(json({ ...firstPage, hasMore: false }));
+      }
+      return Promise.resolve(json(listBody));
+    }));
+
+    render(<App />);
+    await act(async () => vi.advanceTimersByTimeAsync(0));
+    fireEvent.click(screen.getByRole("button", { name: /Reader work/ }));
+    await act(async () => vi.advanceTimersByTimeAsync(0));
+    expect(screen.getByText("Hello")).toBeInTheDocument();
+    await act(async () => vi.advanceTimersByTimeAsync(8_000));
+    expect(screen.getByText("Hello")).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent("Poll failed");
+  });
 });
 
 function standardFetch(detail: unknown = detailBody) {

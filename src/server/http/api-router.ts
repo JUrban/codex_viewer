@@ -12,6 +12,7 @@ import {
 import { sendJson, type ApiRouter } from "./router.js";
 
 const API_ROOT = "/api/v1";
+const SESSION_ROOT = `${API_ROOT}/sessions`;
 
 export function createApiRouter(repository: SessionRepository): ApiRouter {
   return async (request, response) => {
@@ -24,41 +25,39 @@ export function createApiRouter(repository: SessionRepository): ApiRouter {
         sendJson(response, 200, await repository.getStatus(), headOnly);
         return true;
       }
-      if (url.pathname === `${API_ROOT}/sessions`) {
+      if (url.pathname === SESSION_ROOT) {
         sendJson(response, 200, await repository.list(parseListQuery(url.searchParams)), headOnly);
         return true;
       }
 
-      const segments = url.pathname.slice(`${API_ROOT}/sessions/`.length).split("/");
-      if (
-        !url.pathname.startsWith(`${API_ROOT}/sessions/`) ||
-        segments.length === 0 ||
-        !isOpaqueId(segments[0] ?? "")
-      ) {
+      if (!url.pathname.startsWith(`${SESSION_ROOT}/`)) {
         return notFound(response, headOnly);
       }
-      const id = segments[0]!;
-      if (segments.length === 1) {
+      const [id = "", ...segments] = url.pathname.slice(SESSION_ROOT.length + 1).split("/");
+      if (!isOpaqueId(id)) return notFound(response, headOnly);
+
+      const itemId = segments[1] ?? "";
+      if (segments.length === 0) {
         const result = await repository.getSession(id);
         if (result === null) return notFound(response, headOnly, "session_not_found");
         sendJson(response, 200, result, headOnly);
         return true;
       }
-      if (segments.length === 2 && segments[1] === "items") {
+      if (segments.length === 1 && segments[0] === "items") {
         const result = await repository.getItems(id, parseItemQuery(url.searchParams));
         if (result === null) return notFound(response, headOnly, "session_not_found");
         sendJson(response, 200, result, headOnly);
         return true;
       }
       if (
-        segments.length === 4 &&
-        segments[1] === "items" &&
-        isItemId(segments[2] ?? "") &&
-        segments[3] === "tool"
+        segments.length === 3 &&
+        segments[0] === "items" &&
+        isItemId(itemId) &&
+        segments[2] === "tool"
       ) {
         const result = await repository.getToolDetail(
           id,
-          segments[2]!,
+          itemId,
           parseToolQuery(url.searchParams),
         );
         if (result === null) return notFound(response, headOnly, "tool_not_found");
@@ -66,14 +65,14 @@ export function createApiRouter(repository: SessionRepository): ApiRouter {
         return true;
       }
       if (
-        segments.length === 4 &&
-        segments[1] === "items" &&
-        isItemId(segments[2] ?? "") &&
-        segments[3] === "context"
+        segments.length === 3 &&
+        segments[0] === "items" &&
+        isItemId(itemId) &&
+        segments[2] === "context"
       ) {
         const result = await repository.getInjectedContextDetail(
           id,
-          segments[2]!,
+          itemId,
           parseInjectedContextQuery(url.searchParams),
         );
         if (result === null) return notFound(response, headOnly, "context_not_found");
@@ -139,15 +138,17 @@ function parseItemQuery(params: URLSearchParams): ItemPageQuery {
 }
 
 function parseToolQuery(params: URLSearchParams): ToolDetailQuery {
-  const generation = optional(params, "generation");
-  if (generation === undefined) invalid("generation is required for tool detail");
-  return { generation: integer(generation, "generation") };
+  return { generation: requiredGeneration(params, "tool detail") };
 }
 
 function parseInjectedContextQuery(params: URLSearchParams): InjectedContextDetailQuery {
+  return { generation: requiredGeneration(params, "injected context detail") };
+}
+
+function requiredGeneration(params: URLSearchParams, resource: string): number {
   const generation = optional(params, "generation");
-  if (generation === undefined) invalid("generation is required for injected context detail");
-  return { generation: integer(generation, "generation") };
+  if (generation === undefined) invalid(`generation is required for ${resource}`);
+  return integer(generation, "generation");
 }
 
 function optional(params: URLSearchParams, name: string): string | undefined {

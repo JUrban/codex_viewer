@@ -79,7 +79,10 @@
   background: transparent; border: 0; border-left: 3px solid transparent; cursor: pointer;
 }
 .session-title, .session small { display: block; }
-.session-title { overflow-wrap: anywhere; }
+.session-title {
+  display: -webkit-box; overflow: hidden; overflow-wrap: anywhere;
+  -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+}
 .session .task-name {
   font-family: var(--mono-font); font-size: .84rem; font-weight: 650; letter-spacing: -.01em;
 }
@@ -88,7 +91,7 @@
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .session .session-subtitle { color: #31474f; font-family: var(--body-font); font-size: .72rem; }
-.session-meta-line { display: flex !important; align-items: center; gap: .35rem; }
+.session .session-meta-line { display: flex; align-items: center; gap: .35rem; }
 .agent-label {
   display: inline-block; max-width: 8rem; padding: .08rem .28rem;
   overflow: hidden; color: #31545a; background: #dfeaea; text-overflow: ellipsis;
@@ -101,7 +104,11 @@
 .reader { width: 100%; max-width: 72rem; padding: 3.5rem clamp(1.5rem, 5vw, 5rem); }
 .reader-welcome { display: grid; place-items: center; }
 .reader-header { display: flex; justify-content: space-between; gap: 2rem; padding-bottom: 2rem; border-bottom: 1px solid var(--mist); }
-.reader-header h2 { max-width: 50rem; margin-bottom: .65rem; font-size: clamp(1.8rem, 3vw, 2.6rem); overflow-wrap: anywhere; }
+.reader-header h2 {
+  display: -webkit-box; max-width: 50rem; margin-bottom: .65rem; overflow: hidden;
+  overflow-wrap: anywhere; font-size: clamp(1.8rem, 3vw, 2.6rem);
+  -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+}
 .session-source-id {
   margin-top: .45rem; color: var(--ink-soft); font-size: .72rem;
 }
@@ -138,9 +145,12 @@
   border: 1px solid var(--current); cursor: pointer;
 }
 .tool-detail { margin-top: .8rem; }
-.tool-detail h4 { margin: 1rem 0 .35rem; font-family: var(--mono-font); font-size: .72rem; text-transform: uppercase; }
+.tool-detail h4, .token-usage h4 {
+  font-family: var(--mono-font); font-size: .72rem; text-transform: uppercase;
+}
+.tool-detail h4 { margin: 1rem 0 .35rem; }
 .token-usage { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.5rem; margin-top: .8rem; }
-.token-usage h4 { margin: 0 0 .45rem; font-family: var(--mono-font); font-size: .72rem; text-transform: uppercase; }
+.token-usage h4 { margin: 0 0 .45rem; }
 .token-usage dl { margin: 0; font-family: var(--mono-font); font-size: .78rem; }
 .token-usage dl > div { display: flex; justify-content: space-between; gap: 1rem; padding: .18rem 0; border-bottom: 1px solid var(--mist); }
 .token-usage dt { color: var(--ink-soft); }

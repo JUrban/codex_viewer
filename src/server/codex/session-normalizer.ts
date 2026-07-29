@@ -1,13 +1,15 @@
 import type {
-  Diagnostic,
-  InjectedContextItem,
-  InternalEventItem,
-  MessageItem,
-  ReasoningItem,
-  SessionDetail,
-  TimelineItem,
-  TokenUsageCounters,
-} from "../../shared/domain.js";
+  DomainDiagnostic as Diagnostic,
+  DomainInjectedContextDetail as NormalizedInjectedContextDetail,
+  DomainInjectedContextRecord as InjectedContextItem,
+  DomainInternalEventRecord as InternalEventItem,
+  DomainMessageRecord as MessageItem,
+  DomainReasoningRecord as ReasoningItem,
+  DomainSession as SessionDetail,
+  DomainTimelineRecord as TimelineItem,
+  DomainTokenUsageCounters as TokenUsageCounters,
+  NormalizedSession,
+} from "../domain/session-domain.js";
 import type { DecodedRecord, DecodedRollout } from "./rollout-decoder.js";
 import { isObject } from "./rollout-decoder.js";
 import type { SessionMetadata } from "./identity-resolver.js";
@@ -15,21 +17,14 @@ import {
   MAX_INJECTED_CONTEXT_CHARS,
   MAX_MESSAGE_CHARS,
   MAX_PREVIEW_CHARS,
+  normalizeSessionTitle,
   truncateText,
 } from "./limits.js";
 import {
   ToolAccumulator,
-  type NormalizedToolDetail,
   type ToolCall,
   type ToolOutput,
 } from "./tool-accumulator.js";
-
-export interface NormalizedSession {
-  detail: SessionDetail;
-  items: TimelineItem[];
-  toolDetails: Map<string, NormalizedToolDetail>;
-  injectedContextDetails: Map<string, NormalizedInjectedContextDetail>;
-}
 
 interface MessageCandidate {
   ordinal: number;
@@ -38,11 +33,6 @@ interface MessageCandidate {
   phase: "commentary" | "final" | null;
   text: string;
   injected: boolean;
-}
-
-export interface NormalizedInjectedContextDetail {
-  text: string;
-  truncated: boolean;
 }
 
 export interface SessionNormalizer {
@@ -80,7 +70,9 @@ export class DefaultSessionNormalizer implements SessionNormalizer {
     const messageCount = items.filter((item) => item.kind === "message").length;
     const toolCount = accumulatedTools.length;
     const warningCount = diagnostics.filter((diagnostic) => diagnostic.severity !== "info").length;
-    const fallbackTitle = metadata.title ?? firstUserTitle(items) ?? "Untitled session";
+    const fallbackTitle = normalizeSessionTitle(metadata.title) ??
+      firstUserTitle(items) ??
+      "Untitled session";
     const detail: SessionDetail = {
       id: decoded.descriptor.id,
       sourceId: metadata.threadId,
@@ -103,8 +95,8 @@ export class DefaultSessionNormalizer implements SessionNormalizer {
       itemCount: items.length,
     };
     return {
-      detail,
-      items,
+      session: detail,
+      timeline: items,
       toolDetails: new Map(accumulatedTools.map((tool) => [tool.item.id, tool.detail])),
       injectedContextDetails: normalizedMessages.injectedContextDetails,
     };
@@ -444,9 +436,7 @@ function tokenCount(value: unknown): number | null {
 
 function firstUserTitle(items: TimelineItem[]): string | null {
   const first = items.find((item): item is MessageItem => item.kind === "message" && item.role === "user");
-  if (first === undefined) return null;
-  const line = first.markdown.split(/\r?\n/, 1)[0]?.trim() ?? "";
-  return line.length === 0 ? null : truncateText(line, 80).text;
+  return first === undefined ? null : normalizeSessionTitle(first.markdown);
 }
 
 function string(value: unknown): string | null {

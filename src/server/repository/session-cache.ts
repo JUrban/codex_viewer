@@ -1,6 +1,6 @@
 import type { CatalogMetadata } from "../codex/catalog-source.js";
 import { DECODER_VERSION } from "../codex/limits.js";
-import type { NormalizedSession } from "../codex/session-normalizer.js";
+import type { NormalizedSession } from "../domain/session-domain.js";
 import type { RolloutDescriptor } from "../security/path-policy.js";
 
 export interface FileFingerprint {
