@@ -88,7 +88,11 @@ describe("secure HTTP foundation", () => {
     const response = await fetch(`${base}/session/fixture`);
     expect(response.status).toBe(200);
     expect(await response.text()).toContain("trace notebook");
-    expect(response.headers.get("content-security-policy")).toContain("default-src 'self'");
+    const contentSecurityPolicy = response.headers.get("content-security-policy");
+    expect(contentSecurityPolicy).toContain("default-src 'self'");
+    expect(contentSecurityPolicy).toContain("font-src 'self' data:");
+    expect(contentSecurityPolicy).toContain("style-src 'self'");
+    expect(contentSecurityPolicy).toContain("style-src-attr 'unsafe-inline'");
     expect(response.headers.get("x-content-type-options")).toBe("nosniff");
     expect(response.headers.get("referrer-policy")).toBe("no-referrer");
     expect(response.headers.has("access-control-allow-origin")).toBe(false);

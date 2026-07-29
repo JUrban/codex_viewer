@@ -200,6 +200,31 @@ describe("session browser components", () => {
     expect(safeUrlTransform("file:///tmp/secret")).toBe("");
   });
 
+  it("renders inline and display Markdown math with KaTeX", () => {
+    render(<MessageItem item={{
+      kind: "message", id: "message-math", ordinal: 10, timestamp: null,
+      role: "assistant", phase: "final",
+      markdown: "Inline $E = mc^2$.\n\n$$\\int_0^1 x^2\\,dx = \\frac{1}{3}$$",
+    }} />);
+
+    expect(document.querySelector(".katex")).toBeInTheDocument();
+    expect(document.querySelector(".katex-display .katex")).toBeInTheDocument();
+    expect(document.querySelectorAll(".katex")).toHaveLength(2);
+  });
+
+  it("leaves math syntax in code untouched and keeps invalid math readable", () => {
+    render(<MessageItem item={{
+      kind: "message", id: "message-math-edge", ordinal: 11, timestamp: null,
+      role: "assistant", phase: "final",
+      markdown: "`$notMath$`\n\n```text\n$$not display math$$\n```\n\n$$\\frac{1}{$$",
+    }} />);
+
+    expect(screen.getByText("$notMath$")).toBeInTheDocument();
+    expect(screen.getByText("$$not display math$$")).toBeInTheDocument();
+    expect(document.querySelector("code .katex")).toBeNull();
+    expect(document.querySelector(".katex-error")).toHaveTextContent("\\frac{1}{");
+  });
+
   it("labels an assistant message with an unknown phase neutrally", () => {
     render(<MessageItem item={{
       kind: "message", id: "message-10", ordinal: 10, timestamp: null,

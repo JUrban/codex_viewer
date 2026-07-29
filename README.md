@@ -32,6 +32,10 @@ For client-only development, `npm run dev` starts Vite on loopback. It does not
 provide the local session API; use a production build plus `npm start` when
 testing real session data.
 
+Message Markdown supports KaTeX math: use `$...$` for inline formulas and
+`$$...$$` for display formulas. Math-like text inside inline or fenced code is
+left unchanged.
+
 ## Configuration
 
 Configuration is accepted only from the process environment at startup:

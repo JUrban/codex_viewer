@@ -224,6 +224,9 @@
   border-left: 3px solid var(--current); white-space: pre-wrap; overflow-wrap: anywhere;
 }
 .message-body code { font-family: var(--mono-font); font-size: .86em; }
+.message-body .katex-display {
+  max-width: 100%; overflow-x: auto; overflow-y: hidden; padding: .2rem 0;
+}
 .message-body a { color: #075f70; text-underline-offset: .18em; }
 .image-placeholder { color: var(--ink-soft); font-style: italic; }
 .trace-event article button, .load-more, .error-state button {
