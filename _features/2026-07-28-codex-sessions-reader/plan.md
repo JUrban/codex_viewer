@@ -42,14 +42,11 @@ Review must cover all code and documentation introduced for the reader, includin
 - `0b5e80a` — Milestone 4 responsive browser, URL state, generation-safe paging, safe Markdown, lazy tools, and client tests.
 - `f43412a` — Milestone 5 generation-scoped catalog pagination, bounded item pages, concurrency hardening, scale benchmark, complete operating documentation, and regressions.
 - `5a889cb` — Phase 7 behavior-preserving simplification of repository paging, normalization/status branches, message labeling, and client page merging.
+- `906390a` — Phase 7 review fixes for request lifecycle isolation, tool-detail identity, reachable polling, semantic labels, and nine concurrency/contract regressions.
 
 ### Uncommitted changes to review
 
-- `_features/2026-07-28-codex-sessions-reader/plan.md` — Phase 7 findings, user disposition, implementation decisions, and validation.
-- `src/client/state/use-session-browser.ts` — shared cancellation/sequence isolation for navigation, polling, and timeline pagination; stable stale restart callback; reachable selected-session polling.
-- `src/client/components/Timeline.tsx`, `src/client/components/ToolItem.tsx` — session-scoped tool component identity and generation-scoped detail/stale state.
-- `src/client/components/MessageItem.tsx`, `src/client/components/SessionReader.tsx`, `src/client/styles/app.css`, `src/shared/domain.ts` — neutral unknown-phase labels and removal of the unreachable `live` state.
-- `tests/client/session-browser.test.tsx` — nine Phase 7 regressions covering timeline races, tool identity/retry, unknown phases, polling lifecycle/page retention, loading settlement, and idempotent reselection.
+- `_features/2026-07-28-codex-sessions-reader/plan.md` — final Review Scope bookkeeping that adds commit `906390a`.
 
 ## Surprises & Discoveries
 
@@ -707,4 +704,4 @@ The repository must not expose filesystem paths, SQLite rows, raw Codex records,
 
 Runtime dependencies are `react`, `react-dom`, `react-markdown`, and `remark-gfm`. Development dependencies are `typescript`, `vite`, `@vitejs/plugin-react`, `tsx`, `vitest`, `jsdom`, Testing Library packages, and TypeScript types for Node and React. Prefer Node standard-library modules for HTTP, crypto, filesystem, path, streams, and SQLite. Do not add Express, an ORM, a native SQLite addon, a watcher, a client state framework, a CSS framework, a syntax highlighter, a persistent search database, or external font and analytics services without revisiting the architecture decision.
 
-Revision note (2026-07-28): Initial plan created after problem framing, repository exploration, uncertainty recording, architecture comparison, user confirmation of the mixed design, and frontend design critique. Updated after Milestones 1 through 5 implementation to record commits, uncommitted review scope, implementation decisions, format/browser/scale discoveries, snapshot/API/UI outcomes, generated-corpus measurements, documentation, and validation evidence. Phase 7 review remains pending.
+Revision note (2026-07-29): Initial plan created after problem framing, repository exploration, uncertainty recording, architecture comparison, user confirmation of the mixed design, and frontend design critique. Updated through Milestones 1–5 and Phase 7 to record every implementation/review commit, decisions, format/browser/scale discoveries, snapshot/API/UI outcomes, generated-corpus measurements, documentation, reviewer findings, user disposition, targeted re-review, and final validation evidence. The approved feature scope is complete.
