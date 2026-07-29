@@ -22,6 +22,13 @@ import {
 } from "./session-cache.js";
 
 export const DEFAULT_CATALOG_FRESHNESS_MS = 3_000;
+const EXPECTED_ROLLOUT_IO_ERRORS = new Set([
+  "ENOENT",
+  "EACCES",
+  "EPERM",
+  "ESTALE",
+  "EISDIR",
+]);
 
 export interface CatalogSnapshot {
   readonly generation: number;
@@ -189,7 +196,7 @@ function unavailableSession(entry: CatalogEntry): NormalizedSession {
 
 function isExpectedRolloutIoError(error: unknown): boolean {
   if (!(error instanceof Error) || !("code" in error)) return false;
-  return new Set(["ENOENT", "EACCES", "EPERM", "ESTALE", "EISDIR"]).has(
+  return EXPECTED_ROLLOUT_IO_ERRORS.has(
     String((error as NodeJS.ErrnoException).code),
   );
 }

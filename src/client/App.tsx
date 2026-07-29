@@ -11,16 +11,57 @@ export function App() {
 
   return (
     <main className="app-shell">
-      <SessionIndex browser={browser} />
-      <Reader browser={browser} />
+      <SessionIndex
+        filters={browser.filters}
+        catalog={{
+          list: browser.catalog.list,
+          operation: browser.catalog.operation,
+          listLoading: browser.catalog.listLoading,
+          refreshing: browser.catalog.refreshing,
+          listError: browser.catalog.listError,
+          loadMoreSessions: browser.catalog.loadMoreSessions,
+          clearListError: browser.catalog.clearListError,
+        }}
+        selectedId={browser.location.selectedId}
+        onSelect={browser.location.selectSession}
+        onRefresh={browser.refreshSessions}
+      />
+      <Reader
+        visibility={browser.location.visibility}
+        onVisibilityChange={browser.location.setVisibility}
+        reader={browser.reader}
+      />
     </main>
   );
 }
 
 type SessionBrowser = ReturnType<typeof useSessionBrowser>;
 
-function SessionIndex({ browser }: { browser: SessionBrowser }) {
-  const sessions = browser.list?.sessions ?? [];
+interface SessionIndexProps {
+  filters: SessionBrowser["filters"];
+  catalog: Pick<
+    SessionBrowser["catalog"],
+    | "list"
+    | "operation"
+    | "listLoading"
+    | "refreshing"
+    | "listError"
+    | "loadMoreSessions"
+    | "clearListError"
+  >;
+  selectedId: string | null;
+  onSelect: (selectedId: string | null) => void;
+  onRefresh: () => Promise<void>;
+}
+
+function SessionIndex({
+  filters,
+  catalog,
+  selectedId,
+  onSelect,
+  onRefresh,
+}: SessionIndexProps) {
+  const sessions = catalog.list?.sessions ?? [];
 
   return (
     <aside className="session-index" aria-label="Session index">
@@ -30,129 +71,135 @@ function SessionIndex({ browser }: { browser: SessionBrowser }) {
         <p>Private to this machine · read only</p>
       </header>
       <SessionFilters
-        filters={browser.filters}
-        projects={browser.list?.projects ?? []}
-        onChange={browser.setFilters}
+        filters={filters.applied}
+        projects={catalog.list?.projects ?? []}
+        onChange={filters.set}
       />
-      {browser.list?.warnings.length
-        ? <DiagnosticNotice diagnostics={browser.list.warnings} />
+      {catalog.list?.warnings.length
+        ? (
+            <DiagnosticNotice
+              diagnostics={catalog.list.warnings}
+              label="Catalog diagnostics"
+            />
+          )
         : null}
       <div className="session-toolbar">
-        <p className="section-label">Sessions · {browser.list?.total ?? 0}</p>
+        <p className="section-label">Sessions · {catalog.list?.total ?? 0}</p>
         <button
           type="button"
           className="refresh-sessions"
-          disabled={browser.listLoading || browser.refreshing}
+          disabled={catalog.operation !== null}
           aria-label="Refresh sessions"
-          onClick={() => void browser.refreshSessions()}
+          onClick={() => void onRefresh()}
         >
           <span
             aria-hidden="true"
-            className={`refresh-mark${browser.refreshing ? " active" : ""}`}
+            className={`refresh-mark${catalog.refreshing ? " active" : ""}`}
           >
             ↻
           </span>
-          {browser.refreshing ? "Refreshing…" : "Refresh"}
+          {catalog.refreshing ? "Refreshing…" : "Refresh"}
         </button>
       </div>
-      <RefreshFeedback error={browser.refreshError} message={browser.refreshMessage} />
-      {browser.listError
-        ? <ErrorState message={browser.listError} onDismiss={browser.clearListError} />
-        : null}
-      {browser.listLoading ? <p className="loading" role="status">Finding sessions…</p> : null}
-      {!browser.listLoading && browser.list && sessions.length === 0
+      {catalog.listError
         ? (
-            <EmptyState title={emptyTitle(browser.filters.archiveScope)}>
-              {emptyMessage(browser.filters.archiveScope)}
+            <ErrorState
+              title="Could not load sessions"
+              message={catalog.listError}
+              onDismiss={catalog.clearListError}
+            />
+          )
+        : null}
+      {catalog.listLoading ? <p className="loading" role="status">Finding sessions…</p> : null}
+      {!catalog.listLoading && catalog.list && sessions.length === 0
+        ? (
+            <EmptyState title={emptyTitle(filters.applied.archiveScope)}>
+              {emptyMessage(filters.applied.archiveScope)}
             </EmptyState>
           )
         : (
             <SessionTree
               entries={sessions}
-              selectedId={browser.selectedId}
-              revealMatches={browser.filters.q.trim().length > 0}
-              onSelect={browser.selectSession}
+              selectedId={selectedId}
+              revealMatches={filters.applied.q.length > 0}
+              onSelect={onSelect}
             />
           )}
-      {browser.list?.hasMore
+      {catalog.list?.hasMore
         ? (
             <button
               className="load-more"
               type="button"
-              disabled={browser.listLoading}
-              onClick={() => void browser.loadMoreSessions()}
+              disabled={catalog.operation !== null}
+              onClick={() => void catalog.loadMoreSessions()}
             >
-              {browser.listLoading
+              {catalog.operation === "page"
                 ? "Loading sessions…"
-                : `Load more sessions (${sessions.length} of ${browser.list.total})`}
+                : `Load more sessions (${sessions.length} of ${catalog.list.total})`}
             </button>
           )
         : null}
-      {browser.list?.partial
+      {catalog.list?.partial
         ? <p className="partial-notice">Results are partial because the safe search budget was reached.</p>
         : null}
     </aside>
   );
 }
 
-function emptyTitle(scope: SessionBrowser["filters"]["archiveScope"]): string {
+function emptyTitle(scope: SessionBrowser["filters"]["applied"]["archiveScope"]): string {
   if (scope === "active") return "No active sessions match";
   if (scope === "archived") return "No archived sessions match";
   return "No sessions match";
 }
 
-function emptyMessage(scope: SessionBrowser["filters"]["archiveScope"]): string {
+function emptyMessage(scope: SessionBrowser["filters"]["applied"]["archiveScope"]): string {
   if (scope === "active") return "Try All sessions, or clear another filter.";
   if (scope === "archived") return "Try All sessions, or clear another filter.";
   return "Clear a filter or search for a different phrase.";
 }
 
-function RefreshFeedback({
-  error,
-  message,
+function Reader({
+  visibility,
+  onVisibilityChange,
+  reader,
 }: {
-  error: string | null;
-  message: string | null;
+  visibility: SessionBrowser["location"]["visibility"];
+  onVisibilityChange: SessionBrowser["location"]["setVisibility"];
+  reader: SessionBrowser["reader"];
 }) {
-  let content = null;
-  if (error) {
-    content = <p className="refresh-error" role="alert">{error} Try refreshing again.</p>;
-  } else if (message) {
-    content = <p>{message}</p>;
-  }
-
-  return <div className="refresh-feedback" aria-live="polite">{content}</div>;
-}
-
-function Reader({ browser }: { browser: SessionBrowser }) {
-  if (browser.readerError && !browser.detail) {
+  if (reader.readerError && !reader.detail) {
     return (
       <section className="reader">
-        <ErrorState message={browser.readerError} onDismiss={browser.clearReaderError} />
+        <ErrorState
+          title="Could not load session"
+          message={reader.readerError}
+          onDismiss={reader.clearReaderError}
+        />
       </section>
     );
   }
 
-  if (browser.detail) {
+  if (reader.detail) {
     return (
       <SessionReader
-        detail={browser.detail}
-        page={browser.page}
-        items={browser.items}
-        visibility={browser.visibility}
-        onVisibilityChange={browser.setVisibility}
-        loading={browser.readerLoading}
-        onLoadMore={browser.loadMore}
-        onStale={browser.restartSession}
-        error={browser.readerError}
-        onDismissError={browser.clearReaderError}
+        detail={reader.detail}
+        page={reader.page}
+        items={reader.items}
+        visibility={visibility}
+        onVisibilityChange={onVisibilityChange}
+        loading={reader.readerLoading}
+        busy={reader.operation !== null}
+        onLoadMore={reader.loadMore}
+        onStale={reader.restartSession}
+        error={reader.readerError}
+        onDismissError={reader.clearReaderError}
       />
     );
   }
 
   return (
     <section className="reader reader-welcome">
-      {browser.readerLoading
+      {reader.readerLoading
         ? <p className="loading" role="status">Opening session…</p>
         : (
             <EmptyState title="Choose a session">

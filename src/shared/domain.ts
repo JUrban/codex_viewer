@@ -65,7 +65,7 @@ export interface DirectiveItem extends TimelineItemBase {
 export interface ToolItem extends TimelineItemBase {
   kind: "tool";
   toolName: string;
-  status: "pending" | "completed" | "failed" | "interrupted";
+  status: "pending" | "completed" | "failed";
   preview: string | null;
   truncated: boolean;
   hasDetail: boolean;

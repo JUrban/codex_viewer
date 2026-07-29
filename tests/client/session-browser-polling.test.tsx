@@ -123,6 +123,54 @@ describe("session polling and failures", () => {
     expect(screen.getByText("Later event")).toBeInTheDocument();
   });
 
+  it("blocks pagination while a poll is pending and re-enables it after cleanup", async () => {
+    vi.useFakeTimers();
+    let resolvePoll!: (response: Response) => void;
+    const pendingPoll = new Promise<Response>((resolve) => {
+      resolvePoll = resolve;
+    });
+    let detailCalls = 0;
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith(SESSION_ID)) {
+        detailCalls += 1;
+        return detailCalls === 1 ? Promise.resolve(json(detailBody)) : pendingPoll;
+      }
+      if (url.includes("afterOrdinal=2")) {
+        return Promise.resolve(json({
+          ...firstPage,
+          items: [],
+          nextAfterOrdinal: null,
+          hasMore: false,
+        }));
+      }
+      if (url.includes("/items")) return Promise.resolve(json(firstPage));
+      return Promise.resolve(json(listBody));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<App />);
+    await act(async () => vi.advanceTimersByTimeAsync(0));
+    fireEvent.click(screen.getByRole("button", { name: /Reader work/ }));
+    await act(async () => vi.advanceTimersByTimeAsync(0));
+
+    const loadMore = screen.getByRole("button", { name: "Load more events" });
+    act(() => vi.advanceTimersByTime(8_000));
+    await act(async () => Promise.resolve());
+    expect(detailCalls).toBe(2);
+    expect(loadMore).toBeDisabled();
+    fireEvent.click(loadMore);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes("afterOrdinal=2")))
+      .toBe(false);
+
+    resolvePoll(json(detailBody));
+    await act(async () => vi.advanceTimersByTimeAsync(0));
+    expect(loadMore).toBeEnabled();
+    fireEvent.click(loadMore);
+    await act(async () => vi.advanceTimersByTimeAsync(0));
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes("afterOrdinal=2")))
+      .toBe(true);
+  });
+
   it("does not revive a disposed session poll after navigation", async () => {
     vi.useFakeTimers();
     let resolvePoll!: (response: Response) => void;

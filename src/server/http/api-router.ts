@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type {
   DirectiveDetailQuery,
@@ -14,10 +15,34 @@ import { sendJson, type ApiRouter } from "./router.js";
 const API_ROOT = "/api/v1";
 const SESSION_ROOT = `${API_ROOT}/sessions`;
 
-export function createApiRouter(repository: SessionRepository): ApiRouter {
+export interface ApiErrorLogger {
+  error(
+    message: string,
+    context: { readonly requestId: string; readonly error: unknown },
+  ): void;
+}
+
+export interface ApiRouterOptions {
+  readonly logger?: ApiErrorLogger;
+  readonly requestId?: () => string;
+}
+
+const CONSOLE_ERROR_LOGGER: ApiErrorLogger = {
+  error(message, context) {
+    console.error(`${message} [requestId=${context.requestId}]`, context.error);
+  },
+};
+
+export function createApiRouter(
+  repository: SessionRepository,
+  options: ApiRouterOptions = {},
+): ApiRouter {
+  const logger = options.logger ?? CONSOLE_ERROR_LOGGER;
+  const requestIdFactory = options.requestId ?? randomUUID;
   return async (request, response) => {
     const url = new URL(request.url ?? "/", "http://localhost");
     if (!url.pathname.startsWith("/api/")) return false;
+    const requestId = requestIdFactory();
     const headOnly = request.method === "HEAD";
 
     try {
@@ -86,10 +111,17 @@ export function createApiRouter(repository: SessionRepository): ApiRouter {
         sendJson(response, status, { error: { code: error.code, message: error.message } }, headOnly);
         return true;
       }
+      logger.error("Session API request failed", { requestId, error });
       sendJson(
         response,
         500,
-        { error: { code: "internal_error", message: "The local session reader could not complete the request" } },
+        {
+          error: {
+            code: "internal_error",
+            message: "The local session reader could not complete the request",
+            requestId,
+          },
+        },
         headOnly,
       );
       return true;

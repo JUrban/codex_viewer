@@ -1,4 +1,5 @@
-import type { BrowserFilters } from "../state/use-session-browser";
+import { useEffect, useRef, useState } from "react";
+import type { BrowserFilters } from "../state/use-session-filters";
 import type { ProjectFacet } from "../../shared/api-contract";
 
 interface SessionFiltersProps {
@@ -8,50 +9,66 @@ interface SessionFiltersProps {
 }
 
 export function SessionFilters({ filters, projects, onChange }: SessionFiltersProps) {
+  const [queryDraft, setQueryDraft] = useState(filters.q);
+  const [fromDraft, setFromDraft] = useState(filters.from);
+  const [toDraft, setToDraft] = useState(filters.to);
+  const [datePickerOpen, setDatePickerOpen] = useState(false);
+  const datePickerRef = useRef<HTMLDivElement>(null);
+  const dateTriggerRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => setQueryDraft(filters.q), [filters.q]);
+  useEffect(() => {
+    setFromDraft(filters.from);
+    setToDraft(filters.to);
+  }, [filters.from, filters.to]);
+  useEffect(() => {
+    if (!datePickerOpen) return;
+    const closeOnOutsidePointer = (event: PointerEvent) => {
+      if (!datePickerRef.current?.contains(event.target as Node)) {
+        setDatePickerOpen(false);
+      }
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setDatePickerOpen(false);
+      dateTriggerRef.current?.focus();
+    };
+    document.addEventListener("pointerdown", closeOnOutsidePointer);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOnOutsidePointer);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [datePickerOpen]);
+
   const patch = (value: Partial<BrowserFilters>) => onChange({ ...filters, ...value });
+  const submitQuery = () => {
+    const q = queryDraft.trim();
+    setQueryDraft(q);
+    if (q !== filters.q) patch({ q });
+  };
+  const invalidDateRange = Boolean(fromDraft && toDraft && fromDraft > toDraft);
+  const datesChanged = fromDraft !== filters.from || toDraft !== filters.to;
+  const applyDates = () => {
+    if (!datesChanged || invalidDateRange) return;
+    onChange({ ...filters, from: fromDraft, to: toDraft });
+    setDatePickerOpen(false);
+  };
 
   return (
-    <form className="filters" role="search" onSubmit={(event) => event.preventDefault()}>
-      <label htmlFor="session-search">Find a session</label>
-      <input
-        id="session-search"
-        type="search"
-        value={filters.q}
-        onChange={(event) => patch({ q: event.target.value })}
-        placeholder="Title, project, or message"
-      />
-      <div className="date-grid">
-        <label>
-          From
-          <input
-            type="date"
-            value={filters.from}
-            onChange={(event) => patch({ from: event.target.value })}
-          />
-        </label>
-        <label>
-          To
-          <input
-            type="date"
-            value={filters.to}
-            onChange={(event) => patch({ to: event.target.value })}
-          />
-        </label>
-      </div>
-      <label className="project-filter">
-        Project
-        <select
-          value={filters.project}
-          onChange={(event) => patch({ project: event.target.value })}
-        >
-          <option value="">All projects</option>
-          {projects.map(({ project, count }) => (
-            <option value={project} key={project}>{project} ({count})</option>
-          ))}
-        </select>
-      </label>
-      <fieldset className="filter-section archive-scope">
-        <legend>Session state</legend>
+    <form
+      className="filters"
+      role="search"
+      onSubmit={(event) => {
+        event.preventDefault();
+        submitQuery();
+      }}
+    >
+      <fieldset
+        className="filter-section archive-scope"
+        aria-label="Session state"
+        title="Session state"
+      >
         <div className="archive-scope-options">
           {ARCHIVE_SCOPES.map(({ value, label }) => (
             <label key={value}>
@@ -67,8 +84,100 @@ export function SessionFilters({ filters, projects, onChange }: SessionFiltersPr
           ))}
         </div>
       </fieldset>
+      <select
+        className="project-filter"
+        aria-label="Project"
+        value={filters.project}
+        onChange={(event) => patch({ project: event.target.value })}
+      >
+        <option value="">All projects</option>
+        {projects.map(({ project, count }) => (
+          <option value={project} key={project}>{project} ({count})</option>
+        ))}
+      </select>
+      <div className="date-grid">
+        <div className="date-picker" ref={datePickerRef}>
+          <button
+            ref={dateTriggerRef}
+            className="date-trigger"
+            type="button"
+            aria-expanded={datePickerOpen}
+            aria-controls="date-range-popover"
+            onClick={() => setDatePickerOpen((open) => !open)}
+          >
+            <span className="date-trigger-value">
+              {dateRangeLabel(fromDraft, toDraft)}
+            </span>
+          </button>
+          <div
+            id="date-range-popover"
+            className="date-popover"
+            role="group"
+            aria-label="Date range"
+            hidden={!datePickerOpen}
+          >
+            <div className="date-fields">
+              <label>
+                <span>From</span>
+                <input
+                  type="date"
+                  aria-label="From"
+                  title="From"
+                  value={fromDraft}
+                  onChange={(event) => setFromDraft(event.target.value)}
+                />
+              </label>
+              <label>
+                <span>To</span>
+                <input
+                  type="date"
+                  aria-label="To"
+                  title="To"
+                  value={toDraft}
+                  min={fromDraft || undefined}
+                  onChange={(event) => setToDraft(event.target.value)}
+                />
+              </label>
+            </div>
+            {invalidDateRange && (
+              <p className="date-range-error" role="status">
+                To must be on or after From
+              </p>
+            )}
+          </div>
+        </div>
+        <button
+          className="date-apply"
+          type="button"
+          disabled={!datesChanged || invalidDateRange}
+          onClick={applyDates}
+        >
+          Set
+        </button>
+      </div>
+      <input
+        id="session-search"
+        type="search"
+        aria-label="Find a session"
+        title="Find a session"
+        value={queryDraft}
+        onChange={(event) => setQueryDraft(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key !== "Enter") return;
+          event.preventDefault();
+          submitQuery();
+        }}
+        placeholder="Title, project, or message"
+      />
     </form>
   );
+}
+
+function dateRangeLabel(from: string, to: string): string {
+  if (from && to) return `${from} → ${to}`;
+  if (from) return `From ${from}`;
+  if (to) return `Until ${to}`;
+  return "Date range";
 }
 
 const ARCHIVE_SCOPES = [

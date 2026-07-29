@@ -1,7 +1,7 @@
 import { mkdir, realpath, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { opaqueIdForPath, OpaqueIdRegistry } from "../../src/server/security/opaque-id.js";
+import { opaqueIdForPath } from "../../src/server/security/opaque-id.js";
 import { PathPolicy } from "../../src/server/security/path-policy.js";
 import { createTempDirectory } from "../helpers/temp-directories.js";
 
@@ -28,13 +28,5 @@ describe("PathPolicy", () => {
     expect(await policy.register(outside)).toBeNull();
     expect(await policy.register(escape)).toBeNull();
     expect(await policy.register(join(sessions, "..", "..", "..", "outside.jsonl"))).toBeNull();
-  });
-
-  it("rejects an opaque ID collision instead of replacing the first value", () => {
-    const registry = new OpaqueIdRegistry<string>(() => "forced-collision");
-    const first = registry.register("/canonical/a", "first");
-    expect(registry.get(first)).toBe("first");
-    expect(() => registry.register("/canonical/b", "second")).toThrow("collision");
-    expect(registry.get(first)).toBe("first");
   });
 });

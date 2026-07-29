@@ -5,15 +5,16 @@ import type {
 } from "../../shared/api-contract";
 import type { TimelineItem } from "../../shared/domain";
 import { api, ApiClientError } from "../api/client";
+import { isAbort, isStaleGeneration, messageFor } from "./request-errors";
 import { useSessionPolling } from "./use-session-polling";
 
 const TIMELINE_PAGE_SIZE = 512;
 const POLL_INTERVAL_MS = 8_000;
 
-type ReaderMode = "idle" | "opening" | "ready" | "paging" | "refreshing";
+export type ReaderOperation = "open" | "page" | "refresh" | null;
 
 interface ReaderState {
-  mode: ReaderMode;
+  operation: ReaderOperation;
   detail: SessionDetailResponse | null;
   page: ItemPageResponse | null;
   items: TimelineItem[];
@@ -23,7 +24,11 @@ interface ReaderState {
 type ReaderAction =
   | { type: "clear" }
   | { type: "reset-timeline" }
-  | { type: "open-start"; preserve: boolean }
+  | {
+    type: "open-start";
+    operation: Exclude<ReaderOperation, null | "page">;
+    preserve: boolean;
+  }
   | {
     type: "load-success";
     detail: SessionDetailResponse;
@@ -36,8 +41,14 @@ type ReaderAction =
   | { type: "page-failure"; error: string }
   | { type: "clear-error" };
 
+interface ActiveRequest {
+  operation: Exclude<ReaderOperation, null>;
+  controller: AbortController;
+  id: string;
+}
+
 const initialState: ReaderState = {
-  mode: "idle",
+  operation: null,
   detail: null,
   page: null,
   items: [],
@@ -51,61 +62,59 @@ export function useSessionReader(
   clearMissingSession: () => void,
 ) {
   const [state, dispatch] = useReducer(reducer, initialState);
-  const detailAbort = useRef<AbortController | null>(null);
-  const timelineAbort = useRef<AbortController | null>(null);
-  const pageAbort = useRef<AbortController | null>(null);
-  const sequence = useRef(0);
+  const active = useRef<ActiveRequest | null>(null);
   const selectedIdRef = useRef(selectedId);
   const stateRef = useRef(state);
   selectedIdRef.current = selectedId;
   stateRef.current = state;
 
-  const abortAll = useCallback(() => {
-    detailAbort.current?.abort();
-    timelineAbort.current?.abort();
-    pageAbort.current?.abort();
-    detailAbort.current = null;
-    timelineAbort.current = null;
-    pageAbort.current = null;
-    sequence.current += 1;
+  const abortActive = useCallback(() => {
+    active.current?.controller.abort();
+    active.current = null;
   }, []);
+
+  const isCurrent = useCallback((request: ActiveRequest) => (
+    active.current === request &&
+    !request.controller.signal.aborted &&
+    selectedIdRef.current === request.id
+  ), []);
 
   const loadSession = useCallback(async (
     id: string,
     quiet = false,
   ): Promise<SessionLoadResult> => {
-    detailAbort.current?.abort();
-    timelineAbort.current?.abort();
-    pageAbort.current?.abort();
-    const request = ++sequence.current;
+    abortActive();
+    const operation: "open" | "refresh" = quiet ? "refresh" : "open";
+    const request: ActiveRequest = {
+      operation,
+      controller: new AbortController(),
+      id,
+    };
+    active.current = request;
     dispatch({
       type: "open-start",
+      operation,
       preserve: quiet || stateRef.current.detail?.session.id === id,
     });
-    const detailController = new AbortController();
-    detailAbort.current = detailController;
     try {
-      let detail = await api.session(id, detailController.signal);
-      if (request !== sequence.current) return "failed";
-      const timelineController = new AbortController();
-      timelineAbort.current = timelineController;
+      let detail = await api.session(id, request.controller.signal);
+      if (!isCurrent(request)) return "failed";
       let page: ItemPageResponse;
       try {
         page = await api.items(id, {
           generation: detail.generation,
           limit: TIMELINE_PAGE_SIZE,
-        }, timelineController.signal);
+        }, request.controller.signal);
       } catch (reason) {
-        if (!isStaleGeneration(reason)) throw reason;
-        const retryController = new AbortController();
-        detailAbort.current = retryController;
-        detail = await api.session(id, retryController.signal);
+        if (!isCurrent(request) || !isStaleGeneration(reason)) throw reason;
+        detail = await api.session(id, request.controller.signal);
+        if (!isCurrent(request)) return "failed";
         page = await api.items(id, {
           generation: detail.generation,
           limit: TIMELINE_PAGE_SIZE,
-        }, timelineController.signal);
+        }, request.controller.signal);
       }
-      if (request !== sequence.current) return "failed";
+      if (!isCurrent(request)) return "failed";
       dispatch({
         type: "load-success",
         detail,
@@ -114,12 +123,11 @@ export function useSessionReader(
       });
       return "loaded";
     } catch (reason) {
-      if (request !== sequence.current || isAbort(reason)) return "failed";
+      if (!isCurrent(request) || isAbort(reason)) return "failed";
       if (
         reason instanceof ApiClientError &&
         reason.status === 404 &&
-        reason.code === "session_not_found" &&
-        selectedIdRef.current === id
+        reason.code === "session_not_found"
       ) {
         dispatch({ type: "clear" });
         clearMissingSession();
@@ -128,18 +136,15 @@ export function useSessionReader(
       dispatch({ type: "load-failure", error: messageFor(reason) });
       return "failed";
     } finally {
-      if (request === sequence.current) {
-        detailAbort.current = null;
-        timelineAbort.current = null;
-      }
+      if (active.current === request) active.current = null;
     }
-  }, [clearMissingSession]);
+  }, [abortActive, clearMissingSession, isCurrent]);
 
   const previousSelection = useRef<string | null>(null);
   useEffect(() => {
     const switched = previousSelection.current !== selectedId;
     previousSelection.current = selectedId;
-    abortAll();
+    abortActive();
     if (selectedId === null) {
       dispatch({ type: "clear" });
       return;
@@ -147,33 +152,36 @@ export function useSessionReader(
     if (switched) dispatch({ type: "clear" });
     else dispatch({ type: "reset-timeline" });
     void loadSession(selectedId);
-    return abortAll;
-  }, [abortAll, loadSession, selectedId]);
+    return abortActive;
+  }, [abortActive, loadSession, selectedId]);
 
   const loadMore = useCallback(async () => {
+    if (active.current !== null) return;
     const id = selectedIdRef.current;
     const current = stateRef.current.page;
     if (id === null || !current?.hasMore || current.nextAfterOrdinal === null) return;
-    pageAbort.current?.abort();
-    const controller = new AbortController();
-    pageAbort.current = controller;
-    const request = ++sequence.current;
+    const request: ActiveRequest = {
+      operation: "page",
+      controller: new AbortController(),
+      id,
+    };
+    active.current = request;
     dispatch({ type: "page-start" });
     try {
       const next = await api.items(id, {
         afterOrdinal: current.nextAfterOrdinal,
         generation: current.generation,
         limit: TIMELINE_PAGE_SIZE,
-      }, controller.signal);
-      if (request === sequence.current) dispatch({ type: "page-success", page: next });
+      }, request.controller.signal);
+      if (isCurrent(request)) dispatch({ type: "page-success", page: next });
     } catch (reason) {
-      if (controller.signal.aborted || request !== sequence.current) return;
+      if (!isCurrent(request)) return;
       if (isStaleGeneration(reason)) await loadSession(id);
       else dispatch({ type: "page-failure", error: messageFor(reason) });
     } finally {
-      if (pageAbort.current === controller) pageAbort.current = null;
+      if (active.current === request) active.current = null;
     }
-  }, [loadSession]);
+  }, [isCurrent, loadSession]);
 
   const restartSession = useCallback(
     () => selectedIdRef.current === null
@@ -182,16 +190,11 @@ export function useSessionReader(
     [loadSession],
   );
 
-  const pollSession = useCallback(() => {
-    if (
-      detailAbort.current !== null ||
-      timelineAbort.current !== null ||
-      pageAbort.current !== null
-    ) {
-      return Promise.resolve<SessionLoadResult>("failed");
-    }
-    return restartSession();
-  }, [restartSession]);
+  const pollSession = useCallback(() => (
+    active.current === null
+      ? restartSession()
+      : Promise.resolve<SessionLoadResult>("failed")
+  ), [restartSession]);
 
   useSessionPolling(
     selectedId !== null &&
@@ -202,14 +205,19 @@ export function useSessionReader(
     POLL_INTERVAL_MS,
   );
 
-  useEffect(() => abortAll, [abortAll]);
+  useEffect(() => abortActive, [abortActive]);
 
+  const selectionChanging = state.detail !== null &&
+    state.detail.session.id !== selectedId;
+  const operation = selectionChanging
+    ? (selectedId === null ? null : "open")
+    : state.operation;
   return {
-    detail: state.detail,
-    page: state.page,
-    items: state.items,
-    readerLoading: state.mode === "opening" || state.mode === "paging",
-    readerRefreshing: state.mode === "refreshing",
+    detail: selectionChanging ? null : state.detail,
+    page: selectionChanging ? null : state.page,
+    items: selectionChanging ? [] : state.items,
+    operation,
+    readerLoading: operation === "open" || operation === "page",
     readerError: state.error,
     clearReaderError: () => dispatch({ type: "clear-error" }),
     loadMore,
@@ -222,16 +230,16 @@ function reducer(state: ReaderState, action: ReaderAction): ReaderState {
     case "clear":
       return initialState;
     case "reset-timeline":
-      return { ...state, page: null, items: [], error: null };
+      return { ...state, operation: null, page: null, items: [], error: null };
     case "open-start":
       return action.preserve
-        ? { ...state, mode: "refreshing", error: null }
-        : { ...initialState, mode: "opening" };
+        ? { ...state, operation: action.operation, error: null }
+        : { ...initialState, operation: action.operation };
     case "load-success": {
       const preserve = action.preserveSameGeneration &&
         state.page?.generation === action.page.generation;
       return {
-        mode: "ready",
+        operation: null,
         detail: action.detail,
         page: preserve ? state.page : action.page,
         items: preserve ? state.items : action.page.items,
@@ -239,14 +247,14 @@ function reducer(state: ReaderState, action: ReaderAction): ReaderState {
       };
     }
     case "load-failure":
-      return { ...state, mode: "ready", error: action.error };
+      return { ...state, operation: null, error: action.error };
     case "page-start":
-      return { ...state, mode: "paging", error: null };
+      return { ...state, operation: "page", error: null };
     case "page-success": {
       const seen = new Set(state.items.map((item) => item.id));
       return {
         ...state,
-        mode: "ready",
+        operation: null,
         page: action.page,
         items: [
           ...state.items,
@@ -256,21 +264,8 @@ function reducer(state: ReaderState, action: ReaderAction): ReaderState {
       };
     }
     case "page-failure":
-      return { ...state, mode: "ready", error: action.error };
+      return { ...state, operation: null, error: action.error };
     case "clear-error":
       return { ...state, error: null };
   }
-}
-
-function messageFor(reason: unknown): string {
-  if (reason instanceof Error) return reason.message;
-  return "The local session reader could not complete the request.";
-}
-
-function isStaleGeneration(reason: unknown): reason is ApiClientError {
-  return reason instanceof ApiClientError && reason.code === "stale_generation";
-}
-
-function isAbort(reason: unknown): boolean {
-  return reason instanceof DOMException && reason.name === "AbortError";
 }

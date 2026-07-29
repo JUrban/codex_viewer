@@ -62,7 +62,7 @@ export interface DomainDirectiveRecord extends DomainTimelineRecordBase {
 export interface DomainToolRecord extends DomainTimelineRecordBase {
   readonly kind: "tool";
   readonly toolName: string;
-  readonly status: "pending" | "completed" | "failed" | "interrupted";
+  readonly status: "pending" | "completed" | "failed";
   readonly preview: string | null;
   readonly truncated: boolean;
   readonly hasDetail: boolean;

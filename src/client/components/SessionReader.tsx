@@ -19,6 +19,7 @@ interface SessionReaderProps {
   visibility: TimelineVisibility;
   onVisibilityChange: (key: TimelineVisibilityKey, visible: boolean) => void;
   loading: boolean;
+  busy: boolean;
   onLoadMore: () => void;
   onStale: () => void;
   error?: string | null;
@@ -32,6 +33,7 @@ export function SessionReader({
   visibility,
   onVisibilityChange,
   loading,
+  busy,
   onLoadMore,
   onStale,
   error,
@@ -46,14 +48,23 @@ export function SessionReader({
   return (
     <section className="reader" aria-labelledby="session-title">
       {error && onDismissError
-        ? <ErrorState message={error} onDismiss={onDismissError} />
+        ? (
+            <ErrorState
+              title="Could not load session"
+              message={error}
+              onDismiss={onDismissError}
+            />
+          )
         : null}
       <SessionHeader
         session={detail.session}
         visibility={visibility}
         onVisibilityChange={onVisibilityChange}
       />
-      <DiagnosticNotice diagnostics={page?.diagnostics ?? detail.session.diagnostics} />
+      <DiagnosticNotice
+        diagnostics={page?.diagnostics ?? detail.session.diagnostics}
+        label="Session diagnostics"
+      />
       {visibleItems.length === 0 && !loading
         ? (
             <EmptyState title="This session has no visible events">
@@ -69,6 +80,7 @@ export function SessionReader({
               generation={page?.generation ?? detail.generation}
               hasMore={hasMore}
               loading={loading}
+              busy={busy}
               onLoadMore={onLoadMore}
               onStale={onStale}
             />

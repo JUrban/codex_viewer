@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "../../src/client/App";
 
@@ -18,14 +18,20 @@ describe("application shell", () => {
     })));
     render(<App />);
     expect(screen.getByRole("navigation", { name: "Sessions" })).toBeInTheDocument();
-    expect(screen.getByRole("searchbox", { name: "Find a session" })).toBeInTheDocument();
+    const query = screen.getByRole("searchbox", { name: "Find a session" });
+    expect(query).toHaveAttribute("title", "Find a session");
     const from = screen.getByLabelText("From");
-    expect(screen.getByLabelText("To")).toBeInTheDocument();
+    expect(from).toHaveAttribute("title", "From");
+    expect(screen.getByLabelText("To")).toHaveAttribute("title", "To");
     const project = screen.getByRole("combobox", { name: "Project" });
     const sessionState = screen.getByRole("group", { name: "Session state" });
-    expect(from.compareDocumentPosition(project) & Node.DOCUMENT_POSITION_FOLLOWING)
+    expect(project).not.toHaveAttribute("title");
+    expect(sessionState).toHaveAttribute("title", "Session state");
+    expect(sessionState.compareDocumentPosition(project) & Node.DOCUMENT_POSITION_FOLLOWING)
       .toBeTruthy();
-    expect(project.compareDocumentPosition(sessionState) & Node.DOCUMENT_POSITION_FOLLOWING)
+    expect(project.compareDocumentPosition(from) & Node.DOCUMENT_POSITION_FOLLOWING)
+      .toBeTruthy();
+    expect(from.compareDocumentPosition(query) & Node.DOCUMENT_POSITION_FOLLOWING)
       .toBeTruthy();
     expect(await screen.findByRole("heading", { name: "No active sessions match" }))
       .toBeInTheDocument();
@@ -36,8 +42,13 @@ describe("application shell", () => {
       error: { code: "internal_error", message: "Catalog unavailable" },
     }, 500)));
     render(<App />);
-    expect(await screen.findByRole("alert")).toHaveTextContent("Catalog unavailable");
-    expect(screen.getByRole("button", { name: "Dismiss" })).toBeInTheDocument();
+    expect(await screen.findByRole("alert"))
+      .toHaveTextContent("Could not load sessionsCatalog unavailable");
+    const dismiss = screen.getByRole("button", { name: "Dismiss" });
+    expect(dismiss).toHaveTextContent("×");
+
+    fireEvent.click(dismiss);
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 });
 

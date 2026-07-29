@@ -2,9 +2,11 @@ import { writeFile } from "node:fs/promises";
 import { request } from "node:http";
 import type { AddressInfo } from "node:net";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { loadConfig, LOOPBACK_HOST, type ServerConfig } from "../../src/server/config.js";
+import { createApiRouter } from "../../src/server/http/api-router.js";
 import { createServer } from "../../src/server/http/create-server.js";
+import type { SessionRepository } from "../../src/server/repository/session-repository.js";
 import { createTempDirectory } from "../helpers/temp-directories.js";
 
 const servers: ReturnType<typeof createServer>[] = [];
@@ -23,6 +25,30 @@ async function start() {
     clientDirectory,
   };
   const server = createServer(config);
+  servers.push(server);
+  await new Promise<void>((resolve) => server.listen(0, LOOPBACK_HOST, resolve));
+  const { port } = server.address() as AddressInfo;
+  return `http://${LOOPBACK_HOST}:${port}`;
+}
+
+async function startWithRepository(repository: SessionRepository, logger: {
+  error(message: string, context: { readonly requestId: string; readonly error: unknown }): void;
+}) {
+  const clientDirectory = await createTempDirectory("codex-reader-api-client-");
+  await writeFile(join(clientDirectory, "index.html"), "<h1>trace notebook</h1>");
+  const config: ServerConfig = {
+    host: LOOPBACK_HOST,
+    port: 0,
+    codexHome: "/unused",
+    clientDirectory,
+  };
+  const server = createServer(
+    config,
+    createApiRouter(repository, {
+      logger,
+      requestId: () => "request-fixture",
+    }),
+  );
   servers.push(server);
   await new Promise<void>((resolve) => server.listen(0, LOOPBACK_HOST, resolve));
   const { port } = server.address() as AddressInfo;
@@ -86,5 +112,40 @@ describe("secure HTTP foundation", () => {
     expect(response.status).toBe(404);
     expect(response.headers.get("cache-control")).toBe("no-store");
     expect((await response.json()).error.code).toBe("not_found");
+  });
+
+  it("logs internal API failures and returns only an opaque request ID", async () => {
+    const failure = new Error("PRIVATE_INTERNAL_FAILURE");
+    const fail = async (): Promise<never> => {
+      throw failure;
+    };
+    const repository: SessionRepository = {
+      getStatus: fail,
+      list: fail,
+      getSession: fail,
+      getItems: fail,
+      getToolDetail: fail,
+      getDirectiveDetail: fail,
+      refresh: fail,
+    };
+    const logger = { error: vi.fn() };
+    const base = await startWithRepository(repository, logger);
+
+    const response = await fetch(`${base}/api/v1/status`);
+    const body = await response.json();
+
+    expect(response.status).toBe(500);
+    expect(body).toEqual({
+      error: {
+        code: "internal_error",
+        message: "The local session reader could not complete the request",
+        requestId: "request-fixture",
+      },
+    });
+    expect(JSON.stringify(body)).not.toContain(failure.message);
+    expect(logger.error).toHaveBeenCalledWith(
+      "Session API request failed",
+      { requestId: "request-fixture", error: failure },
+    );
   });
 });

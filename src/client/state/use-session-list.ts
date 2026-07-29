@@ -1,212 +1,233 @@
-import { useCallback, useEffect, useReducer, useRef, useState } from "react";
+import { useCallback, useEffect, useReducer, useRef } from "react";
 import type {
   SessionListQuery,
   SessionListResponse,
 } from "../../shared/api-contract";
-import { api, ApiClientError } from "../api/client";
-import type { BrowserFilters } from "./use-browser-location";
+import { api } from "../api/client";
+import { isStaleGeneration, messageFor } from "./request-errors";
+import type { BrowserFilters } from "./use-session-filters";
 
 const LIST_PAGE_SIZE = 200;
 
-type ListMode = "initial" | "ready" | "paging" | "refreshing";
+export type CatalogOperation = "query" | "page" | "refresh" | null;
 
 interface ListState {
-  mode: ListMode;
+  key: string | null;
+  operation: CatalogOperation;
   data: SessionListResponse | null;
   error: string | null;
-  refreshError: string | null;
-  refreshMessage: string | null;
 }
 
 type ListAction =
-  | { type: "load-start" }
-  | { type: "load-success"; data: SessionListResponse }
-  | { type: "load-failure"; error: string }
+  | { type: "query-start"; key: string }
+  | { type: "query-success"; key: string; data: SessionListResponse }
+  | { type: "query-failure"; error: string }
   | { type: "page-start" }
   | { type: "page-success"; data: SessionListResponse }
   | { type: "page-failure"; error: string }
   | { type: "refresh-start" }
   | { type: "refresh-success"; data: SessionListResponse }
   | { type: "refresh-failure"; error: string }
-  | { type: "refresh-message"; message: string }
   | { type: "clear-error" };
 
+interface ActiveRequest {
+  operation: Exclude<CatalogOperation, null>;
+  controller: AbortController;
+  key: string;
+}
+
 const initialState: ListState = {
-  mode: "initial",
+  key: null,
+  operation: null,
   data: null,
   error: null,
-  refreshError: null,
-  refreshMessage: null,
 };
 
 export function useSessionList(filters: BrowserFilters) {
   const [state, dispatch] = useReducer(reducer, initialState);
-  const [debouncedQuery, setDebouncedQuery] = useState(filters.q);
-  const loadAbort = useRef<AbortController | null>(null);
-  const pageAbort = useRef<AbortController | null>(null);
-  const refreshAbort = useRef<AbortController | null>(null);
-  const sequence = useRef(0);
+  const active = useRef<ActiveRequest | null>(null);
   const filtersRef = useRef(filters);
-  const queryRef = useRef(debouncedQuery);
+  const key = filtersKey(filters);
+  const keyRef = useRef(key);
+  const stateRef = useRef(state);
   filtersRef.current = filters;
-  queryRef.current = debouncedQuery;
+  keyRef.current = key;
+  stateRef.current = state;
+
+  const isCurrent = useCallback((request: ActiveRequest) => (
+    active.current === request &&
+    !request.controller.signal.aborted &&
+    keyRef.current === request.key
+  ), []);
 
   useEffect(() => {
-    const timer = window.setTimeout(() => setDebouncedQuery(filters.q), 250);
-    return () => window.clearTimeout(timer);
-  }, [filters.q]);
-
-  useEffect(() => {
-    loadAbort.current?.abort();
-    pageAbort.current?.abort();
-    refreshAbort.current?.abort();
-    const controller = new AbortController();
-    loadAbort.current = controller;
-    const request = ++sequence.current;
-    dispatch({ type: "load-start" });
-    void api.sessions(listQuery(filters, debouncedQuery), controller.signal)
+    active.current?.controller.abort();
+    const request: ActiveRequest = {
+      operation: "query",
+      controller: new AbortController(),
+      key,
+    };
+    active.current = request;
+    dispatch({ type: "query-start", key });
+    void api.sessions(listQuery(filters), request.controller.signal)
       .then((data) => {
-        if (request === sequence.current) dispatch({ type: "load-success", data });
+        if (isCurrent(request)) dispatch({ type: "query-success", key, data });
       })
       .catch((reason: unknown) => {
-        if (!controller.signal.aborted && request === sequence.current) {
-          dispatch({ type: "load-failure", error: messageFor(reason) });
+        if (isCurrent(request)) {
+          dispatch({ type: "query-failure", error: messageFor(reason) });
         }
       })
       .finally(() => {
-        if (loadAbort.current === controller) loadAbort.current = null;
+        if (active.current === request) active.current = null;
       });
-    return () => controller.abort();
-  }, [debouncedQuery, filters.archiveScope, filters.from, filters.project, filters.to]);
+    return () => request.controller.abort();
+  }, [key, isCurrent]);
 
   const loadMoreSessions = useCallback(async () => {
-    const current = state.data;
+    if (active.current !== null) return;
+    const current = stateRef.current.data;
     if (!current?.hasMore || current.nextOffset === null) return;
-    pageAbort.current?.abort();
-    const controller = new AbortController();
-    pageAbort.current = controller;
-    const request = sequence.current;
+    const request: ActiveRequest = {
+      operation: "page",
+      controller: new AbortController(),
+      key: keyRef.current,
+    };
+    active.current = request;
     dispatch({ type: "page-start" });
     try {
       let next: SessionListResponse;
       try {
         next = await api.sessions({
-          ...listQuery(filtersRef.current, queryRef.current),
+          ...listQuery(filtersRef.current),
           offset: current.nextOffset,
           generation: current.generation,
-        }, controller.signal);
+        }, request.controller.signal);
       } catch (reason) {
-        if (!isStaleGeneration(reason)) throw reason;
+        if (!isCurrent(request) || !isStaleGeneration(reason)) throw reason;
         next = await api.sessions(
-          listQuery(filtersRef.current, queryRef.current),
-          controller.signal,
+          listQuery(filtersRef.current),
+          request.controller.signal,
         );
       }
-      if (!controller.signal.aborted && request === sequence.current) {
+      if (isCurrent(request)) {
         dispatch({ type: "page-success", data: mergePage(current, next) });
       }
     } catch (reason) {
-      if (!controller.signal.aborted && request === sequence.current) {
+      if (isCurrent(request)) {
         dispatch({ type: "page-failure", error: messageFor(reason) });
       }
     } finally {
-      if (pageAbort.current === controller) pageAbort.current = null;
+      if (active.current === request) active.current = null;
     }
-  }, [state.data]);
+  }, [isCurrent]);
 
   const refresh = useCallback(async (): Promise<SessionListResponse | null> => {
-    if (refreshAbort.current !== null) return null;
-    loadAbort.current?.abort();
-    pageAbort.current?.abort();
-    const controller = new AbortController();
-    refreshAbort.current = controller;
-    const request = ++sequence.current;
+    if (active.current !== null) return null;
+    const request: ActiveRequest = {
+      operation: "refresh",
+      controller: new AbortController(),
+      key: keyRef.current,
+    };
+    active.current = request;
     dispatch({ type: "refresh-start" });
     try {
       const data = await api.sessions(
-        listQuery(filtersRef.current, queryRef.current),
-        controller.signal,
+        listQuery(filtersRef.current),
+        request.controller.signal,
       );
-      if (controller.signal.aborted || request !== sequence.current) return null;
+      if (!isCurrent(request)) return null;
       dispatch({ type: "refresh-success", data });
       return data;
     } catch (reason) {
-      if (!controller.signal.aborted && request === sequence.current) {
+      if (isCurrent(request)) {
         dispatch({ type: "refresh-failure", error: messageFor(reason) });
       }
       return null;
     } finally {
-      if (refreshAbort.current === controller) refreshAbort.current = null;
+      if (active.current === request) active.current = null;
     }
-  }, []);
+  }, [isCurrent]);
 
   useEffect(() => () => {
-    loadAbort.current?.abort();
-    pageAbort.current?.abort();
-    refreshAbort.current?.abort();
+    active.current?.controller.abort();
+    active.current = null;
   }, []);
 
+  const changingQuery = state.key !== key;
+  const operation = changingQuery ? "query" : state.operation;
   return {
-    list: state.data,
-    listLoading: state.mode === "initial" || state.mode === "paging",
-    refreshing: state.mode === "refreshing",
+    list: changingQuery ? null : state.data,
+    operation,
+    listLoading: operation === "query" || operation === "page",
+    refreshing: operation === "refresh",
     listError: state.error,
-    refreshError: state.refreshError,
-    refreshMessage: state.refreshMessage,
     loadMoreSessions,
     refresh,
-    setRefreshMessage: (message: string) => dispatch({ type: "refresh-message", message }),
     clearListError: () => dispatch({ type: "clear-error" }),
   };
 }
 
 function reducer(state: ListState, action: ListAction): ListState {
   switch (action.type) {
-    case "load-start":
+    case "query-start":
       return {
         ...state,
-        mode: state.data === null ? "initial" : "ready",
+        key: action.key,
+        operation: "query",
+        data: null,
         error: null,
-        refreshError: null,
-        refreshMessage: null,
       };
-    case "load-success":
-      return { ...state, mode: "ready", data: action.data, error: null };
-    case "load-failure":
-      return { ...state, mode: "ready", error: action.error };
+    case "query-success":
+      return {
+        ...state,
+        key: action.key,
+        operation: null,
+        data: action.data,
+        error: null,
+      };
+    case "query-failure":
+      return { ...state, operation: null, error: action.error };
     case "page-start":
-      return { ...state, mode: "paging", error: null };
+      return { ...state, operation: "page", error: null };
     case "page-success":
-      return { ...state, mode: "ready", data: action.data, error: null };
+      return { ...state, operation: null, data: action.data, error: null };
     case "page-failure":
-      return { ...state, mode: "ready", error: action.error };
+      return { ...state, operation: null, error: action.error };
     case "refresh-start":
       return {
         ...state,
-        mode: "refreshing",
-        refreshError: null,
-        refreshMessage: null,
+        operation: "refresh",
+        error: null,
       };
     case "refresh-success":
-      return { ...state, mode: "ready", data: action.data, error: null };
+      return { ...state, operation: null, data: action.data, error: null };
     case "refresh-failure":
-      return { ...state, mode: "ready", refreshError: action.error };
-    case "refresh-message":
-      return { ...state, refreshMessage: action.message };
+      return { ...state, operation: null, error: action.error };
     case "clear-error":
       return { ...state, error: null };
   }
 }
 
-function listQuery(filters: BrowserFilters, q: string): SessionListQuery {
+function listQuery(filters: BrowserFilters): SessionListQuery {
   return {
-    q: q || undefined,
+    q: filters.q || undefined,
     project: filters.project || undefined,
     from: filters.from ? new Date(`${filters.from}T00:00:00`).toISOString() : undefined,
     to: filters.to ? new Date(`${filters.to}T23:59:59.999`).toISOString() : undefined,
     archiveScope: filters.archiveScope,
     limit: LIST_PAGE_SIZE,
   };
+}
+
+function filtersKey(filters: BrowserFilters): string {
+  return JSON.stringify([
+    filters.q,
+    filters.project,
+    filters.from,
+    filters.to,
+    filters.archiveScope,
+  ]);
 }
 
 function mergePage(
@@ -222,13 +243,4 @@ function mergePage(
       ...next.sessions.filter((entry) => !seen.has(entry.session.id)),
     ],
   };
-}
-
-function messageFor(reason: unknown): string {
-  if (reason instanceof Error) return reason.message;
-  return "The local session reader could not complete the request.";
-}
-
-function isStaleGeneration(reason: unknown): reason is ApiClientError {
-  return reason instanceof ApiClientError && reason.code === "stale_generation";
 }

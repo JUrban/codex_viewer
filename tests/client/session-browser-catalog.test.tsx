@@ -25,12 +25,12 @@ afterEach(() => {
 });
 
 describe("session catalog interactions", () => {
-  it("keeps filters and selection in the URL and cancels obsolete list requests", async () => {
-    const signals: AbortSignal[] = [];
+  it("submits query filters without putting them in the URL and keeps selection there", async () => {
+    const listUrls: string[] = [];
     vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (url.includes("/sessions?")) {
-        if (init?.signal) signals.push(init.signal);
+        listUrls.push(url);
         return Promise.resolve(json(listBody));
       }
       if (url.endsWith(SESSION_ID)) return Promise.resolve(json(detailBody));
@@ -39,16 +39,18 @@ describe("session catalog interactions", () => {
     const user = userEvent.setup();
     render(<App />);
     await user.type(screen.getByRole("searchbox"), "reader");
-    await waitFor(() => expect(window.location.search).toContain("q=reader"));
-    await waitFor(() => expect(signals.length).toBeGreaterThan(1), { timeout: 1000 });
-    expect(signals.some((signal) => signal.aborted)).toBe(true);
+    expect(listUrls).toHaveLength(1);
+    expect(window.location.search).toBe("");
+    await user.keyboard("{Enter}");
+    await waitFor(() => expect(listUrls.some((url) => url.includes("q=reader"))).toBe(true));
+    expect(window.location.search).toBe("");
     await user.click(await screen.findByRole("button", { name: /Reader work/ }));
     expect(window.location.search).toContain(`session=${SESSION_ID}`);
     expect(await screen.findByText("original-session-id")).toBeInTheDocument();
     expect(await screen.findByRole("list", { name: "Session timeline" })).toBeInTheDocument();
   });
 
-  it("uses a URL-backed three-state archive scope and labels archived sessions", async () => {
+  it("uses a storage-backed three-state archive scope and labels archived sessions", async () => {
     const listUrls: string[] = [];
     const archivedSession = {
       ...baseSession,
@@ -90,12 +92,15 @@ describe("session catalog interactions", () => {
       expect(listUrls.some((url) => url.includes("archiveScope=archived"))).toBe(true);
     });
     expect(archived).toBeChecked();
-    expect(window.location.search).toContain("archiveScope=archived");
+    expect(window.location.search).toBe("");
+    expect(sessionStorage.getItem("codex-sessions-reader.filters.v1"))
+      .toContain('"state":"archived"');
     expect(await screen.findByRole("button", { name: /Archived reader work.*Archived/ }))
       .toBeInTheDocument();
 
     await user.type(screen.getByRole("searchbox"), "reader");
-    await waitFor(() => expect(window.location.search).toContain("q=reader"));
+    expect(listUrls.some((url) => url.includes("q=reader"))).toBe(false);
+    await user.keyboard("{Enter}");
     await waitFor(() => {
       expect(listUrls.some((url) =>
         url.includes("archiveScope=archived") && url.includes("q=reader")
@@ -110,11 +115,12 @@ describe("session catalog interactions", () => {
 
     await user.click(all);
     expect(all).toBeChecked();
-    expect(window.location.search).toContain("archiveScope=all");
+    expect(window.location.search).not.toContain("archiveScope");
 
     window.history.replaceState(null, "", "/?archiveScope=archived");
     window.dispatchEvent(new PopStateEvent("popstate"));
-    await waitFor(() => expect(archived).toBeChecked());
+    await waitFor(() => expect(window.location.search).toBe(""));
+    expect(all).toBeChecked();
   });
 
   it("loads catalog pages beyond the first 200 summaries", async () => {
@@ -169,9 +175,9 @@ describe("session catalog interactions", () => {
     expect(await screen.findByText("Hello")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Refresh sessions" }));
     expect(screen.getByRole("button", { name: /Reader work/ })).toBeInTheDocument();
-    expect(await screen.findByText("Sessions refreshed · 1 available")).toBeInTheDocument();
+    await waitFor(() => expect(detailCalls).toBe(2));
+    expect(screen.queryByText(/Sessions refreshed/)).not.toBeInTheDocument();
     expect(listCalls).toBe(2);
-    expect(detailCalls).toBe(2);
     expect(itemCalls).toBe(2);
     expect(window.location.search).toContain(`session=${SESSION_ID}`);
   });
@@ -225,7 +231,10 @@ describe("session catalog interactions", () => {
     expect(await screen.findByText(/Internal view/)).toBeInTheDocument();
   
     resolveRefresh(json({ ...listBody, generation: 2 }));
-    expect(await screen.findByText("Sessions refreshed · 1 available")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Refresh sessions" })).toBeEnabled()
+    );
+    expect(screen.queryByText(/Sessions refreshed/)).not.toBeInTheDocument();
     expect(toggle).toBeChecked();
     expect(screen.getByText(/Internal view/)).toBeInTheDocument();
     expect(screen.getByText("Conversation view")).toBeInTheDocument();
@@ -246,8 +255,8 @@ describe("session catalog interactions", () => {
     render(<App />);
     expect(await screen.findByRole("alert")).toHaveTextContent("Catalog unavailable");
     await user.click(screen.getByRole("button", { name: "Refresh sessions" }));
-    expect(await screen.findByText("Sessions refreshed · 1 available")).toBeInTheDocument();
-    expect(screen.queryByText("Catalog unavailable")).toBeNull();
+    await waitFor(() => expect(screen.queryByText("Catalog unavailable")).toBeNull());
+    expect(screen.queryByText(/Sessions refreshed/)).not.toBeInTheDocument();
     expect(screen.getByText("Choose a session")).toBeInTheDocument();
   });
 
@@ -268,9 +277,10 @@ describe("session catalog interactions", () => {
     render(<App />);
     expect(await screen.findByRole("button", { name: /Reader work/ })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Refresh sessions" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      "Refresh unavailable Try refreshing again.",
-    );
+    expect(await screen.findByRole("alert"))
+      .toHaveTextContent("Could not load sessionsRefresh unavailable");
+    await user.click(screen.getByRole("button", { name: "Dismiss" }));
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Reader work/ })).toBeInTheDocument();
   });
 
@@ -315,6 +325,8 @@ describe("session catalog interactions", () => {
     await user.click(screen.getByRole("button", { name: "Refresh sessions" }));
     expect(screen.getByRole("button", { name: "Refresh sessions" })).toBeDisabled();
     await user.type(screen.getByRole("searchbox"), "new");
+    expect(screen.getByRole("button", { name: "Refresh sessions" })).toBeDisabled();
+    await user.keyboard("{Enter}");
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "Refresh sessions" })).toBeEnabled());
     resolveRefresh(json({ ...listBody, generation: 2 }));
@@ -349,6 +361,7 @@ describe("session catalog interactions", () => {
     render(<App />);
     await user.click(await screen.findByRole("button", { name: "Load more sessions (1 of 2)" }));
     await user.type(screen.getByRole("searchbox"), "new");
+    await user.keyboard("{Enter}");
     expect(await screen.findByRole("button", { name: /Filtered session/ })).toBeInTheDocument();
     resolveOldPage(json({
       ...listBody,

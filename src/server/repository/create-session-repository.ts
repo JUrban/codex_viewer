@@ -11,22 +11,28 @@ import { PathPolicy } from "../security/path-policy.js";
 import type { SearchBudget } from "../search/search-document.js";
 import { DefaultSessionRepository } from "./session-repository.js";
 
-export async function createSessionRepository(
+class DynamicCatalogSource implements CodexCatalogSource {
+  constructor(
+    private readonly codexHome: string,
+    private readonly disableSqlite: boolean,
+  ) {}
+
+  async discover() {
+    const policy = await PathPolicy.create(this.codexHome);
+    return new CompositeCatalogSource(
+      new JsonlCatalogSource(policy),
+      new SqliteCatalogSource(this.codexHome, policy, this.disableSqlite),
+    ).discover();
+  }
+}
+
+export function createSessionRepository(
   codexHome: string,
   disableSqlite = false,
   searchBudget?: SearchBudget,
-): Promise<DefaultSessionRepository> {
-  const source: CodexCatalogSource = {
-    async discover() {
-      const policy = await PathPolicy.create(codexHome);
-      return new CompositeCatalogSource(
-        new JsonlCatalogSource(policy),
-        new SqliteCatalogSource(codexHome, policy, disableSqlite),
-      ).discover();
-    },
-  };
+): DefaultSessionRepository {
   return new DefaultSessionRepository(
-    source,
+    new DynamicCatalogSource(codexHome, disableSqlite),
     new WholeFileRolloutDecoder(),
     new IdentityResolver(),
     new DefaultSessionNormalizer(),

@@ -12,6 +12,7 @@ interface TimelineProps {
   generation: number;
   hasMore: boolean;
   loading: boolean;
+  busy?: boolean;
   onLoadMore: () => void;
   onStale: () => void;
 }
@@ -22,6 +23,7 @@ export function Timeline({
   generation,
   hasMore,
   loading,
+  busy = loading,
   onLoadMore,
   onStale,
 }: TimelineProps) {
@@ -45,7 +47,7 @@ export function Timeline({
       </ol>
       {hasMore
         ? (
-            <button className="load-more" type="button" disabled={loading} onClick={onLoadMore}>
+            <button className="load-more" type="button" disabled={busy} onClick={onLoadMore}>
               {loading ? "Loading…" : "Load more events"}
             </button>
           )

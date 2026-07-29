@@ -3,13 +3,14 @@ import type { ApiWarning } from "../../shared/api-contract";
 
 interface DiagnosticNoticeProps {
   diagnostics: Array<Diagnostic | ApiWarning>;
+  label: string;
 }
 
-export function DiagnosticNotice({ diagnostics }: DiagnosticNoticeProps) {
+export function DiagnosticNotice({ diagnostics, label }: DiagnosticNoticeProps) {
   if (diagnostics.length === 0) return null;
 
   return (
-    <aside className="diagnostics" aria-label="Session diagnostics">
+    <aside className="diagnostics" aria-label={label}>
       <strong>
         {diagnostics.length} diagnostic{diagnostics.length === 1 ? "" : "s"}
       </strong>

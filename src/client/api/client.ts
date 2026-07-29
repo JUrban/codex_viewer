@@ -6,7 +6,6 @@ import type {
   SessionDetailResponse,
   SessionListQuery,
   SessionListResponse,
-  StatusResponse,
   ToolDetailResponse,
 } from "../../shared/api-contract";
 
@@ -52,7 +51,6 @@ function queryString(values: Record<string, string | number | boolean | undefine
 }
 
 export const api = {
-  status: (signal?: AbortSignal) => request<StatusResponse>("/api/v1/status", signal),
   sessions: (query: SessionListQuery, signal?: AbortSignal) =>
     request<SessionListResponse>(
       `/api/v1/sessions${queryString({
