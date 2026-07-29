@@ -2,6 +2,7 @@ import type { TimelineItem } from "../../shared/domain";
 import { InjectedContextItem } from "./InjectedContextItem";
 import { InternalEventItem } from "./InternalEventItem";
 import { MessageItem } from "./MessageItem";
+import { ReasoningItem } from "./ReasoningItem";
 import { ToolItem } from "./ToolItem";
 import { TraceGutter } from "./TraceGutter";
 
@@ -24,10 +25,7 @@ export function Timeline({ items, sessionId, generation, hasMore, loading, onLoa
           ? <InjectedContextItem item={item} sessionId={sessionId} generation={generation} onStale={onStale} />
           : null}
         {item.kind === "internal" ? <InternalEventItem item={item} /> : null}
-        {item.kind === "reasoning-unavailable" ? <article>
-          <p className="event-label">Reasoning · {item.ordinal}</p>
-          <p className="muted">Reasoning content is unavailable.</p>
-        </article> : null}
+        {item.kind === "reasoning" ? <ReasoningItem item={item} /> : null}
       </li>)}
     </ol>
     {hasMore ? <button className="load-more" type="button" disabled={loading} onClick={onLoadMore}>

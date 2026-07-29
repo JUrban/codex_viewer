@@ -64,8 +64,10 @@ export interface InjectedContextItem extends TimelineItemBase {
   hasDetail: true;
 }
 
-export interface ReasoningUnavailableItem extends TimelineItemBase {
-  kind: "reasoning-unavailable";
+export interface ReasoningItem extends TimelineItemBase {
+  kind: "reasoning";
+  summary: string;
+  truncated: boolean;
 }
 
 export interface InternalEventItem extends TimelineItemBase {
@@ -78,5 +80,5 @@ export type TimelineItem =
   | MessageItem
   | ToolItem
   | InjectedContextItem
-  | ReasoningUnavailableItem
+  | ReasoningItem
   | InternalEventItem;

@@ -3,7 +3,7 @@ import type {
   InjectedContextItem,
   InternalEventItem,
   MessageItem,
-  ReasoningUnavailableItem,
+  ReasoningItem,
   SessionDetail,
   TimelineItem,
 } from "../../shared/domain.js";
@@ -36,6 +36,7 @@ interface MessageCandidate {
   role: "user" | "assistant";
   phase: "commentary" | "final" | null;
   text: string;
+  injected: boolean;
 }
 
 export interface NormalizedInjectedContextDetail {
@@ -152,11 +153,16 @@ function consumeResponse(
     return;
   }
   if (type === "reasoning") {
-    const item: ReasoningUnavailableItem = {
-      kind: "reasoning-unavailable",
+    const summary = reasoningSummary(payload.summary);
+    if (summary === null) return;
+    const bounded = truncateText(summary, MAX_MESSAGE_CHARS);
+    const item: ReasoningItem = {
+      kind: "reasoning",
       id: `reasoning-${ordinal}`,
       ordinal,
       timestamp,
+      summary: bounded.text,
+      truncated: bounded.truncated,
     };
     fixedItems.push(item);
     return;
@@ -180,11 +186,18 @@ function responseMessageCandidate(
   payload: Record<string, unknown>,
 ): MessageCandidate | null {
   const role = payload.role;
-  if (role !== "user" && role !== "assistant") return null;
+  if (role !== "user" && role !== "assistant" && role !== "developer") return null;
   const markdown = contentText(payload.content);
   if (markdown === null) return null;
   const phase = role === "assistant" ? normalizePhase(payload.phase) : null;
-  return { ordinal, timestamp, role, phase, text: markdown };
+  return {
+    ordinal,
+    timestamp,
+    role: role === "developer" ? "user" : role,
+    phase,
+    text: markdown,
+    injected: role === "developer",
+  };
 }
 
 function eventMessageCandidate(
@@ -198,7 +211,7 @@ function eventMessageCandidate(
   if (markdown === null) return null;
   const role = type === "user_message" ? "user" : "assistant";
   const phase = type === "agent_message" ? normalizePhase(payload.phase) : null;
-  return { ordinal, timestamp, role, phase, text: markdown };
+  return { ordinal, timestamp, role, phase, text: markdown, injected: false };
 }
 
 function normalizeMessages(
@@ -215,9 +228,11 @@ function normalizeMessages(
   const usedEvents = new Set<number>();
 
   for (const response of responseMessages) {
-    const matchingEvent = nearestMatchingEvent(response, eventMessages, usedEvents);
+    const matchingEvent = response.injected
+      ? null
+      : nearestMatchingEvent(response, eventMessages, usedEvents);
     if (matchingEvent !== null) usedEvents.add(matchingEvent);
-    if (response.role === "assistant" || matchingEvent !== null) {
+    if (!response.injected && (response.role === "assistant" || matchingEvent !== null)) {
       items.push(messageItem(response));
       continue;
     }
@@ -243,7 +258,7 @@ function normalizeMessages(
     internalItems.push(internalItem(
       event.ordinal,
       event.timestamp,
-      event.role === "assistant" ? "propagated_agent_message" : "unmatched_user_event",
+      event.role === "assistant" ? "unmatched_agent_event" : "unmatched_user_event",
     ));
   }
 
@@ -334,6 +349,20 @@ function contentText(value: unknown): string | null {
   return text.length === 0 ? null : text;
 }
 
+function reasoningSummary(value: unknown): string | null {
+  if (!Array.isArray(value)) return nonBlankString(value);
+  const text = value
+    .map((part) => {
+      if (typeof part === "string") return nonBlankString(part);
+      if (!isObject(part)) return null;
+      const type = string(part.type);
+      return type === "summary_text" || type === "text" ? nonBlankString(part.text) : null;
+    })
+    .filter((part): part is string => part !== null)
+    .join("\n\n");
+  return nonBlankString(text);
+}
+
 function serializeText(value: unknown): string | null {
   if (typeof value === "string") return value;
   if (value === null || value === undefined) return null;
@@ -380,4 +409,8 @@ function firstUserTitle(items: TimelineItem[]): string | null {
 
 function string(value: unknown): string | null {
   return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+function nonBlankString(value: unknown): string | null {
+  return typeof value === "string" && value.trim().length > 0 ? value : null;
 }

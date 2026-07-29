@@ -21,15 +21,16 @@ async function normalize(fileName: string) {
 }
 
 describe("IdentityResolver and SessionNormalizer", () => {
-  it("uses response messages as canonical and classifies response-only user context", async () => {
+  it("uses response messages as canonical and classifies injected user and developer context", async () => {
     const normalized = await normalize("rollout-2026-07-28T10-00-00-basic-session.jsonl");
     const messages = normalized.items.filter((item) => item.kind === "message");
     expect(messages).toHaveLength(3);
     expect(messages.filter((item) => item.role === "user")).toHaveLength(1);
     expect(messages.filter((item) => item.role === "assistant")).toHaveLength(2);
     expect(messages.find((item) => item.markdown === "Final synthetic answer.")?.phase).toBe("final");
-    const context = normalized.items.find((item) => item.kind === "injected-context");
-    expect(context).toEqual(expect.objectContaining({
+    const contexts = normalized.items.filter((item) => item.kind === "injected-context");
+    expect(contexts).toHaveLength(2);
+    expect(contexts[0]).toEqual(expect.objectContaining({
       id: "context-4",
       summary: "Injected configuration summary",
       charCount: 61,
@@ -39,11 +40,27 @@ describe("IdentityResolver and SessionNormalizer", () => {
       text: "Injected configuration summary\nINJECTED_CONTEXT_DETAIL_CANARY",
       truncated: false,
     });
+    expect(contexts[1]).toEqual(expect.objectContaining({
+      id: "context-5",
+      summary: "DEVELOPER_CONTEXT_CANARY",
+      charCount: 24,
+      hasDetail: true,
+    }));
+    expect(normalized.injectedContextDetails.get("context-5")).toEqual({
+      text: "DEVELOPER_CONTEXT_CANARY",
+      truncated: false,
+    });
     expect(normalized.detail.messageCount).toBe(3);
     expect(normalized.detail.sourceId).toBe("basic-session");
-    expect(normalized.items.filter((item) => item.kind === "reasoning-unavailable")).toHaveLength(1);
+    expect(normalized.items.filter((item) => item.kind === "reasoning")).toEqual([
+      expect.objectContaining({
+        id: "reasoning-6",
+        summary: "REASONING_SUMMARY_CANARY",
+        truncated: false,
+      }),
+    ]);
     expect(JSON.stringify(normalized)).not.toContain("REASONING_CANARY_NEVER_RENDER");
-    expect(JSON.stringify(normalized)).not.toContain("DEVELOPER_CANARY_NEVER_RENDER");
+    expect(JSON.stringify(normalized)).not.toContain("EMPTY_REASONING_CANARY_NEVER_RENDER");
     expect(JSON.stringify(normalized)).not.toContain("INTERNAL_PAYLOAD_CANARY");
     expect(normalized.detail.title).toBe("Synthetic trace");
   });
@@ -142,8 +159,8 @@ describe("IdentityResolver and SessionNormalizer", () => {
       [6, "internal"],
     ]);
     expect(normalized.items[3]).toEqual(expect.objectContaining({
-      eventType: "propagated_agent_message",
-      summary: "Internal event: propagated_agent_message",
+      eventType: "unmatched_agent_event",
+      summary: "Internal event: unmatched_agent_event",
     }));
     expect(normalized.detail).toEqual(expect.objectContaining({
       title: "Actual user",

@@ -68,6 +68,28 @@ afterEach(() => {
 });
 
 describe("session browser", () => {
+  it("renders reasoning summary markdown in the internal timeline", () => {
+    render(<Timeline
+      items={[{
+        kind: "reasoning",
+        id: "reasoning-3",
+        ordinal: 3,
+        timestamp: null,
+        summary: "**Visible reasoning summary**",
+        truncated: false,
+      }]}
+      sessionId={SESSION_ID}
+      generation={1}
+      hasMore={false}
+      loading={false}
+      onLoadMore={vi.fn()}
+      onStale={vi.fn()}
+    />);
+
+    expect(screen.getByText("Reasoning summary · 3")).toBeInTheDocument();
+    expect(screen.getByText("Visible reasoning summary", { selector: "strong" })).toBeInTheDocument();
+  });
+
   it("groups children and preserves missing-parent sessions", () => {
     const child = entry({ ...baseSession, id: CHILD_ID, parentId: SESSION_ID, title: "Child" });
     const grandchild = entry({

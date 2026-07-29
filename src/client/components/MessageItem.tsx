@@ -15,14 +15,18 @@ export function MessageItem({ item }: { item: Message }) {
   const label = messageLabel(item);
   return <article className="message-body">
     <p className="event-label">{label} · {item.ordinal}</p>
-    <ReactMarkdown remarkPlugins={[remarkGfm]} skipHtml urlTransform={safeUrlTransform}
+    <MarkdownContent markdown={item.markdown} />
+  </article>;
+}
+
+export function MarkdownContent({ markdown }: { markdown: string }) {
+  return <ReactMarkdown remarkPlugins={[remarkGfm]} skipHtml urlTransform={safeUrlTransform}
       components={{
         a: ({ href, children }) => href
           ? <a href={href} target="_blank" rel="noreferrer noopener">{children}</a>
           : <span>{children}</span>,
         img: ({ alt }) => <span className="image-placeholder">[Image omitted{alt ? `: ${alt}` : ""}]</span>,
-      }}>{item.markdown}</ReactMarkdown>
-  </article>;
+      }}>{markdown}</ReactMarkdown>;
 }
 
 function messageLabel(item: Message): string {

@@ -132,7 +132,7 @@ describe("DefaultSessionRepository", () => {
     expect(third!.session.messageCount).toBe(0);
   });
 
-  it("hides unavailable reasoning from conversation view but keeps it in internal view", async () => {
+  it("hides summarized reasoning from conversation view but keeps it in internal view", async () => {
     const { repository } = await fixtureRepository();
     const list = await repository.list({});
     const session = list.sessions.find((entry) => entry.session.title === "Synthetic trace")!;
@@ -144,8 +144,10 @@ describe("DefaultSessionRepository", () => {
       limit: 200,
       view: "internal",
     });
-    expect(conversation?.items.some((item) => item.kind === "reasoning-unavailable")).toBe(false);
-    expect(internal?.items.some((item) => item.kind === "reasoning-unavailable")).toBe(true);
+    expect(conversation?.items.some((item) => item.kind === "reasoning")).toBe(false);
+    expect(internal?.items.find((item) => item.kind === "reasoning")).toEqual(
+      expect.objectContaining({ summary: "REASONING_SUMMARY_CANARY" }),
+    );
   });
 
   it("searches only permitted fields and reports bounded partial results", async () => {
@@ -154,8 +156,9 @@ describe("DefaultSessionRepository", () => {
     expect((await repository.list({ q: "/synthetic/project" })).sessions).toHaveLength(1);
     expect((await repository.list({ q: "Final synthetic answer" })).sessions).toHaveLength(1);
     for (const canary of [
-      "DEVELOPER_CANARY_NEVER_RENDER",
+      "DEVELOPER_CONTEXT_CANARY",
       "REASONING_CANARY_NEVER_RENDER",
+      "REASONING_SUMMARY_CANARY",
       "INTERNAL_PAYLOAD_CANARY",
       "INJECTED_CONTEXT_DETAIL_CANARY",
       "synthetic result",

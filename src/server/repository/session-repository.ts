@@ -177,7 +177,7 @@ export class DefaultSessionRepository implements SessionRepository {
     const visible = normalized.items.filter((item) =>
       item.ordinal > after &&
       (query.view === "internal" ||
-        (item.kind !== "internal" && item.kind !== "reasoning-unavailable")));
+        (item.kind !== "internal" && item.kind !== "reasoning")));
     const limit = query.limit ?? DEFAULT_ITEM_LIMIT;
     const items: TimelineItem[] = [];
     let itemBytes = 0;

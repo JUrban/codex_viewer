@@ -68,10 +68,12 @@ The Node process is the trust boundary between the browser and local files.
   `javascript:`, `data:`, and `file:` links are disabled. Tool output is plain
   text and is loaded only when expanded.
 - User-role context injected by Codex, such as project instructions or skill
-  content, is shown as a short summary. Its plain-text detail is loaded only
-  when expanded and is capped at 256,000 characters.
-- Encrypted reasoning, developer messages, raw internal payloads, and
-  unrestricted tool data are not returned to the browser.
+  content, and developer-role messages are shown as short summaries. Their
+  plain-text detail is loaded only when expanded and is capped at 256,000
+  characters.
+- Textual reasoning summaries are available with internal events. Encrypted
+  reasoning bodies, raw internal payloads, and unrestricted tool data are not
+  returned to the browser.
 
 Loopback limits network exposure but does not make an unlocked local account
 untrusted. Run the reader only on a machine and browser profile you control.
@@ -80,8 +82,8 @@ untrusted. Run the reader only on a machine and browser profile you control.
 
 Search covers session title, project path, real user input identified by
 `event_msg.user_message`, and canonical assistant `response_item.message`
-content. It intentionally excludes injected user-role context, developer
-messages, tools, reasoning, and internal event payloads.
+content. It intentionally excludes injected user-role context, developer-role
+context, tools, reasoning, and internal event payloads.
 
 Search work is bounded by elapsed time, scanned bytes, result count, query
 length, and excerpt length. A partial-results notice means a safety budget was
