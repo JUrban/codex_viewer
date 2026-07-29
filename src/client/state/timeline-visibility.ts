@@ -1,18 +1,18 @@
 import type { TimelineItem } from "../../shared/domain";
 
 export interface TimelineVisibility {
-  tools: boolean;
   directive: boolean;
-  reasoning: boolean;
+  tools: boolean;
+  token: boolean;
   internal: boolean;
 }
 
 export type TimelineVisibilityKey = keyof TimelineVisibility;
 
 export const DEFAULT_TIMELINE_VISIBILITY: TimelineVisibility = {
-  tools: false,
   directive: false,
-  reasoning: false,
+  tools: false,
+  token: false,
   internal: false,
 };
 
@@ -23,12 +23,12 @@ export function isTimelineItemVisible(
   switch (item.kind) {
     case "message":
       return true;
-    case "tool":
-      return visibility.tools;
     case "directive":
       return visibility.directive;
-    case "reasoning":
-      return visibility.reasoning;
+    case "tool":
+      return visibility.tools;
+    case "token":
+      return visibility.token;
     case "internal":
       return visibility.internal;
   }

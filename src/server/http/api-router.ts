@@ -168,7 +168,7 @@ function isOpaqueId(value: string): boolean {
 }
 
 function isItemId(value: string): boolean {
-  return /^(?:message|tool|directive|reasoning|internal)-\d+$/.test(value);
+  return /^(?:message|directive|tool|token|internal)-\d+$/.test(value);
 }
 
 function notFound(

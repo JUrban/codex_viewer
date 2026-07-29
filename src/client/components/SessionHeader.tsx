@@ -59,8 +59,8 @@ const VISIBILITY_TOGGLES: Array<{
   key: TimelineVisibilityKey;
   label: string;
 }> = [
-  { key: "tools", label: "tool" },
   { key: "directive", label: "directive" },
-  { key: "reasoning", label: "reasoning" },
+  { key: "tools", label: "tool" },
+  { key: "token", label: "token" },
   { key: "internal", label: "internal" },
 ];

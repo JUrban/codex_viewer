@@ -16,3 +16,4 @@
 {"timestamp":"2026-07-28T10:00:08.500Z","type":"response_item","payload":{"type":"message","role":"assistant","phase":"final_answer","content":[{"type":"output_text","text":"Final synthetic answer."}]}}
 {"timestamp":"2026-07-28T10:00:09.000Z","type":"future_record","payload":{"secret":"INTERNAL_PAYLOAD_CANARY"}}
 {"timestamp":"2026-07-28T10:00:10.000Z","type":"response_item","payload":{"type":"reasoning","encrypted_content":"EMPTY_REASONING_CANARY_NEVER_RENDER","summary":[]}}
+{"timestamp":"2026-07-28T10:00:11.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"total_tokens":123,"input_tokens":100,"output_tokens":23}}}}

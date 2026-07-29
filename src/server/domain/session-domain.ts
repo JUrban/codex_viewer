@@ -51,15 +51,6 @@ export interface DomainMessageRecord extends DomainTimelineRecordBase {
   readonly markdown: string;
 }
 
-export interface DomainToolRecord extends DomainTimelineRecordBase {
-  readonly kind: "tool";
-  readonly toolName: string;
-  readonly status: "pending" | "completed" | "failed" | "interrupted";
-  readonly preview: string | null;
-  readonly truncated: boolean;
-  readonly hasDetail: boolean;
-}
-
 export interface DomainDirectiveRecord extends DomainTimelineRecordBase {
   readonly kind: "directive";
   readonly summary: string;
@@ -68,10 +59,13 @@ export interface DomainDirectiveRecord extends DomainTimelineRecordBase {
   readonly hasDetail: true;
 }
 
-export interface DomainReasoningRecord extends DomainTimelineRecordBase {
-  readonly kind: "reasoning";
-  readonly summary: string;
+export interface DomainToolRecord extends DomainTimelineRecordBase {
+  readonly kind: "tool";
+  readonly toolName: string;
+  readonly status: "pending" | "completed" | "failed" | "interrupted";
+  readonly preview: string | null;
   readonly truncated: boolean;
+  readonly hasDetail: boolean;
 }
 
 export interface DomainTokenUsageCounters {
@@ -83,21 +77,25 @@ export interface DomainTokenUsageCounters {
   readonly reasoningOutputTokens: number | null;
 }
 
-export interface DomainInternalEventRecord extends DomainTimelineRecordBase {
-  readonly kind: "internal";
-  readonly eventType: string;
-  readonly summary: string;
-  readonly tokenUsage?: {
+export interface DomainTokenRecord extends DomainTimelineRecordBase {
+  readonly kind: "token";
+  readonly tokenUsage: {
     readonly total: DomainTokenUsageCounters | null;
     readonly last: DomainTokenUsageCounters | null;
   };
 }
 
+export interface DomainInternalEventRecord extends DomainTimelineRecordBase {
+  readonly kind: "internal";
+  readonly eventType: string;
+  readonly summary: string;
+}
+
 export type DomainTimelineRecord =
   | DomainMessageRecord
-  | DomainToolRecord
   | DomainDirectiveRecord
-  | DomainReasoningRecord
+  | DomainToolRecord
+  | DomainTokenRecord
   | DomainInternalEventRecord;
 
 export interface DomainToolDetail {

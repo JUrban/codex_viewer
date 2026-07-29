@@ -132,22 +132,24 @@
 .trace-event.human { --trace-color: var(--human); }
 .trace-event.tool { --trace-color: var(--signal); }
 .trace-event.directive { --trace-color: #7a4f2d; }
-.trace-event.internal, .trace-event.reasoning { --trace-color: #68777c; }
+.trace-event.internal { --trace-color: #68777c; }
+.trace-event.token { --trace-color: #496c65; }
 .trace-mark { position: relative; z-index: 1; width: .9rem; height: .9rem; margin-top: .22rem; background: var(--paper); border: 2px solid var(--trace-color); border-radius: 50%; }
 .tool .trace-mark { border-radius: 1px; }
 .directive .trace-mark { border-style: dashed; border-radius: 1px; }
 .final .trace-mark { background: var(--current); transform: rotate(45deg) scale(.78); border-radius: 0; }
 .internal .trace-mark { border-style: dotted; }
+.token .trace-mark { border-radius: 50%; border-style: double; }
 .trace-event article { min-width: 0; max-width: 52rem; }
 .trace-event article > p { line-height: 1.72; }
 .event-label { margin-bottom: .55rem; color: var(--trace-color); text-transform: uppercase; }
-.message-body :is(p, li), .reasoning-body :is(p, li) { line-height: 1.7; }
-.message-body pre, .reasoning-body pre, .tool-detail pre {
+.message-body :is(p, li) { line-height: 1.7; }
+.message-body pre, .tool-detail pre {
   max-width: 100%; overflow: auto; padding: 1rem; color: #dce8e8; background: #213138;
   border-left: 3px solid var(--current); white-space: pre-wrap; overflow-wrap: anywhere;
 }
-.message-body code, .reasoning-body code { font-family: var(--mono-font); font-size: .86em; }
-.message-body a, .reasoning-body a { color: #075f70; text-underline-offset: .18em; }
+.message-body code { font-family: var(--mono-font); font-size: .86em; }
+.message-body a { color: #075f70; text-underline-offset: .18em; }
 .image-placeholder { color: var(--ink-soft); font-style: italic; }
 .trace-event article button, .load-more, .error-state button {
   padding: .48rem .72rem; color: var(--current); background: transparent;

@@ -54,11 +54,20 @@ describe("IdentityResolver and SessionNormalizer", () => {
     });
     expect(normalized.session.messageCount).toBe(3);
     expect(normalized.session.sourceId).toBe("basic-session");
-    expect(normalized.timeline.filter((item) => item.kind === "reasoning")).toEqual([
+    expect(
+      normalized.timeline.filter((item) =>
+        item.kind === "internal" && item.eventType === "reasoning"
+      ),
+    ).toEqual([
       expect.objectContaining({
-        id: "reasoning-6",
+        id: "internal-6",
+        eventType: "reasoning",
         summary: "REASONING_SUMMARY_CANARY",
-        truncated: false,
+      }),
+      expect.objectContaining({
+        id: "internal-18",
+        eventType: "reasoning",
+        summary: "Internal event: reasoning",
       }),
     ]);
     expect(JSON.stringify(normalized)).not.toContain("REASONING_CANARY_NEVER_RENDER");
@@ -97,7 +106,7 @@ describe("IdentityResolver and SessionNormalizer", () => {
     expect(normalized.session.title).not.toContain("\n");
   });
 
-  it("reduces unmatched message events to internal summaries", () => {
+  it("classifies unmatched message events as directives with retrievable detail", () => {
     const descriptor = {
       id: "message-source-session",
       canonicalPath: "/synthetic/rollout-message-source.jsonl",
@@ -173,6 +182,13 @@ describe("IdentityResolver and SessionNormalizer", () => {
             payload: { type: "agent_message", phase: "commentary", message: "Propagated parent text" },
           },
         },
+        {
+          ordinal: 7,
+          value: {
+            type: "event_msg",
+            payload: { type: "user_message", message: "Unmatched user event" },
+          },
+        },
       ],
     }, {
       threadId: null,
@@ -188,12 +204,29 @@ describe("IdentityResolver and SessionNormalizer", () => {
       [1, "directive"],
       [2, "message"],
       [4, "message"],
-      [6, "internal"],
+      [6, "directive"],
+      [7, "directive"],
     ]);
     expect(normalized.timeline[3]).toEqual(expect.objectContaining({
-      eventType: "unmatched_agent_event",
-      summary: "Internal event: unmatched_agent_event",
+      id: "directive-6",
+      summary: "Propagated parent text",
+      charCount: 22,
+      hasDetail: true,
     }));
+    expect(normalized.directiveDetails.get("directive-6")).toEqual({
+      text: "Propagated parent text",
+      truncated: false,
+    });
+    expect(normalized.timeline[4]).toEqual(expect.objectContaining({
+      id: "directive-7",
+      summary: "Unmatched user event",
+      charCount: 20,
+      hasDetail: true,
+    }));
+    expect(normalized.directiveDetails.get("directive-7")).toEqual({
+      text: "Unmatched user event",
+      truncated: false,
+    });
     expect(normalized.session).toEqual(expect.objectContaining({
       title: "Actual user",
       preview: "Actual user\n\ninput",
@@ -202,7 +235,7 @@ describe("IdentityResolver and SessionNormalizer", () => {
     expect(normalized.timeline.filter((item) => item.kind === "message").map((item) => item.markdown))
       .toEqual(["Actual user\n\ninput", "Canonical\n\nassistant"]);
     expect(JSON.stringify(normalized.timeline)).not.toContain("DIRECTIVE_ONLY_SECRET");
-    expect(JSON.stringify(normalized.timeline)).not.toContain("Propagated parent text");
+    expect(JSON.stringify(normalized.timeline)).toContain("Propagated parent text");
   });
 
   it("shows turn context safely and retains allowlisted total and last token usage", () => {
@@ -289,12 +322,10 @@ describe("IdentityResolver and SessionNormalizer", () => {
         summary: "Internal event: turn_context",
       },
       {
-        kind: "internal",
-        id: "internal-2",
+        kind: "token",
+        id: "token-2",
         ordinal: 2,
         timestamp: "2026-07-28T20:00:01Z",
-        eventType: "token_count",
-        summary: "Internal event: token_count",
         tokenUsage: {
           total: {
             totalTokens: 12_345,
@@ -315,12 +346,14 @@ describe("IdentityResolver and SessionNormalizer", () => {
         },
       },
       {
-        kind: "internal",
-        id: "internal-3",
+        kind: "token",
+        id: "token-3",
         ordinal: 3,
         timestamp: null,
-        eventType: "token_count",
-        summary: "Internal event: token_count",
+        tokenUsage: {
+          total: null,
+          last: null,
+        },
       },
     ]);
     const serialized = JSON.stringify(normalized);

@@ -79,7 +79,8 @@ authentication and network access outside the reader.
 
 Search covers session title, project path, canonical assistant messages, and
 user messages corroborated by matching `event_msg.user_message` records. It
-excludes directives, tools, reasoning, and internal event payloads.
+excludes directives, tools, token usage, and internal event payloads,
+including the safe summaries derived from reasoning records.
 
 Search work is bounded by elapsed time, scanned bytes, result count, query
 length, and excerpt length. A partial-results notice means a safety budget was

@@ -54,15 +54,6 @@ export interface MessageItem extends TimelineItemBase {
   markdown: string;
 }
 
-export interface ToolItem extends TimelineItemBase {
-  kind: "tool";
-  toolName: string;
-  status: "pending" | "completed" | "failed" | "interrupted";
-  preview: string | null;
-  truncated: boolean;
-  hasDetail: boolean;
-}
-
 export interface DirectiveItem extends TimelineItemBase {
   kind: "directive";
   summary: string;
@@ -71,10 +62,13 @@ export interface DirectiveItem extends TimelineItemBase {
   hasDetail: true;
 }
 
-export interface ReasoningItem extends TimelineItemBase {
-  kind: "reasoning";
-  summary: string;
+export interface ToolItem extends TimelineItemBase {
+  kind: "tool";
+  toolName: string;
+  status: "pending" | "completed" | "failed" | "interrupted";
+  preview: string | null;
   truncated: boolean;
+  hasDetail: boolean;
 }
 
 export interface TokenUsageCounters {
@@ -86,19 +80,23 @@ export interface TokenUsageCounters {
   reasoningOutputTokens: number | null;
 }
 
-export interface InternalEventItem extends TimelineItemBase {
-  kind: "internal";
-  eventType: string;
-  summary: string;
-  tokenUsage?: {
+export interface TokenItem extends TimelineItemBase {
+  kind: "token";
+  tokenUsage: {
     total: TokenUsageCounters | null;
     last: TokenUsageCounters | null;
   };
 }
 
+export interface InternalEventItem extends TimelineItemBase {
+  kind: "internal";
+  eventType: string;
+  summary: string;
+}
+
 export type TimelineItem =
   | MessageItem
-  | ToolItem
   | DirectiveItem
-  | ReasoningItem
+  | ToolItem
+  | TokenItem
   | InternalEventItem;

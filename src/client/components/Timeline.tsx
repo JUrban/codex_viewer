@@ -2,7 +2,7 @@ import type { TimelineItem } from "../../shared/domain";
 import { DirectiveItem } from "./DirectiveItem";
 import { InternalEventItem } from "./InternalEventItem";
 import { MessageItem } from "./MessageItem";
-import { ReasoningItem } from "./ReasoningItem";
+import { TokenItem } from "./TokenItem";
 import { ToolItem } from "./ToolItem";
 import { TraceGutter } from "./TraceGutter";
 
@@ -63,15 +63,6 @@ function TimelineContent({
   switch (item.kind) {
     case "message":
       return <MessageItem item={item} />;
-    case "tool":
-      return (
-        <ToolItem
-          item={item}
-          sessionId={sessionId}
-          generation={generation}
-          onStale={onStale}
-        />
-      );
     case "directive":
       return (
         <DirectiveItem
@@ -81,10 +72,19 @@ function TimelineContent({
           onStale={onStale}
         />
       );
+    case "tool":
+      return (
+        <ToolItem
+          item={item}
+          sessionId={sessionId}
+          generation={generation}
+          onStale={onStale}
+        />
+      );
+    case "token":
+      return <TokenItem item={item} />;
     case "internal":
       return <InternalEventItem item={item} />;
-    case "reasoning":
-      return <ReasoningItem item={item} />;
   }
 }
 

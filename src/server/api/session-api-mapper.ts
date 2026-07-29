@@ -127,7 +127,7 @@ export class SessionApiMapper {
   }
 
   timelineItem(item: DomainTimelineRecord): TimelineItem {
-    if (item.kind !== "internal" || item.tokenUsage === undefined) return { ...item };
+    if (item.kind !== "token") return { ...item };
     return {
       ...item,
       tokenUsage: {

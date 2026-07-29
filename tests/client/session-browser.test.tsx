@@ -69,15 +69,15 @@ afterEach(() => {
 });
 
 describe("session browser", () => {
-  it("renders reasoning summary markdown in the internal timeline", () => {
+  it("renders a reasoning summary as plain internal event text", () => {
     render(<Timeline
       items={[{
-        kind: "reasoning",
-        id: "reasoning-3",
+        kind: "internal",
+        id: "internal-3",
         ordinal: 3,
         timestamp: null,
-        summary: "**Visible reasoning summary**",
-        truncated: false,
+        eventType: "reasoning",
+        summary: "Visible reasoning summary",
       }]}
       sessionId={SESSION_ID}
       generation={1}
@@ -87,19 +87,18 @@ describe("session browser", () => {
       onStale={vi.fn()}
     />);
 
-    expect(screen.getByText("Reasoning summary · 3")).toBeInTheDocument();
-    expect(screen.getByText("Visible reasoning summary", { selector: "strong" })).toBeInTheDocument();
+    expect(screen.getByText("Internal · 3")).toBeInTheDocument();
+    expect(screen.getByText("reasoning", { selector: "strong" })).toBeInTheDocument();
+    expect(screen.getByText(/Visible reasoning summary/)).toBeInTheDocument();
   });
 
   it("renders detailed total and last token usage in separate groups", () => {
     render(<Timeline
       items={[{
-        kind: "internal",
-        id: "internal-7",
+        kind: "token",
+        id: "token-7",
         ordinal: 7,
         timestamp: null,
-        eventType: "token_count",
-        summary: "Internal event: token_count",
         tokenUsage: {
           total: {
             totalTokens: 12_345,
@@ -142,12 +141,10 @@ describe("session browser", () => {
     render(<Timeline
       items={[
         {
-          kind: "internal",
-          id: "internal-8",
+          kind: "token",
+          id: "token-8",
           ordinal: 8,
           timestamp: null,
-          eventType: "token_count",
-          summary: "Internal event: token_count",
           tokenUsage: { total: null, last: null },
         },
         {
@@ -256,6 +253,35 @@ describe("session browser", () => {
     expect(window.location.search).toContain(`session=${SESSION_ID}`);
     expect(await screen.findByText("original-session-id")).toBeInTheDocument();
     expect(await screen.findByRole("list", { name: "Session timeline" })).toBeInTheDocument();
+  });
+
+  it("keeps the archived-only filter out of the page URL while sending it to the list API", async () => {
+    const listUrls: string[] = [];
+    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/api/v1/sessions?")) listUrls.push(url);
+      return Promise.resolve(json(listBody));
+    }));
+    const user = userEvent.setup();
+    render(<App />);
+    const archived = await screen.findByRole("checkbox", { name: "Archived only" });
+
+    await user.click(archived);
+    await waitFor(() => {
+      expect(listUrls.some((url) => url.includes("archived=true"))).toBe(true);
+    });
+    expect(archived).toBeChecked();
+    expect(window.location.search).toBe("");
+
+    await user.type(screen.getByRole("searchbox"), "reader");
+    await waitFor(() => expect(window.location.search).toContain("q=reader"));
+    expect(window.location.search).not.toContain("archived");
+    await waitFor(() => {
+      expect(listUrls.some((url) =>
+        url.includes("archived=true") && url.includes("q=reader")
+      )).toBe(true);
+    });
+    expect(archived).toBeChecked();
   });
 
   it("loads later pages without duplicates and fetches tool text only on expansion", async () => {
@@ -776,20 +802,27 @@ describe("session browser", () => {
     expect(itemCalls).toBe(2);
   });
 
-  it("filters four technical event types locally and persists them in the URL", async () => {
+  it("filters four technical event types locally and persists them in one show parameter", async () => {
     const allKindsPage: ItemPageResponse = {
       ...firstPage,
       items: [
         firstPage.items[0],
-        toolItem,
         directiveItem,
+        toolItem,
         {
-          kind: "reasoning",
-          id: "reasoning-5",
+          kind: "internal",
+          id: "internal-5",
           ordinal: 5,
           timestamp: null,
+          eventType: "reasoning",
           summary: "Local reasoning summary",
-          truncated: false,
+        },
+        {
+          kind: "token",
+          id: "token-7",
+          ordinal: 7,
+          timestamp: null,
+          tokenUsage: { total: null, last: null },
         },
         {
           kind: "internal",
@@ -814,21 +847,26 @@ describe("session browser", () => {
     fireEvent.click(await screen.findByRole("button", { name: /Reader work/ }));
     expect(await screen.findByText("Hello")).toBeInTheDocument();
 
-    const toolToggle = await screen.findByRole("checkbox", { name: "tool" });
-    const directiveToggle = screen.getByRole("checkbox", { name: "directive" });
-    const reasoningToggle = screen.getByRole("checkbox", { name: "reasoning" });
+    const directiveToggle = await screen.findByRole("checkbox", { name: "directive" });
+    const toolToggle = screen.getByRole("checkbox", { name: "tool" });
+    const tokenToggle = screen.getByRole("checkbox", { name: "token" });
     const internalToggle = screen.getByRole("checkbox", { name: "internal" });
-    expect(
-      screen.getByRole("group", { name: "Timeline event visibility" }),
-    ).toContainElement(toolToggle);
-    expect(toolToggle).not.toBeChecked();
+    const visibilityGroup = screen.getByRole("group", { name: "Timeline event visibility" });
+    expect(within(visibilityGroup).getAllByRole("checkbox")).toEqual([
+      directiveToggle,
+      toolToggle,
+      tokenToggle,
+      internalToggle,
+    ]);
     expect(directiveToggle).not.toBeChecked();
-    expect(reasoningToggle).not.toBeChecked();
+    expect(toolToggle).not.toBeChecked();
+    expect(tokenToggle).not.toBeChecked();
     expect(internalToggle).not.toBeChecked();
     expect(screen.queryByText(/exec/)).toBeNull();
     expect(screen.queryByText("AGENTS.md instructions")).toBeNull();
     expect(screen.queryByText("Local reasoning summary")).toBeNull();
     expect(screen.queryByText(/Local internal event/)).toBeNull();
+    expect(screen.queryByText("Token · 7")).toBeNull();
 
     const itemCalls = () => fetchMock.mock.calls.filter(
       ([url]) => String(url).includes(`/${SESSION_ID}/items`),
@@ -838,36 +876,54 @@ describe("session browser", () => {
     expect(String(itemCalls()[0]![0])).not.toContain("view=");
     expect(String(itemCalls()[0]![0])).not.toContain("includeTools=");
 
-    fireEvent.click(toolToggle);
     fireEvent.click(directiveToggle);
-    fireEvent.click(reasoningToggle);
+    fireEvent.click(toolToggle);
+    fireEvent.click(tokenToggle);
     fireEvent.click(internalToggle);
     expect(screen.getByText(/exec/)).toBeInTheDocument();
     expect(screen.getByText("AGENTS.md instructions")).toBeInTheDocument();
-    expect(screen.getByText("Local reasoning summary")).toBeInTheDocument();
+    expect(screen.getByText(/Local reasoning summary/)).toBeInTheDocument();
     expect(screen.getByText(/Local internal event/)).toBeInTheDocument();
-    expect(window.location.search).toContain("tools=true");
-    expect(window.location.search).toContain("directive=true");
-    expect(window.location.search).toContain("reasoning=true");
-    expect(window.location.search).toContain("internal=true");
-    expect(toolToggle).toBeChecked();
+    expect(screen.getByText("Token · 7")).toBeInTheDocument();
+    expect(window.location.search).toContain(
+      "show=directive,tool,token,internal",
+    );
+    expect(window.location.search).not.toMatch(
+      /(?:tools|directive|reasoning|internal|token)=true/,
+    );
     expect(directiveToggle).toBeChecked();
-    expect(reasoningToggle).toBeChecked();
+    expect(toolToggle).toBeChecked();
+    expect(tokenToggle).toBeChecked();
     expect(internalToggle).toBeChecked();
     expect(itemCalls()).toHaveLength(1);
 
-    window.history.pushState(null, "", `/?session=${SESSION_ID}&directive=true`);
+    window.history.pushState(
+      null,
+      "",
+      `/?session=${SESSION_ID}&show=directive,token,reasoning,directive,unknown`,
+    );
     window.dispatchEvent(new PopStateEvent("popstate"));
     await waitFor(() => expect(toolToggle).not.toBeChecked());
-    expect(window.location.search).not.toContain("tools=true");
     expect(directiveToggle).toBeChecked();
-    expect(reasoningToggle).not.toBeChecked();
     expect(internalToggle).not.toBeChecked();
+    expect(tokenToggle).toBeChecked();
     expect(screen.queryByText(/exec/)).toBeNull();
     expect(screen.getByText("AGENTS.md instructions")).toBeInTheDocument();
     expect(screen.queryByText("Local reasoning summary")).toBeNull();
     expect(screen.queryByText(/Local internal event/)).toBeNull();
+    expect(screen.getByText("Token · 7")).toBeInTheDocument();
     expect(itemCalls()).toHaveLength(1);
+
+    window.history.pushState(
+      null,
+      "",
+      `/?session=${SESSION_ID}&tools=true&directive=true&reasoning=true&internal=true`,
+    );
+    window.dispatchEvent(new PopStateEvent("popstate"));
+    await waitFor(() => expect(directiveToggle).not.toBeChecked());
+    expect(toolToggle).not.toBeChecked();
+    expect(internalToggle).not.toBeChecked();
+    expect(tokenToggle).not.toBeChecked();
   });
 
   it("renders Markdown without raw HTML, external images, or dangerous links", () => {

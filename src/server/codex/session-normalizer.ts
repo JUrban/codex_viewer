@@ -4,9 +4,9 @@ import type {
   DomainDirectiveRecord as DirectiveItem,
   DomainInternalEventRecord as InternalEventItem,
   DomainMessageRecord as MessageItem,
-  DomainReasoningRecord as ReasoningItem,
   DomainSession as SessionDetail,
   DomainTimelineRecord as TimelineItem,
+  DomainTokenRecord as TokenItem,
   DomainTokenUsageCounters as TokenUsageCounters,
   NormalizedSession,
 } from "../domain/session-domain.js";
@@ -62,7 +62,6 @@ export class DefaultSessionNormalizer implements SessionNormalizer {
     const accumulatedTools = tools.finish();
     const items = [
       ...normalizedMessages.items,
-      ...normalizedMessages.internalItems,
       ...fixedItems,
       ...accumulatedTools.map((tool) => tool.item),
     ].sort((left, right) => left.ordinal - right.ordinal);
@@ -153,18 +152,7 @@ function consumeResponse(
     return;
   }
   if (type === "reasoning") {
-    const summary = reasoningSummary(payload.summary);
-    if (summary === null) return;
-    const bounded = truncateText(summary, MAX_MESSAGE_CHARS);
-    const item: ReasoningItem = {
-      kind: "reasoning",
-      id: `reasoning-${ordinal}`,
-      ordinal,
-      timestamp,
-      summary: bounded.text,
-      truncated: bounded.truncated,
-    };
-    fixedItems.push(item);
+    fixedItems.push(reasoningInternalItem(ordinal, timestamp, payload.summary));
     return;
   }
   const call = toolCall(ordinal, timestamp, payload);
@@ -219,11 +207,9 @@ function normalizeMessages(
   eventMessages: MessageCandidate[],
 ): {
   items: Array<MessageItem | DirectiveItem>;
-  internalItems: InternalEventItem[];
   directiveDetails: Map<string, NormalizedDirectiveDetail>;
 } {
   const items: Array<MessageItem | DirectiveItem> = [];
-  const internalItems: InternalEventItem[] = [];
   const directiveDetails = new Map<string, NormalizedDirectiveDetail>();
   const usedEvents = new Set<number>();
 
@@ -237,32 +223,35 @@ function normalizeMessages(
       continue;
     }
 
-    const id = `directive-${response.ordinal}`;
-    const detail = truncateText(response.text, MAX_DIRECTIVE_CHARS);
-    items.push({
-      kind: "directive",
-      id,
-      ordinal: response.ordinal,
-      timestamp: response.timestamp,
-      summary: directiveSummary(response.text),
-      charCount: response.text.length,
-      truncated: detail.truncated,
-      hasDetail: true,
-    });
-    directiveDetails.set(id, detail);
+    addDirective(response, items, directiveDetails);
   }
 
   for (let index = 0; index < eventMessages.length; index += 1) {
     if (usedEvents.has(index)) continue;
-    const event = eventMessages[index]!;
-    internalItems.push(internalItem(
-      event.ordinal,
-      event.timestamp,
-      event.role === "assistant" ? "unmatched_agent_event" : "unmatched_user_event",
-    ));
+    addDirective(eventMessages[index]!, items, directiveDetails);
   }
 
-  return { items, internalItems, directiveDetails };
+  return { items, directiveDetails };
+}
+
+function addDirective(
+  candidate: MessageCandidate,
+  items: Array<MessageItem | DirectiveItem>,
+  directiveDetails: Map<string, NormalizedDirectiveDetail>,
+): void {
+  const id = `directive-${candidate.ordinal}`;
+  const detail = truncateText(candidate.text, MAX_DIRECTIVE_CHARS);
+  items.push({
+    kind: "directive",
+    id,
+    ordinal: candidate.ordinal,
+    timestamp: candidate.timestamp,
+    summary: directiveSummary(candidate.text),
+    charCount: candidate.text.length,
+    truncated: detail.truncated,
+    hasDetail: true,
+  });
+  directiveDetails.set(id, detail);
 }
 
 function nearestMatchingEvent(
@@ -363,6 +352,18 @@ function reasoningSummary(value: unknown): string | null {
   return nonBlankString(text);
 }
 
+function reasoningInternalItem(
+  ordinal: number,
+  timestamp: string | null,
+  value: unknown,
+): InternalEventItem {
+  const item = internalItem(ordinal, timestamp, "reasoning");
+  const summary = reasoningSummary(value);
+  return summary === null
+    ? item
+    : { ...item, summary: truncateText(summary, MAX_PREVIEW_CHARS).text };
+}
+
 function serializeText(value: unknown): string | null {
   if (typeof value === "string") return value;
   if (value === null || value === undefined) return null;
@@ -404,15 +405,20 @@ function internalItemFromPayload(
   ordinal: number,
   timestamp: string | null,
   payload: Record<string, unknown>,
-): InternalEventItem {
+): InternalEventItem | TokenItem {
   const eventType = string(payload.type) ?? "event";
-  const item = internalItem(ordinal, timestamp, eventType);
-  if (eventType !== "token_count" || !isObject(payload.info)) return item;
-  const total = tokenUsageCounters(payload.info.total_token_usage);
-  const last = tokenUsageCounters(payload.info.last_token_usage);
-  return total === null && last === null
-    ? item
-    : { ...item, tokenUsage: { total, last } };
+  if (eventType !== "token_count") return internalItem(ordinal, timestamp, eventType);
+  const info = isObject(payload.info) ? payload.info : null;
+  return {
+    kind: "token",
+    id: `token-${ordinal}`,
+    ordinal,
+    timestamp,
+    tokenUsage: {
+      total: tokenUsageCounters(info?.total_token_usage),
+      last: tokenUsageCounters(info?.last_token_usage),
+    },
+  };
 }
 
 function tokenUsageCounters(value: unknown): TokenUsageCounters | null {

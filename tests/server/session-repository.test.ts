@@ -140,13 +140,18 @@ describe("DefaultSessionRepository", () => {
     });
     expect(new Set(page?.items.map((item) => item.kind))).toEqual(new Set([
       "message",
-      "tool",
       "directive",
-      "reasoning",
+      "tool",
+      "token",
       "internal",
     ]));
-    expect(page?.items.find((item) => item.kind === "reasoning")).toEqual(
-      expect.objectContaining({ summary: "REASONING_SUMMARY_CANARY" }),
+    expect(page?.items.find((item) =>
+      item.kind === "internal" && item.eventType === "reasoning"
+    )).toEqual(
+      expect.objectContaining({
+        id: "internal-6",
+        summary: "REASONING_SUMMARY_CANARY",
+      }),
     );
   });
 

@@ -123,8 +123,14 @@ describe("versioned session API", () => {
     ).then((response) => response.json());
     expect(JSON.stringify(allItems)).not.toContain("DIRECTIVE_DETAIL_CANARY");
     expect(JSON.stringify(allItems)).not.toContain("REASONING_CANARY_NEVER_RENDER");
-    expect(allItems.items.find((item: { kind: string }) => item.kind === "reasoning"))
-      .toEqual(expect.objectContaining({ summary: "REASONING_SUMMARY_CANARY" }));
+    expect(allItems.items.some((item: { kind: string }) => item.kind === "reasoning"))
+      .toBe(false);
+    expect(allItems.items.find((item: { kind: string; eventType?: string }) =>
+      item.kind === "internal" && item.eventType === "reasoning"
+    )).toEqual(expect.objectContaining({
+      id: "internal-6",
+      summary: "REASONING_SUMMARY_CANARY",
+    }));
     const directive = allItems.items.find((item: { kind: string }) => item.kind === "directive");
     expect((await fetch(
       `${base}/api/v1/sessions/${basic.session.id}/items/${directive.id}/directive`,

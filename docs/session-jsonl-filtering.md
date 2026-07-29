@@ -31,15 +31,17 @@ timeline items. Keep it synchronized with `rollout-decoder.ts`,
 - An event message paired with a response message is consumed as a duplicate
   and is not emitted separately.
 - Valid `user_message` and `agent_message` events require a non-empty string
-  `message`. Valid events that remain unpaired become
-  `unmatched_user_event` and `unmatched_agent_event` internal items. Their
-  original message text is not retained. Invalid message events become safe
-  `internal` summaries of their event type.
-- A `token_count` event remains internal. When present, only the non-negative
-  integer token counters in `total_token_usage` and `last_token_usage` are
-  retained. Rate limits and unknown payload fields are discarded.
-- A reasoning response without a non-blank summary is dropped. A reasoning
-  response with a summary becomes a `reasoning` item.
+  `message`. Valid events that remain unpaired become `directive` items whose
+  bounded original text is available through the directive detail endpoint.
+  Invalid message events become safe `internal` summaries of their event type.
+- Every `token_count` event becomes a `token` item. Only non-negative integer
+  counters in `total_token_usage` and `last_token_usage` are retained; missing
+  groups become unavailable. Rate limits and unknown payload fields are
+  discarded.
+- Every reasoning response becomes an `internal` item with event type
+  `reasoning`. A supported non-blank summary is retained as bounded plain text;
+  otherwise the item uses the safe `Internal event: reasoning` placeholder.
+  Encrypted reasoning content is never retained.
 - Recognized tool calls become tool items. Outputs are attached by `call_id`;
   an output without a corresponding call does not become a timeline item.
 - Other typed records become safe `internal` summaries. A record without a
@@ -48,10 +50,12 @@ timeline items. Keep it synchronized with `rollout-decoder.ts`,
 ## Client visibility
 
 Timeline pages include every normalized item kind. The client always displays
-user and assistant messages, then independently filters `tool`,
-`directive`, `reasoning`, and `internal` items. Those four technical
+user and assistant messages, then independently filters `directive`, `tool`,
+`token`, and `internal` items. Those four technical
 event kinds are hidden by default and can be enabled without reloading the
-timeline.
+timeline. Enabled kinds are stored in the page URL as one comma-separated
+`show` parameter. The archived-only list filter remains client state and is
+sent to the list API without being stored in the page URL.
 
 ## Truncation and paging
 

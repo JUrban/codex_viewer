@@ -42,12 +42,10 @@ const session: DomainSession = {
 };
 
 const timeline: readonly DomainTimelineRecord[] = [{
-  kind: "internal",
-  id: "internal-1",
+  kind: "token",
+  id: "token-1",
   ordinal: 1,
   timestamp: null,
-  eventType: "token_count",
-  summary: "Token count",
   tokenUsage: {
     total: {
       totalTokens: 10,
@@ -109,14 +107,14 @@ describe("server architecture boundaries", () => {
 
     summary.childIds.push("mutated");
     detail.session.diagnostics[0]!.message = "mutated";
-    if (item.kind === "internal" && item.tokenUsage?.total) {
+    if (item.kind === "token" && item.tokenUsage.total) {
       item.tokenUsage.total.totalTokens = 99;
     }
     expect(session.childIds).toEqual(["child"]);
     expect(session.diagnostics[0]!.message).toBe("Partial");
     expect(
-      timeline[0]?.kind === "internal"
-        ? timeline[0].tokenUsage?.total?.totalTokens
+      timeline[0]?.kind === "token"
+        ? timeline[0].tokenUsage.total?.totalTokens
         : null,
     ).toBe(10);
   });
