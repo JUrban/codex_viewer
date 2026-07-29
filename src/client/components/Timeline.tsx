@@ -1,4 +1,5 @@
 import type { TimelineItem } from "../../shared/domain";
+import { InjectedContextItem } from "./InjectedContextItem";
 import { InternalEventItem } from "./InternalEventItem";
 import { MessageItem } from "./MessageItem";
 import { ToolItem } from "./ToolItem";
@@ -19,6 +20,9 @@ export function Timeline({ items, sessionId, generation, hasMore, loading, onLoa
         <TraceGutter item={item} />
         {item.kind === "message" ? <MessageItem item={item} /> : null}
         {item.kind === "tool" ? <ToolItem item={item} sessionId={sessionId} generation={generation} onStale={onStale} /> : null}
+        {item.kind === "injected-context"
+          ? <InjectedContextItem item={item} sessionId={sessionId} generation={generation} onStale={onStale} />
+          : null}
         {item.kind === "internal" ? <InternalEventItem item={item} /> : null}
         {item.kind === "reasoning-unavailable" ? <article>
           <p className="event-label">Reasoning · {item.ordinal}</p>

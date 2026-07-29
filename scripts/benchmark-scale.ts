@@ -5,7 +5,7 @@ import { createSessionRepository } from "../src/server/repository/create-session
 
 const SESSION_COUNT = 3_000;
 const MIN_CORPUS_BYTES = 100 * 1024 * 1024;
-const FILLER_CHARS = 36_000;
+const FILLER_CHARS = 18_000;
 
 interface Measurement {
   milliseconds: number;
@@ -190,6 +190,13 @@ async function rollout(index: number, marker: string, messageChars: number): Pro
         phase: index % 2 === 0 ? undefined : "final_answer",
         content: [{ type: index % 2 === 0 ? "input_text" : "output_text", text: message }],
       },
+    }),
+    JSON.stringify({
+      timestamp,
+      type: "event_msg",
+      payload: index % 2 === 0
+        ? { type: "user_message", message }
+        : { type: "agent_message", phase: "final_answer", message },
     }),
   ].join("\n");
 }

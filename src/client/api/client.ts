@@ -1,5 +1,6 @@
 import type {
   ApiError,
+  InjectedContextDetailResponse,
   ItemPageQuery,
   ItemPageResponse,
   SessionDetailResponse,
@@ -81,6 +82,11 @@ export const api = {
   tool: (sessionId: string, itemId: string, generation: number, signal?: AbortSignal) =>
     request<ToolDetailResponse>(
       `/api/v1/sessions/${encodeURIComponent(sessionId)}/items/${encodeURIComponent(itemId)}/tool${queryString({ generation })}`,
+      signal,
+    ),
+  context: (sessionId: string, itemId: string, generation: number, signal?: AbortSignal) =>
+    request<InjectedContextDetailResponse>(
+      `/api/v1/sessions/${encodeURIComponent(sessionId)}/items/${encodeURIComponent(itemId)}/context${queryString({ generation })}`,
       signal,
     ),
 };

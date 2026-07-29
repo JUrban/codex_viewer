@@ -4,12 +4,17 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "../../src/client/App";
+import { InjectedContextItem } from "../../src/client/components/InjectedContextItem";
 import { MessageItem, safeUrlTransform } from "../../src/client/components/MessageItem";
 import { groupSessions } from "../../src/client/components/SessionTree";
 import { Timeline } from "../../src/client/components/Timeline";
 import { ToolItem } from "../../src/client/components/ToolItem";
 import type { ItemPageResponse, SessionListEntry } from "../../src/shared/api-contract";
-import type { SessionSummary, ToolItem as Tool } from "../../src/shared/domain";
+import type {
+  InjectedContextItem as InjectedContext,
+  SessionSummary,
+  ToolItem as Tool,
+} from "../../src/shared/domain";
 
 const SESSION_ID = "abcdefghijklmnopqrstuvwx";
 const CHILD_ID = "zyxwvutsrqponmlkjihgfedc";
@@ -34,6 +39,16 @@ const detailBody = {
 const toolItem: Tool = {
   kind: "tool", id: "tool-2", ordinal: 2, timestamp: null, toolName: "exec",
   status: "completed", preview: "inspect", truncated: false, hasDetail: true,
+};
+const injectedContextItem: InjectedContext = {
+  kind: "injected-context",
+  id: "context-4",
+  ordinal: 4,
+  timestamp: null,
+  summary: "AGENTS.md instructions",
+  charCount: 1_892,
+  truncated: false,
+  hasDetail: true,
 };
 const firstPage: ItemPageResponse = {
   generation: 1, sourceState: "complete", diagnostics: [],
@@ -226,6 +241,81 @@ describe("session browser", () => {
     expect(await screen.findByText("Fresh tool detail")).toBeInTheDocument();
   });
 
+  it("loads injected context lazily and isolates it by session", async () => {
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      return Promise.resolve(json({
+        generation: 1,
+        sessionId: url.includes(OTHER_ID) ? OTHER_ID : SESSION_ID,
+        itemId: "context-4",
+        text: url.includes(OTHER_ID) ? "Other injected context" : "Reader injected context",
+        truncated: false,
+      }));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const props = {
+      items: [injectedContextItem],
+      generation: 1,
+      hasMore: false,
+      loading: false,
+      onLoadMore: vi.fn(),
+      onStale: vi.fn(),
+    };
+    const { rerender } = render(<Timeline {...props} sessionId={SESSION_ID} />);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(screen.getByText(/AGENTS.md instructions/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Show injected context" }));
+    expect(await screen.findByText("Reader injected context")).toBeInTheDocument();
+    rerender(<Timeline {...props} sessionId={OTHER_ID} />);
+    expect(screen.queryByText("Reader injected context")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Show injected context" }));
+    expect(await screen.findByText("Other injected context")).toBeInTheDocument();
+  });
+
+  it("waits for a new generation before retrying stale injected context", async () => {
+    const onStale = vi.fn();
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("generation=1")) {
+        return Promise.resolve(json({ error: { code: "stale_generation", message: "stale" } }, 409));
+      }
+      return Promise.resolve(json({
+        generation: 2,
+        sessionId: SESSION_ID,
+        itemId: "context-4",
+        text: "Fresh injected context",
+        truncated: true,
+      }));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const { rerender } = render(
+      <InjectedContextItem
+        item={injectedContextItem}
+        sessionId={SESSION_ID}
+        generation={1}
+        onStale={onStale}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Show injected context" }));
+    await waitFor(() => expect(onStale).toHaveBeenCalledTimes(1));
+    rerender(<InjectedContextItem
+      item={injectedContextItem}
+      sessionId={SESSION_ID}
+      generation={1}
+      onStale={onStale}
+    />);
+    await act(async () => Promise.resolve());
+    expect(fetchMock.mock.calls.filter(([url]) => String(url).includes("generation=1"))).toHaveLength(1);
+    rerender(<InjectedContextItem
+      item={injectedContextItem}
+      sessionId={SESSION_ID}
+      generation={2}
+      onStale={onStale}
+    />);
+    expect(await screen.findByText("Fresh injected context")).toBeInTheDocument();
+    expect(screen.getByText("Injected context was truncated for safe display.")).toBeInTheDocument();
+  });
+
   it("loads catalog pages beyond the first 200 summaries", async () => {
     const later = entry({ ...baseSession, id: CHILD_ID, title: "Later session" });
     const fetchMock = vi.fn((input: RequestInfo | URL) => {
@@ -319,7 +409,7 @@ describe("session browser", () => {
     expect(itemCalls).toBe(2);
   });
 
-  it("reloads with internal view when the explicit toggle changes", async () => {
+  it("reloads every time the internal view toggle changes", async () => {
     const fetchMock = standardFetch();
     vi.stubGlobal("fetch", fetchMock);
     render(<App />);
@@ -328,6 +418,13 @@ describe("session browser", () => {
     fireEvent.click(toggle);
     await waitFor(() => expect(fetchMock.mock.calls.some(([url]) => String(url).includes("view=internal"))).toBe(true));
     expect(window.location.search).toContain("internal=true");
+    expect(toggle).toBeChecked();
+    fireEvent.click(toggle);
+    await waitFor(() => expect(window.location.search).not.toContain("internal=true"));
+    expect(toggle).not.toBeChecked();
+    fireEvent.click(toggle);
+    await waitFor(() => expect(window.location.search).toContain("internal=true"));
+    expect(toggle).toBeChecked();
   });
 
   it("renders Markdown without raw HTML, external images, or dangerous links", () => {

@@ -109,6 +109,22 @@ describe("versioned session API", () => {
     const allItems = await fetch(
       `${base}/api/v1/sessions/${basic.session.id}/items?limit=200&view=internal`,
     ).then((response) => response.json());
+    expect(JSON.stringify(allItems)).not.toContain("INJECTED_CONTEXT_DETAIL_CANARY");
+    const context = allItems.items.find((item: { kind: string }) => item.kind === "injected-context");
+    expect((await fetch(
+      `${base}/api/v1/sessions/${basic.session.id}/items/${context.id}/context`,
+    )).status).toBe(400);
+    const contextResponse = await fetch(
+      `${base}/api/v1/sessions/${basic.session.id}/items/${context.id}/context` +
+      `?generation=${allItems.generation}`,
+    );
+    expect(contextResponse.status).toBe(200);
+    expect(await contextResponse.json()).toEqual(expect.objectContaining({
+      sessionId: basic.session.id,
+      itemId: context.id,
+      text: expect.stringContaining("INJECTED_CONTEXT_DETAIL_CANARY"),
+      truncated: false,
+    }));
     const tool = allItems.items.find((item: { kind: string }) => item.kind === "tool");
     const missingGeneration = await fetch(
       `${base}/api/v1/sessions/${basic.session.id}/items/${tool.id}/tool`,

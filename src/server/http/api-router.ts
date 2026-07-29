@@ -1,5 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type {
+  InjectedContextDetailQuery,
   ItemPageQuery,
   SessionListQuery,
   ToolDetailQuery,
@@ -61,6 +62,21 @@ export function createApiRouter(repository: SessionRepository): ApiRouter {
           parseToolQuery(url.searchParams),
         );
         if (result === null) return notFound(response, headOnly, "tool_not_found");
+        sendJson(response, 200, result, headOnly);
+        return true;
+      }
+      if (
+        segments.length === 4 &&
+        segments[1] === "items" &&
+        isItemId(segments[2] ?? "") &&
+        segments[3] === "context"
+      ) {
+        const result = await repository.getInjectedContextDetail(
+          id,
+          segments[2]!,
+          parseInjectedContextQuery(url.searchParams),
+        );
+        if (result === null) return notFound(response, headOnly, "context_not_found");
         sendJson(response, 200, result, headOnly);
         return true;
       }
@@ -128,6 +144,12 @@ function parseToolQuery(params: URLSearchParams): ToolDetailQuery {
   return { generation: integer(generation, "generation") };
 }
 
+function parseInjectedContextQuery(params: URLSearchParams): InjectedContextDetailQuery {
+  const generation = optional(params, "generation");
+  if (generation === undefined) invalid("generation is required for injected context detail");
+  return { generation: integer(generation, "generation") };
+}
+
 function optional(params: URLSearchParams, name: string): string | undefined {
   const values = params.getAll(name);
   if (values.length > 1) invalid(`${name} must appear once`);
@@ -150,7 +172,7 @@ function isOpaqueId(value: string): boolean {
 }
 
 function isItemId(value: string): boolean {
-  return /^(?:message|tool|reasoning|internal)-\d+$/.test(value);
+  return /^(?:message|tool|context|reasoning|internal)-\d+$/.test(value);
 }
 
 function notFound(

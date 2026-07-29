@@ -1,4 +1,6 @@
 import type {
+  InjectedContextDetailQuery,
+  InjectedContextDetailResponse,
   ItemPageQuery,
   ItemPageResponse,
   SessionDetailResponse,
@@ -61,6 +63,11 @@ export interface SessionRepository {
     itemId: string,
     query: ToolDetailQuery,
   ): Promise<ToolDetailResponse | null>;
+  getInjectedContextDetail(
+    id: SessionId,
+    itemId: string,
+    query: InjectedContextDetailQuery,
+  ): Promise<InjectedContextDetailResponse | null>;
   refresh(): Promise<CatalogGeneration>;
 }
 
@@ -164,7 +171,9 @@ export class DefaultSessionRepository implements SessionRepository {
     if (normalized === undefined) return null;
     const after = query.afterOrdinal ?? 0;
     const visible = normalized.items.filter((item) =>
-      item.ordinal > after && (query.view === "internal" || item.kind !== "internal"));
+      item.ordinal > after &&
+      (query.view === "internal" ||
+        (item.kind !== "internal" && item.kind !== "reasoning-unavailable")));
     const limit = query.limit ?? DEFAULT_ITEM_LIMIT;
     const items: TimelineItem[] = [];
     let itemBytes = 0;
@@ -206,6 +215,28 @@ export class DefaultSessionRepository implements SessionRepository {
       itemId,
       input: detail.input,
       output: detail.output,
+      truncated: detail.truncated,
+    };
+  }
+
+  async getInjectedContextDetail(
+    id: SessionId,
+    itemId: string,
+    query: InjectedContextDetailQuery,
+  ): Promise<InjectedContextDetailResponse | null> {
+    const snapshot = await this.#current();
+    assertGeneration(snapshot.generation, query.generation, true);
+    const normalized = snapshot.sessions.get(id);
+    if (normalized === undefined) return null;
+    const item = normalized.items.find((candidate) => candidate.id === itemId);
+    if (item?.kind !== "injected-context") return null;
+    const detail = normalized.injectedContextDetails.get(itemId);
+    if (detail === undefined) return null;
+    return {
+      generation: snapshot.generation,
+      sessionId: id,
+      itemId,
+      text: detail.text,
       truncated: detail.truncated,
     };
   }
@@ -300,7 +331,12 @@ export class DefaultSessionRepository implements SessionRepository {
       return {
         fingerprint,
         metadataKey: catalogMetadataKey,
-        normalized: { detail, items: [], toolDetails: new Map() },
+        normalized: {
+          detail,
+          items: [],
+          toolDetails: new Map(),
+          injectedContextDetails: new Map(),
+        },
         threadId: entry.metadata?.threadId ?? null,
       };
     }
@@ -330,6 +366,7 @@ function linkRelationships(
       detail: { ...entry.normalized.detail, parentId: linkedParent, childIds: [] },
       items: entry.normalized.items,
       toolDetails: entry.normalized.toolDetails,
+      injectedContextDetails: entry.normalized.injectedContextDetails,
     });
   }
   for (const session of sessions.values()) {

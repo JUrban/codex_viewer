@@ -118,7 +118,6 @@ export function useSessionBrowser() {
   }, [filters, internal, invalidateTimelineRequests, selectedId, updateLocation]);
 
   const setInternal = useCallback((value: boolean) => {
-    if (value === internal) return;
     invalidateTimelineRequests();
     setInternalState(value);
     updateLocation(filters, selectedId, value);

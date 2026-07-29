@@ -67,6 +67,20 @@ describe("DefaultSessionRepository", () => {
       afterOrdinal: page!.nextAfterOrdinal!,
       limit: 2,
     })).rejects.toMatchObject<Partial<RepositoryQueryError>>({ code: "invalid_query" });
+    const allItems = await repository.getItems(parent.session.id, {
+      limit: 200,
+      view: "internal",
+    });
+    const context = allItems!.items.find((item) => item.kind === "injected-context")!;
+    expect(JSON.stringify(allItems)).not.toContain("INJECTED_CONTEXT_DETAIL_CANARY");
+    expect(await repository.getInjectedContextDetail(parent.session.id, context.id, {
+      generation: allItems!.generation,
+    })).toEqual(expect.objectContaining({
+      sessionId: parent.session.id,
+      itemId: context.id,
+      text: expect.stringContaining("INJECTED_CONTEXT_DETAIL_CANARY"),
+      truncated: false,
+    }));
 
     const rollout = join(
       home,
@@ -86,6 +100,9 @@ describe("DefaultSessionRepository", () => {
       afterOrdinal: page!.nextAfterOrdinal!,
       generation: first.generation,
     })).rejects.toMatchObject<Partial<RepositoryQueryError>>({ code: "stale_generation" });
+    await expect(repository.getInjectedContextDetail(parent.session.id, context.id, {
+      generation: allItems!.generation,
+    })).rejects.toMatchObject<Partial<RepositoryQueryError>>({ code: "stale_generation" });
 
     const replacement = `${rollout}.replacement`;
     await writeFile(
@@ -97,7 +114,23 @@ describe("DefaultSessionRepository", () => {
     const third = await repository.getSession(parent.session.id);
     expect(third!.generation).toBeGreaterThan(second!.generation);
     expect(third!.session.title).toBe("Replacement trace");
-    expect(third!.session.messageCount).toBe(1);
+    expect(third!.session.messageCount).toBe(0);
+  });
+
+  it("hides unavailable reasoning from conversation view but keeps it in internal view", async () => {
+    const { repository } = await fixtureRepository();
+    const list = await repository.list({});
+    const session = list.sessions.find((entry) => entry.session.title === "Synthetic trace")!;
+    const conversation = await repository.getItems(session.session.id, {
+      limit: 200,
+      view: "conversation",
+    });
+    const internal = await repository.getItems(session.session.id, {
+      limit: 200,
+      view: "internal",
+    });
+    expect(conversation?.items.some((item) => item.kind === "reasoning-unavailable")).toBe(false);
+    expect(internal?.items.some((item) => item.kind === "reasoning-unavailable")).toBe(true);
   });
 
   it("searches only permitted fields and reports bounded partial results", async () => {
@@ -109,6 +142,7 @@ describe("DefaultSessionRepository", () => {
       "DEVELOPER_CANARY_NEVER_RENDER",
       "REASONING_CANARY_NEVER_RENDER",
       "INTERNAL_PAYLOAD_CANARY",
+      "INJECTED_CONTEXT_DETAIL_CANARY",
       "synthetic result",
       "call-complete",
     ]) {
@@ -222,8 +256,9 @@ describe("DefaultSessionRepository", () => {
               type: "response_item",
               payload: {
                 type: "message",
-                role: "user",
-                content: [{ type: "input_text", text: longText }],
+                role: "assistant",
+                phase: "commentary",
+                content: [{ type: "output_text", text: longText }],
               },
             },
           })),

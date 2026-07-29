@@ -67,6 +67,9 @@ The Node process is the trust boundary between the browser and local files.
 - Markdown raw HTML is not rendered. Remote images are replaced by text;
   `javascript:`, `data:`, and `file:` links are disabled. Tool output is plain
   text and is loaded only when expanded.
+- User-role context injected by Codex, such as project instructions or skill
+  content, is shown as a short summary. Its plain-text detail is loaded only
+  when expanded and is capped at 256,000 characters.
 - Encrypted reasoning, developer messages, raw internal payloads, and
   unrestricted tool data are not returned to the browser.
 
@@ -75,9 +78,10 @@ untrusted. Run the reader only on a machine and browser profile you control.
 
 ## Search and large catalogs
 
-Search covers session title, project path, and normalized user/assistant
-messages. It intentionally excludes developer messages, tools, reasoning, and
-internal event payloads.
+Search covers session title, project path, real user input identified by
+`event_msg.user_message`, and canonical assistant `response_item.message`
+content. It intentionally excludes injected user-role context, developer
+messages, tools, reasoning, and internal event payloads.
 
 Search work is bounded by elapsed time, scanned bytes, result count, query
 length, and excerpt length. A partial-results notice means a safety budget was
@@ -103,7 +107,8 @@ compatible `state_<number>.sqlite` files read-only, feature-detects the
 corrupt, or from an unknown schema generation.
 
 Individual JSONL lines over 8 MiB are skipped. Normalized message text is capped
-at 1,000,000 characters and tool input and output at 256,000 characters each.
+at 1,000,000 characters; injected context detail and tool input/output are
+capped at 256,000 characters each.
 Timeline pages stop at 200 entries or approximately 4 MiB of serialized item
 content, whichever comes first; a single valid item is always returned so its
 cursor can advance. The first release uses whole-file rereads after a fingerprint

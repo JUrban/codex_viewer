@@ -100,3 +100,15 @@ export interface ToolDetailResponse {
 export interface ToolDetailQuery {
   generation: CatalogGeneration;
 }
+
+export interface InjectedContextDetailResponse {
+  generation: CatalogGeneration;
+  sessionId: SessionId;
+  itemId: ItemId;
+  text: string;
+  truncated: boolean;
+}
+
+export interface InjectedContextDetailQuery {
+  generation: CatalogGeneration;
+}

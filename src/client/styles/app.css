@@ -66,9 +66,11 @@
 .trace-event:last-child::before { display: none; }
 .trace-event.human { --trace-color: var(--human); }
 .trace-event.tool { --trace-color: var(--signal); }
+.trace-event.injected-context { --trace-color: #7a4f2d; }
 .trace-event.internal, .trace-event.reasoning-unavailable { --trace-color: #68777c; }
 .trace-mark { position: relative; z-index: 1; width: .9rem; height: .9rem; margin-top: .22rem; background: var(--paper); border: 2px solid var(--trace-color); border-radius: 50%; }
 .tool .trace-mark { border-radius: 1px; }
+.injected-context .trace-mark { border-style: dashed; border-radius: 1px; }
 .final .trace-mark { background: var(--current); transform: rotate(45deg) scale(.78); border-radius: 0; }
 .internal .trace-mark { border-style: dotted; }
 .trace-event article { min-width: 0; max-width: 52rem; }

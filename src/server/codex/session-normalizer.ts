@@ -1,5 +1,6 @@
 import type {
   Diagnostic,
+  InjectedContextItem,
   InternalEventItem,
   MessageItem,
   ReasoningUnavailableItem,
@@ -10,6 +11,7 @@ import type { DecodedRecord, DecodedRollout } from "./rollout-decoder.js";
 import { isObject } from "./rollout-decoder.js";
 import type { SessionMetadata } from "./identity-resolver.js";
 import {
+  MAX_INJECTED_CONTEXT_CHARS,
   MAX_INTERNAL_SUMMARY_CHARS,
   MAX_MESSAGE_CHARS,
   truncateText,
@@ -25,12 +27,20 @@ export interface NormalizedSession {
   detail: SessionDetail;
   items: TimelineItem[];
   toolDetails: Map<string, NormalizedToolDetail>;
+  injectedContextDetails: Map<string, NormalizedInjectedContextDetail>;
 }
 
 interface MessageCandidate {
-  item: MessageItem;
-  source: "response" | "event";
-  signature: string;
+  ordinal: number;
+  timestamp: string | null;
+  role: "user" | "assistant";
+  phase: "commentary" | "final" | null;
+  text: string;
+}
+
+export interface NormalizedInjectedContextDetail {
+  text: string;
+  truncated: boolean;
 }
 
 export interface SessionNormalizer {
@@ -49,16 +59,18 @@ export class DefaultSessionNormalizer implements SessionNormalizer {
       });
     }
 
-    const messages: MessageCandidate[] = [];
+    const responseMessages: MessageCandidate[] = [];
+    const eventMessages: MessageCandidate[] = [];
     const fixedItems: TimelineItem[] = [];
     const tools = new ToolAccumulator();
     for (const record of decoded.records) {
-      consumeRecord(record, messages, fixedItems, tools, diagnostics);
+      consumeRecord(record, responseMessages, eventMessages, fixedItems, tools, diagnostics);
     }
-    const deduplicatedMessages = adjacencyDedupe(messages);
+    const normalizedMessages = normalizeMessages(responseMessages, eventMessages);
     const accumulatedTools = tools.finish();
     const items = [
-      ...deduplicatedMessages.map((candidate) => candidate.item),
+      ...normalizedMessages.items,
+      ...normalizedMessages.internalItems,
       ...fixedItems,
       ...accumulatedTools.map((tool) => tool.item),
     ].sort((left, right) => left.ordinal - right.ordinal);
@@ -88,13 +100,15 @@ export class DefaultSessionNormalizer implements SessionNormalizer {
       detail,
       items,
       toolDetails: new Map(accumulatedTools.map((tool) => [tool.item.id, tool.detail])),
+      injectedContextDetails: normalizedMessages.injectedContextDetails,
     };
   }
 }
 
 function consumeRecord(
   record: DecodedRecord,
-  messages: MessageCandidate[],
+  responseMessages: MessageCandidate[],
+  eventMessages: MessageCandidate[],
   fixedItems: TimelineItem[],
   tools: ToolAccumulator,
   diagnostics: Diagnostic[],
@@ -102,12 +116,12 @@ function consumeRecord(
   const timestamp = string(record.value.timestamp);
   const payload = record.value.payload;
   if (record.value.type === "response_item" && isObject(payload)) {
-    consumeResponse(record.ordinal, timestamp, payload, messages, fixedItems, tools);
+    consumeResponse(record.ordinal, timestamp, payload, responseMessages, fixedItems, tools);
     return;
   }
   if (record.value.type === "event_msg" && isObject(payload)) {
     const eventMessage = eventMessageCandidate(record.ordinal, timestamp, payload);
-    if (eventMessage !== null) messages.push(eventMessage);
+    if (eventMessage !== null) eventMessages.push(eventMessage);
     else fixedItems.push(internalItem(record.ordinal, timestamp, string(payload.type) ?? "event"));
     return;
   }
@@ -126,14 +140,14 @@ function consumeResponse(
   ordinal: number,
   timestamp: string | null,
   payload: Record<string, unknown>,
-  messages: MessageCandidate[],
+  responseMessages: MessageCandidate[],
   fixedItems: TimelineItem[],
   tools: ToolAccumulator,
 ): void {
   const type = string(payload.type);
   if (type === "message") {
     const candidate = responseMessageCandidate(ordinal, timestamp, payload);
-    if (candidate !== null) messages.push(candidate);
+    if (candidate !== null) responseMessages.push(candidate);
     return;
   }
   if (type === "reasoning") {
@@ -169,7 +183,7 @@ function responseMessageCandidate(
   const markdown = contentText(payload.content);
   if (markdown === null) return null;
   const phase = role === "assistant" ? normalizePhase(payload.phase) : null;
-  return candidate(ordinal, timestamp, role, phase, markdown, "response");
+  return { ordinal, timestamp, role, phase, text: markdown };
 }
 
 function eventMessageCandidate(
@@ -183,48 +197,99 @@ function eventMessageCandidate(
   if (markdown === null) return null;
   const role = type === "user_message" ? "user" : "assistant";
   const phase = type === "agent_message" ? normalizePhase(payload.phase) : null;
-  return candidate(
-    ordinal,
-    timestamp,
-    role,
-    phase,
-    markdown,
-    "event",
-  );
+  return { ordinal, timestamp, role, phase, text: markdown };
 }
 
-function candidate(
-  ordinal: number,
-  timestamp: string | null,
-  role: "user" | "assistant",
-  phase: "commentary" | "final" | null,
-  value: string,
-  source: "response" | "event",
-): MessageCandidate {
-  const markdown = truncateText(value, MAX_MESSAGE_CHARS).text;
+function normalizeMessages(
+  responseMessages: MessageCandidate[],
+  eventMessages: MessageCandidate[],
+): {
+  items: Array<MessageItem | InjectedContextItem>;
+  internalItems: InternalEventItem[];
+  injectedContextDetails: Map<string, NormalizedInjectedContextDetail>;
+} {
+  const items: Array<MessageItem | InjectedContextItem> = [];
+  const internalItems: InternalEventItem[] = [];
+  const injectedContextDetails = new Map<string, NormalizedInjectedContextDetail>();
+  const usedEvents = new Set<number>();
+
+  for (const response of responseMessages) {
+    const matchingEvent = nearestMatchingEvent(response, eventMessages, usedEvents);
+    if (matchingEvent !== null) usedEvents.add(matchingEvent);
+    if (response.role === "assistant" || matchingEvent !== null) {
+      items.push(messageItem(response));
+      continue;
+    }
+
+    const id = `context-${response.ordinal}`;
+    const detail = truncateText(response.text, MAX_INJECTED_CONTEXT_CHARS);
+    items.push({
+      kind: "injected-context",
+      id,
+      ordinal: response.ordinal,
+      timestamp: response.timestamp,
+      summary: injectedSummary(response.text),
+      charCount: response.text.length,
+      truncated: detail.truncated,
+      hasDetail: true,
+    });
+    injectedContextDetails.set(id, detail);
+  }
+
+  for (let index = 0; index < eventMessages.length; index += 1) {
+    if (usedEvents.has(index)) continue;
+    const event = eventMessages[index]!;
+    internalItems.push(internalItem(
+      event.ordinal,
+      event.timestamp,
+      event.role === "assistant" ? "propagated_agent_message" : "unmatched_user_event",
+    ));
+  }
+
+  return { items, internalItems, injectedContextDetails };
+}
+
+function nearestMatchingEvent(
+  response: MessageCandidate,
+  events: MessageCandidate[],
+  used: ReadonlySet<number>,
+): number | null {
+  let match: number | null = null;
+  let distance = Number.POSITIVE_INFINITY;
+  for (let index = 0; index < events.length; index += 1) {
+    if (used.has(index)) continue;
+    const event = events[index]!;
+    if (
+      event.role !== response.role ||
+      event.phase !== response.phase ||
+      event.text !== response.text
+    ) {
+      continue;
+    }
+    const candidateDistance = Math.abs(event.ordinal - response.ordinal);
+    if (candidateDistance <= 2 && candidateDistance < distance) {
+      match = index;
+      distance = candidateDistance;
+    }
+  }
+  return match;
+}
+
+function messageItem(candidate: MessageCandidate): MessageItem {
   return {
-    item: { kind: "message", id: `message-${ordinal}`, ordinal, timestamp, role, phase, markdown },
-    source,
-    signature: `${role}\u0000${phase ?? ""}\u0000${markdown}`,
+    kind: "message",
+    id: `message-${candidate.ordinal}`,
+    ordinal: candidate.ordinal,
+    timestamp: candidate.timestamp,
+    role: candidate.role,
+    phase: candidate.phase,
+    markdown: truncateText(candidate.text, MAX_MESSAGE_CHARS).text,
   };
 }
 
-function adjacencyDedupe(messages: MessageCandidate[]): MessageCandidate[] {
-  const result: MessageCandidate[] = [];
-  for (const message of messages) {
-    const previous = result[result.length - 1];
-    if (
-      previous !== undefined &&
-      previous.source !== message.source &&
-      previous.signature === message.signature &&
-      Math.abs(previous.item.ordinal - message.item.ordinal) <= 2
-    ) {
-      if (previous.source === "event" && message.source === "response") result[result.length - 1] = message;
-      continue;
-    }
-    result.push(message);
-  }
-  return result;
+function injectedSummary(value: string): string {
+  const firstLine = value.split(/\r?\n/).map((line) => line.trim()).find(Boolean);
+  return truncateText(firstLine ?? "Injected user-role context", MAX_INTERNAL_SUMMARY_CHARS).text;
 }
 
 function toolCall(
