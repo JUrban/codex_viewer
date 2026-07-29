@@ -13,7 +13,8 @@ const server = createServer(config, createApiRouter(repository));
 server.listen(config.port, config.host, () => {
   const address = server.address();
   const port = typeof address === "object" && address ? address.port : config.port;
-  console.log(`Codex Sessions Reader listening on http://${config.host}:${port}`);
+  const host = config.host.includes(":") ? `[${config.host}]` : config.host;
+  console.log(`Codex Sessions Reader listening on http://${host}:${port}`);
 });
 
 function close(): void {

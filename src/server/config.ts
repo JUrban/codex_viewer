@@ -4,10 +4,19 @@ import { resolve } from "node:path";
 export const LOOPBACK_HOST = "127.0.0.1" as const;
 
 export interface ServerConfig {
-  host: typeof LOOPBACK_HOST;
+  host: string;
   port: number;
   codexHome: string;
   clientDirectory: string;
+}
+
+function parseHost(value: string | undefined): string {
+  if (value === undefined) return LOOPBACK_HOST;
+  const host = value.trim();
+  if (host.length === 0) {
+    throw new Error("CODEX_VIEWER_HOST must not be empty");
+  }
+  return host;
 }
 
 function parsePort(value: string | undefined): number {
@@ -21,10 +30,9 @@ function parsePort(value: string | undefined): number {
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
   return {
-    host: LOOPBACK_HOST,
+    host: parseHost(env.CODEX_VIEWER_HOST),
     port: parsePort(env.CODEX_VIEWER_PORT),
     codexHome: resolve(env.CODEX_HOME ?? homedir(), env.CODEX_HOME ? "." : ".codex"),
     clientDirectory: resolve(process.cwd(), "dist/client"),
   };
 }
-

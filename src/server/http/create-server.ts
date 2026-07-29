@@ -4,7 +4,7 @@ import { createServer as createNodeServer, type ServerResponse } from "node:http
 import { extname, resolve, sep } from "node:path";
 import type { ServerConfig } from "../config.js";
 import { emptyApiRouter, sendJson, type ApiRouter } from "./router.js";
-import { applySecurityHeaders, validateRequestSource } from "./security.js";
+import { applySecurityHeaders } from "./security.js";
 
 const CONTENT_TYPES: Record<string, string> = {
   ".css": "text/css; charset=utf-8",
@@ -48,11 +48,6 @@ export function createServer(config: ServerConfig, apiRouter: ApiRouter = emptyA
     applySecurityHeaders(response);
     const headOnly = request.method === "HEAD";
 
-    const sourceError = validateRequestSource(request);
-    if (sourceError) {
-      sendJson(response, 403, { error: { code: sourceError, message: "Request source rejected" } }, headOnly);
-      return;
-    }
     if (request.method !== "GET" && !headOnly) {
       response.setHeader("Allow", "GET, HEAD");
       sendJson(response, 405, { error: { code: "method_not_allowed", message: "Only GET and HEAD are allowed" } });
@@ -80,4 +75,3 @@ export function createServer(config: ServerConfig, apiRouter: ApiRouter = emptyA
     }
   });
 }
-

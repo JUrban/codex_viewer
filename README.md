@@ -3,7 +3,7 @@
 A private, read-only Web reader for local Codex session history. It discovers
 rollout JSONL files below a configured Codex home, optionally enriches the
 catalog from Codex's SQLite state, and serves a responsive browser interface
-from the same loopback-only Node process.
+from the same Node process, bound to loopback by default.
 
 The reader does not edit, archive, delete, resume, export, or upload sessions.
 It creates no persistent index or application cache.
@@ -39,13 +39,14 @@ Configuration is accepted only from the process environment at startup:
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `CODEX_HOME` | `~/.codex` | Codex home whose `sessions/` and `archived_sessions/` roots may be read. |
-| `CODEX_VIEWER_PORT` | `4173` | Loopback TCP port, from `0` through `65535`. Port `0` asks the operating system to choose one. |
+| `CODEX_VIEWER_HOST` | `127.0.0.1` | Address or hostname on which the server listens. |
+| `CODEX_VIEWER_PORT` | `4173` | TCP port, from `0` through `65535`. Port `0` asks the operating system to choose one. |
 | `CODEX_VIEWER_DISABLE_SQLITE` | unset | Set to `1` to skip SQLite metadata and use JSONL discovery only. |
 
 Example:
 
 ```sh
-CODEX_HOME=/path/to/codex-home CODEX_VIEWER_PORT=4180 npm start
+CODEX_HOME=/path/to/codex-home CODEX_VIEWER_HOST=0.0.0.0 CODEX_VIEWER_PORT=4180 npm start
 ```
 
 Changing environment variables requires a restart. There is no HTTP endpoint
@@ -55,9 +56,7 @@ for changing paths or configuration.
 
 The Node process is the trust boundary between the browser and local files.
 
-- It listens only on IPv4 loopback `127.0.0.1`, never on a LAN interface.
-- It accepts only `GET` and `HEAD`, rejects unexpected `Host` and cross-origin
-  `Origin` headers, and emits no permissive CORS header.
+- It accepts only `GET` and `HEAD` and emits no permissive CORS header.
 - It registers only regular rollout files under the canonical allowlisted
   session roots. Traversal, leaf symlinks, and symlink escapes are rejected.
 - Browser APIs use opaque session IDs and never accept filesystem paths or
@@ -65,25 +64,22 @@ The Node process is the trust boundary between the browser and local files.
 - API responses use `Cache-Control: no-store`. The app also sends a restrictive
   Content Security Policy, `nosniff`, and `Referrer-Policy: no-referrer`.
 - Markdown raw HTML is not rendered. Remote images are replaced by text;
-  `javascript:`, `data:`, and `file:` links are disabled. Tool output is plain
-  text and is loaded only when expanded.
+  `javascript:`, `data:`, and `file:` links are disabled. Tools show a short
+  plain-text preview; capped input and output are loaded only when expanded.
 - User-role context injected by Codex, such as project instructions or skill
   content, and developer-role messages are shown as short summaries. Their
   plain-text detail is loaded only when expanded and is capped at 256,000
   characters.
-- Textual reasoning summaries are available with internal events. Encrypted
-  reasoning bodies, raw internal payloads, and unrestricted tool data are not
-  returned to the browser.
 
 Loopback limits network exposure but does not make an unlocked local account
-untrusted. Run the reader only on a machine and browser profile you control.
+untrusted. A reverse proxy or non-loopback bind can widen that exposure; enforce
+authentication and network access outside the reader.
 
 ## Search and large catalogs
 
-Search covers session title, project path, real user input identified by
-`event_msg.user_message`, and canonical assistant `response_item.message`
-content. It intentionally excludes injected user-role context, developer-role
-context, tools, reasoning, and internal event payloads.
+Search covers session title, project path, canonical assistant messages, and
+user messages corroborated by matching `event_msg.user_message` records. It
+excludes injected context, tools, reasoning, and internal event payloads.
 
 Search work is bounded by elapsed time, scanned bytes, result count, query
 length, and excerpt length. A partial-results notice means a safety budget was
@@ -138,7 +134,8 @@ To confirm the production listener on macOS:
 lsof -nP -iTCP:4173 -sTCP:LISTEN
 ```
 
-The address must be `127.0.0.1:4173`. A safe status probe is:
+With default configuration, the address must be `127.0.0.1:4173`. A safe status
+probe is:
 
 ```sh
 curl --fail --silent http://127.0.0.1:4173/api/v1/status
@@ -163,12 +160,8 @@ Restarting the reader clears all derived in-memory state.
 specific phrase. Partial is an intentional bound, not evidence that source files
 were changed.
 
-**The port is already in use.** Choose another loopback port, for example
+**The port is already in use.** Choose another port, for example
 `CODEX_VIEWER_PORT=4180 npm start`.
-
-**The browser rejects the request.** Open the exact loopback URL printed at
-startup. Access through another hostname, reverse proxy, or non-loopback address
-is intentionally rejected.
 
 ## Uninstall
 

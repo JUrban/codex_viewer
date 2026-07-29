@@ -4,7 +4,7 @@ import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { LOOPBACK_HOST, type ServerConfig } from "../../src/server/config.js";
+import { loadConfig, LOOPBACK_HOST, type ServerConfig } from "../../src/server/config.js";
 import { createServer } from "../../src/server/http/create-server.js";
 
 const servers: ReturnType<typeof createServer>[] = [];
@@ -49,6 +49,14 @@ async function rawStatus(base: string, headers: Record<string, string>): Promise
 }
 
 describe("secure HTTP foundation", () => {
+  it("uses loopback by default and accepts a configured listen host", () => {
+    expect(loadConfig({}).host).toBe(LOOPBACK_HOST);
+    expect(loadConfig({ CODEX_VIEWER_HOST: "0.0.0.0" }).host).toBe("0.0.0.0");
+    expect(() => loadConfig({ CODEX_VIEWER_HOST: " " })).toThrow(
+      "CODEX_VIEWER_HOST must not be empty",
+    );
+  });
+
   it("serves the SPA with restrictive headers and no CORS", async () => {
     const base = await start();
     const response = await fetch(`${base}/session/fixture`);
@@ -60,11 +68,13 @@ describe("secure HTTP foundation", () => {
     expect(response.headers.has("access-control-allow-origin")).toBe(false);
   });
 
-  it("rejects non-loopback Host, cross-origin Origin, and mutation methods", async () => {
+  it("accepts forwarded Host and Origin headers but rejects mutation methods", async () => {
     const base = await start();
-    expect(await rawStatus(base, { Host: "attacker.example" })).toBe(403);
-    expect(await rawStatus(base, { Origin: "https://attacker.example" })).toBe(403);
-    expect(await rawStatus(base, { Origin: "http://127.0.0.1:1" })).toBe(403);
+    expect(await rawStatus(base, { Host: "reader.example" })).toBe(200);
+    expect(await rawStatus(base, {
+      Host: "reader.example",
+      Origin: "https://dashboard.example",
+    })).toBe(200);
     const post = await fetch(base, { method: "POST" });
     expect(post.status).toBe(405);
     expect(post.headers.get("allow")).toBe("GET, HEAD");
