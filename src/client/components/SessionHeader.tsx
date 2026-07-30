@@ -35,6 +35,9 @@ export function SessionHeader({
         <p className="session-meta">
           {session.cwd ?? "Project unavailable"} · {updatedAt} · {session.itemCount} events
         </p>
+        <p className="session-origin">
+          {sessionOriginLabel(session.origin)}
+        </p>
         <p className="session-source-id">
           Original session ID · <code>{session.sourceId ?? "Unavailable"}</code>
         </p>
@@ -67,3 +70,10 @@ const VISIBILITY_TOGGLES: Array<{
   { key: "token", label: "token" },
   { key: "internal", label: "internal" },
 ];
+
+function sessionOriginLabel(origin: SessionDetail["origin"]): string {
+  let label = origin.agentName;
+  if (origin.agentVersion !== null) label += ` ${origin.agentVersion}`;
+  if (origin.formatVersion !== null) label += ` · format ${origin.formatVersion}`;
+  return label;
+}

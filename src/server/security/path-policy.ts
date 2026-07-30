@@ -7,6 +7,7 @@ const ROLLOUT_NAME = /^rollout-[A-Za-z0-9][A-Za-z0-9._-]*\.jsonl$/;
 export interface RolloutDescriptor {
   id: string;
   canonicalPath: string;
+  sourceRelativePath: string;
   archived: boolean;
   size: number;
   mtimeMs: number;
@@ -59,9 +60,15 @@ export class PathPolicy {
       if (root === undefined) return null;
       const info = await stat(canonicalPath);
       if (!info.isFile()) return null;
+      const relativePath = relative(root.canonicalPath, canonicalPath)
+        .split(sep)
+        .join("/");
       return {
         id: opaqueIdForPath(canonicalPath),
         canonicalPath,
+        sourceRelativePath: `${
+          root.archived ? "archived_sessions" : "sessions"
+        }/${relativePath}`,
         archived: root.archived,
         size: info.size,
         mtimeMs: info.mtimeMs,

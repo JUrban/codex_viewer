@@ -233,6 +233,7 @@ function SessionButton({ entry, selected, onSelect, child = false }: SessionButt
       {session.archived
         ? <span className="archive-label">Archived</span>
         : null}
+      <span className="source-label">{session.origin.agentName}</span>
       {showOriginalTitle ? <small className="session-subtitle">{session.title}</small> : null}
       <small className="session-meta-line">
         {child

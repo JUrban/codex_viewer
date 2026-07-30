@@ -1,10 +1,10 @@
 import { loadConfig } from "./config.js";
 import { createApiRouter } from "./http/api-router.js";
 import { createServer } from "./http/create-server.js";
-import { createSessionRepository } from "./repository/create-session-repository.js";
+import { createCodexSessionRepository } from "./repository/create-session-repository.js";
 
 const config = loadConfig();
-const repository = await createSessionRepository(config.codexHome);
+const repository = await createCodexSessionRepository(config.codexHome);
 const server = createServer(config, createApiRouter(repository));
 
 server.listen(config.port, config.host, () => {

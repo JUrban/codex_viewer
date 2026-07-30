@@ -1,7 +1,7 @@
 import { chmod, mkdir, mkdtemp, rename, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { performance } from "node:perf_hooks";
-import { createSessionRepository } from "../src/server/repository/create-session-repository.js";
+import { createCodexSessionRepository } from "../src/server/repository/create-session-repository.js";
 
 const SESSION_COUNT = 3_000;
 const MIN_CORPUS_BYTES = 100 * 1024 * 1024;
@@ -24,7 +24,7 @@ try {
     throw new Error(`Synthetic corpus was only ${totalBytes} bytes`);
   }
 
-  const repository = await createSessionRepository(root);
+  const repository = await createCodexSessionRepository(root);
   const coldCatalog = await measure(() => repository.list({ limit: 200 }));
   const firstList = coldCatalog.value;
   const search = await measure(() => repository.list({ q: "needle-scale", limit: 200 }));

@@ -18,8 +18,17 @@ export interface AgentIdentity {
   role: string | null;
 }
 
+export interface SessionOrigin {
+  sourceType: string;
+  sourceInstanceId: string;
+  agentName: string;
+  agentVersion: string | null;
+  formatVersion: string | null;
+}
+
 export interface SessionSummary {
   id: SessionId;
+  origin: SessionOrigin;
   title: string;
   preview: string | null;
   cwd: string | null;

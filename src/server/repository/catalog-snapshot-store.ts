@@ -1,7 +1,3 @@
-import type { CatalogDiscovery, CatalogEntry, CodexCatalogSource } from "../codex/catalog-source.js";
-import type { IdentityResolver } from "../codex/identity-resolver.js";
-import type { RolloutDecoder } from "../codex/rollout-decoder.js";
-import type { SessionNormalizer } from "../codex/session-normalizer.js";
 import type {
   DomainDiagnostic,
   DomainSession,
@@ -12,28 +8,25 @@ import {
   buildSearchDocument,
   type SearchDocument,
 } from "../search/search-document.js";
-import { RefreshCoordinator } from "./refresh-coordinator.js";
 import {
-  fingerprintOf,
-  sameFingerprint,
-  type SessionCacheEntry,
-} from "./session-cache.js";
+  encodeStringTuple,
+  opaqueIdForParts,
+} from "../security/opaque-id.js";
+import type {
+  SessionSource,
+  SessionSourceDescriptor,
+  SessionSourceSnapshot,
+  SourceSessionEntry,
+} from "../source/session-source.js";
+import { RefreshCoordinator } from "./refresh-coordinator.js";
 
 export const DEFAULT_CATALOG_FRESHNESS_MS = 3_000;
-const EXPECTED_ROLLOUT_IO_ERRORS = new Set([
-  "ENOENT",
-  "EACCES",
-  "EPERM",
-  "ESTALE",
-  "EISDIR",
-]);
 
 export interface CatalogSnapshot {
   readonly generation: number;
   readonly signature: string;
   readonly diagnostics: readonly DomainDiagnostic[];
   readonly sessions: ReadonlyMap<DomainSessionId, NormalizedSession>;
-  readonly cache: ReadonlyMap<string, SessionCacheEntry>;
   readonly documents: readonly SearchDocument[];
   readonly orderedIds: readonly DomainSessionId[];
   readonly warningCount: number;
@@ -41,17 +34,18 @@ export interface CatalogSnapshot {
 
 export class CatalogSnapshotStore {
   readonly #coordinator = new RefreshCoordinator<CatalogSnapshot>();
+  readonly #sources: readonly SessionSource[];
   #snapshot: CatalogSnapshot | null = null;
   #lastDiscoveryAt = Number.NEGATIVE_INFINITY;
 
   constructor(
-    private readonly source: CodexCatalogSource,
-    private readonly decoder: RolloutDecoder,
-    private readonly identity: IdentityResolver,
-    private readonly normalizer: SessionNormalizer,
+    sources: readonly SessionSource[],
     private readonly freshnessMs = DEFAULT_CATALOG_FRESHNESS_MS,
     private readonly now: () => number = performance.now.bind(performance),
-  ) {}
+  ) {
+    assertUniqueSources(sources);
+    this.#sources = [...sources];
+  }
 
   async current(): Promise<CatalogSnapshot> {
     const snapshot = this.#snapshot;
@@ -72,44 +66,31 @@ export class CatalogSnapshotStore {
   }
 
   async #rebuild(): Promise<CatalogSnapshot> {
-    const discovery = await this.source.discover();
-    const signature = discoverySignature(discovery);
+    const loadedSources = await Promise.all(
+      this.#sources.map(async (source) => ({
+        descriptor: source.descriptor,
+        snapshot: await source.refresh(),
+      })),
+    );
+    const signature = aggregateSignature(loadedSources);
     const previous = this.#snapshot;
     if (previous?.signature === signature) return previous;
 
-    const cache = new Map<string, SessionCacheEntry>();
-    for (const entry of discovery.entries) {
-      const fingerprint = fingerprintOf(entry.descriptor);
-      const old = previous?.cache.get(entry.descriptor.canonicalPath);
-      if (
-        old !== undefined &&
-        sameFingerprint(old.fingerprint, fingerprint)
-      ) {
-        cache.set(entry.descriptor.canonicalPath, old);
-        continue;
-      }
-      cache.set(
-        entry.descriptor.canonicalPath,
-        await this.#normalizeEntry(entry, fingerprint),
-      );
-    }
-
-    const threadIds = new Map<string, DomainSessionId>();
-    for (const entry of cache.values()) {
-      if (entry.threadId !== null) threadIds.set(entry.threadId, entry.normalized.session.id);
-    }
-    const sessions = linkRelationships(cache, threadIds);
+    const sourceDiagnostics = loadedSources.flatMap(({ snapshot }) =>
+      snapshot.diagnostics.map((item) => ({ ...item }))
+    );
+    const linked = linkRelationships(loadedSources);
+    const diagnostics = [...sourceDiagnostics, ...linked.diagnostics];
+    const { sessions } = linked;
     const documents = [...sessions.values()].map(buildSearchDocument);
     const orderedIds = [...sessions.values()]
       .sort(compareSessions)
       .map((session) => session.session.id);
-    const diagnostics = discovery.diagnostics.map((item) => ({ ...item }));
     const snapshot: CatalogSnapshot = {
       generation: (previous?.generation ?? 0) + 1,
       signature,
       diagnostics,
       sessions,
-      cache,
       documents,
       orderedIds,
       warningCount: warningCount(diagnostics, sessions),
@@ -117,116 +98,149 @@ export class CatalogSnapshotStore {
     this.#snapshot = snapshot;
     return snapshot;
   }
+}
 
-  async #normalizeEntry(
-    entry: CatalogEntry,
-    fingerprint: ReturnType<typeof fingerprintOf>,
-  ): Promise<SessionCacheEntry> {
-    try {
-      const decoded = await this.decoder.decode(entry.descriptor);
-      const metadata = this.identity.resolve(decoded);
-      return {
-        fingerprint,
-        normalized: this.normalizer.normalize(decoded, metadata),
-        threadId: metadata.threadId,
-      };
-    } catch (error) {
-      if (!isExpectedRolloutIoError(error)) throw error;
-      return {
-        fingerprint,
-        normalized: unavailableSession(entry),
-        threadId: null,
-      };
+interface LoadedSource {
+  readonly descriptor: SessionSourceDescriptor;
+  readonly snapshot: SessionSourceSnapshot;
+}
+
+interface PendingSession {
+  readonly descriptor: SessionSourceDescriptor;
+  readonly entry: SourceSessionEntry;
+  readonly id: DomainSessionId;
+}
+
+type MutableLinkedSession = Omit<DomainSession, "childIds"> & {
+  childIds: DomainSessionId[];
+};
+
+interface LinkedSessions {
+  readonly sessions: Map<DomainSessionId, NormalizedSession>;
+  readonly diagnostics: readonly DomainDiagnostic[];
+}
+
+function assertUniqueSources(sources: readonly SessionSource[]): void {
+  const keys = new Set<string>();
+  for (const source of sources) {
+    const key = source.descriptor.instanceKey;
+    if (keys.has(key)) {
+      throw new Error(`Duplicate session source instance key: ${key}`);
     }
+    keys.add(key);
   }
+}
+
+function aggregateSignature(sources: readonly LoadedSource[]): string {
+  return JSON.stringify(
+    [...sources]
+      .sort((left, right) =>
+        left.descriptor.instanceKey.localeCompare(
+          right.descriptor.instanceKey,
+        )
+      )
+      .map(({ descriptor, snapshot }) => ({
+        source: descriptor.instanceKey,
+        signature: snapshot.signature,
+      })),
+  );
 }
 
 function warningCount(
   diagnostics: readonly DomainDiagnostic[],
   sessions: ReadonlyMap<DomainSessionId, NormalizedSession>,
 ): number {
-  const catalogWarnings = diagnostics.filter((diagnostic) => diagnostic.severity !== "info").length;
-  return catalogWarnings + [...sessions.values()].reduce(
+  const sourceWarnings = diagnostics.filter(
+    (diagnostic) => diagnostic.severity !== "info",
+  ).length;
+  return sourceWarnings + [...sessions.values()].reduce(
     (count, session) => count + session.session.warningCount,
     0,
   );
 }
 
-function unavailableSession(entry: CatalogEntry): NormalizedSession {
-  return {
-    session: {
-      id: entry.descriptor.id,
-      sourceId: null,
-      title: "Unavailable session",
-      preview: null,
-      cwd: null,
-      createdAt: null,
-      updatedAt: null,
-      archived: entry.descriptor.archived,
-      parentId: null,
-      childIds: [],
-      agent: null,
-      sourceState: "unavailable",
-      messageCount: 0,
-      toolCount: 0,
-      warningCount: 1,
-      diagnostics: [{
-        code: "rollout_unavailable",
-        severity: "warning",
-        message: "The registered rollout could not be read.",
-        ordinal: null,
-      }],
-      itemCount: 0,
-    },
-    timeline: [],
-    toolDetails: new Map(),
-    directiveDetails: new Map(),
-  };
-}
-
-function isExpectedRolloutIoError(error: unknown): boolean {
-  if (!(error instanceof Error) || !("code" in error)) return false;
-  return EXPECTED_ROLLOUT_IO_ERRORS.has(
-    String((error as NodeJS.ErrnoException).code),
-  );
-}
-
-function discoverySignature(discovery: CatalogDiscovery): string {
-  return JSON.stringify({
-    diagnostics: discovery.diagnostics,
-    entries: discovery.entries.map((entry) => ({
-      descriptor: fingerprintOf(entry.descriptor),
-    })),
-  });
-}
-
 function linkRelationships(
-  cache: ReadonlyMap<string, SessionCacheEntry>,
-  threadIds: ReadonlyMap<string, DomainSessionId>,
-): Map<DomainSessionId, NormalizedSession> {
-  type MutableLinkedSession = Omit<DomainSession, "childIds"> & { childIds: DomainSessionId[] };
+  sources: readonly LoadedSource[],
+): LinkedSessions {
+  const diagnostics: DomainDiagnostic[] = [];
+  const pending: PendingSession[] = [];
+  const identities = new Map<string, DomainSessionId | null>();
+  for (const { descriptor, snapshot } of sources) {
+    const localIds = new Set<string>();
+    for (const entry of snapshot.sessions) {
+      if (localIds.has(entry.localId)) {
+        diagnostics.push({
+          code: "duplicate_source_session_id",
+          severity: "error",
+          message: "A source returned duplicate stable session identities.",
+          ordinal: null,
+        });
+        continue;
+      }
+      localIds.add(entry.localId);
+      const id = opaqueIdForParts(descriptor.instanceKey, entry.localId);
+      pending.push({ descriptor, entry, id });
+      if (entry.nativeSessionId !== null) {
+        const nativeKey = identityKey(
+          descriptor.instanceKey,
+          entry.nativeSessionId,
+        );
+        if (!identities.has(nativeKey)) identities.set(nativeKey, id);
+        else identities.set(nativeKey, null);
+      }
+    }
+  }
+
   const mutable = new Map<DomainSessionId, {
     session: MutableLinkedSession;
     normalized: NormalizedSession;
   }>();
-  for (const entry of cache.values()) {
-    const source = entry.normalized.session;
-    const linkedParent = source.parentId === null ? null : threadIds.get(source.parentId) ?? null;
-    mutable.set(source.id, {
-      session: { ...source, parentId: linkedParent, childIds: [] },
-      normalized: entry.normalized,
+  for (const item of pending) {
+    const parentId = item.entry.parentNativeSessionId === null
+      ? null
+      : identities.get(
+        identityKey(
+          item.descriptor.instanceKey,
+          item.entry.parentNativeSessionId,
+        ),
+      ) ?? null;
+    const source = item.entry.normalized.session;
+    mutable.set(item.id, {
+      session: {
+        ...source,
+        id: item.id,
+        sourceId: item.entry.nativeSessionId,
+        origin: {
+          ...item.entry.origin,
+          sourceType: item.descriptor.sourceType,
+          sourceInstanceId: item.descriptor.sourceInstanceId,
+          agentName: item.descriptor.displayName,
+        },
+        parentId,
+        childIds: [],
+      },
+      normalized: item.entry.normalized,
     });
   }
   for (const linked of mutable.values()) {
     if (linked.session.parentId === null) continue;
     mutable.get(linked.session.parentId)?.session.childIds.push(linked.session.id);
   }
-  return new Map([...mutable].map(([id, linked]) => [id, {
-    session: { ...linked.session, childIds: [...linked.session.childIds] },
-    timeline: linked.normalized.timeline,
-    toolDetails: linked.normalized.toolDetails,
-    directiveDetails: linked.normalized.directiveDetails,
-  }]));
+
+  const sessions = new Map<DomainSessionId, NormalizedSession>();
+  for (const [id, linked] of mutable) {
+    sessions.set(id, {
+      session: { ...linked.session, childIds: [...linked.session.childIds] },
+      timeline: linked.normalized.timeline,
+      toolDetails: linked.normalized.toolDetails,
+      directiveDetails: linked.normalized.directiveDetails,
+    });
+  }
+  return { sessions, diagnostics };
+}
+
+function identityKey(sourceKey: string, nativeId: string): string {
+  return encodeStringTuple(sourceKey, nativeId);
 }
 
 function compareSessions(left: NormalizedSession, right: NormalizedSession): number {

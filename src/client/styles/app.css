@@ -167,6 +167,11 @@
   font-weight: 650; letter-spacing: .05em; line-height: 1.2; text-transform: uppercase;
 }
 .session > .archive-label { margin-top: .32rem; }
+.source-label {
+  display: inline-flex; width: fit-content; margin-top: .32rem; padding: .08rem .38rem;
+  border: 1px solid var(--mist); border-radius: 999px; color: var(--ink-soft);
+  font-size: .7rem; letter-spacing: .04em;
+}
 .session .session-meta-line { display: flex; align-items: center; gap: .35rem; }
 .agent-label {
   display: inline-block; max-width: 8rem; padding: .08rem .28rem;
@@ -189,7 +194,7 @@
   display: flex; align-items: center; gap: .55rem; margin-bottom: .25rem;
 }
 .session-heading-flags .eyebrow { margin: 0; }
-.session-source-id {
+.session-origin, .session-source-id {
   margin-top: .45rem; color: var(--ink-soft); font-size: .72rem;
 }
 .session-source-id code { font-family: var(--mono-font); overflow-wrap: anywhere; }

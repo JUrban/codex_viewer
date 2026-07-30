@@ -1,11 +1,13 @@
 import { cp, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import type { CodexCatalogSource } from "../../src/server/codex/catalog-source.js";
-import { IdentityResolver } from "../../src/server/codex/identity-resolver.js";
-import { WholeFileRolloutDecoder } from "../../src/server/codex/rollout-decoder.js";
-import { DefaultSessionNormalizer } from "../../src/server/codex/session-normalizer.js";
-import { createSessionRepository } from "../../src/server/repository/create-session-repository.js";
+import {
+  createCodexSessionRepository,
+} from "../../src/server/repository/create-session-repository.js";
+import type {
+  SessionSource,
+  SourceSessionEntry,
+} from "../../src/server/source/session-source.js";
 import {
   DEFAULT_CATALOG_FRESHNESS_MS,
   DefaultSessionRepository,
@@ -13,12 +15,16 @@ import {
   RepositoryQueryError,
 } from "../../src/server/repository/session-repository.js";
 import { searchDocuments } from "../../src/server/search/search-document.js";
+import type {
+  DomainTimelineRecord,
+  NormalizedSession,
+} from "../../src/server/domain/session-domain.js";
 import { createTempDirectory } from "../helpers/temp-directories.js";
 
 async function fixtureRepository() {
   const home = await createTempDirectory("codex-repository-");
   await cp(resolve("tests/fixtures/codex-home"), home, { recursive: true });
-  return { home, repository: await createSessionRepository(home) };
+  return { home, repository: await createCodexSessionRepository(home) };
 }
 
 describe("DefaultSessionRepository", () => {
@@ -29,18 +35,21 @@ describe("DefaultSessionRepository", () => {
     const gate = new Promise<void>((resolveGate) => {
       release = resolveGate;
     });
-    const source: CodexCatalogSource = {
-      async discover() {
+    const source: SessionSource = {
+      descriptor: {
+        sourceType: "test",
+        instanceKey: "test",
+        sourceInstanceId: "test",
+        displayName: "Test",
+      },
+      async refresh() {
         discoveries += 1;
         await gate;
-        return { entries: [], diagnostics: [] };
+        return { signature: "empty", sessions: [], diagnostics: [] };
       },
     };
     const repository = new DefaultSessionRepository(
-      source,
-      new WholeFileRolloutDecoder(),
-      new IdentityResolver(),
-      new DefaultSessionNormalizer(),
+      [source],
       undefined,
       DEFAULT_CATALOG_FRESHNESS_MS,
       () => now,
@@ -215,7 +224,7 @@ describe("DefaultSessionRepository", () => {
       archivedRollout,
       `${archivedSource}{"timestamp":"2026-07-20T08:00:01.000Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"${"x".repeat(2_000)}"}]}}\n`,
     );
-    const repository = await createSessionRepository(home, {
+    const repository = await createCodexSessionRepository(home, {
       maxScannedBytes: 1_000,
       maxResults: 200,
       maxExcerptChars: 240,
@@ -237,7 +246,7 @@ describe("DefaultSessionRepository", () => {
       join(home, "sessions/rollout-active.jsonl"),
       '{"timestamp":"2026-07-28T10:00:00.000Z","type":"session_meta","payload":{"id":"active-session","title":"Active trace"}}\n',
     );
-    const repository = await createSessionRepository(home);
+    const repository = await createCodexSessionRepository(home);
     expect((await repository.list({ archiveScope: "all" })).sessions).toHaveLength(1);
 
     await mkdir(join(home, "archived_sessions"), { recursive: true });
@@ -250,6 +259,29 @@ describe("DefaultSessionRepository", () => {
     const archived = await repository.list({ archiveScope: "archived" });
     expect(archived.sessions).toHaveLength(1);
     expect(archived.sessions[0]?.session.title).toBe("Late archive");
+  });
+
+  it("keeps a native Codex session identity stable when its rollout moves", async () => {
+    const { home, repository } = await fixtureRepository();
+    const before = await repository.list({ archiveScope: "all" });
+    const session = before.sessions.find(
+      (entry) => entry.session.title === "Synthetic trace",
+    )!.session;
+    const original = join(
+      home,
+      "sessions/2026/07/28/rollout-2026-07-28T10-00-00-basic-session.jsonl",
+    );
+    const archiveDirectory = join(home, "archived_sessions/reorganized");
+    await mkdir(archiveDirectory, { recursive: true });
+    await rename(original, join(archiveDirectory, "rollout-moved-basic-session.jsonl"));
+
+    await repository.refresh();
+    const after = await repository.list({ archiveScope: "all" });
+    const moved = after.sessions.find(
+      (entry) => entry.session.title === "Synthetic trace",
+    )!.session;
+    expect(moved.id).toBe(session.id);
+    expect(moved.archived).toBe(true);
   });
 
   it("compares time filters as instants and rejects an inverted range", async () => {
@@ -269,47 +301,20 @@ describe("DefaultSessionRepository", () => {
   });
 
   it("pages catalogs larger than the per-response safety limit", async () => {
-    const entries = Array.from({ length: 205 }, (_, index) => ({
-      descriptor: {
-        id: `session-${index}`,
-        canonicalPath: `/synthetic/rollout-${index}.jsonl`,
-        archived: false,
-        size: 1,
-        mtimeMs: index,
-        device: 1,
-        inode: index,
-      },
-    }));
+    const entries = Array.from({ length: 205 }, (_, index) =>
+      sourceEntry(
+        `thread-${index}`,
+        normalizedSession(
+          `thread-${index}`,
+          `Session ${String(index).padStart(3, "0")}`,
+          "/synthetic/large-catalog",
+          [],
+          new Date(Date.UTC(2026, 0, 1, 0, 0, index)).toISOString(),
+        ),
+      )
+    );
     const repository = new DefaultSessionRepository(
-      { discover: async () => ({ entries, diagnostics: [] }) },
-      {
-        decode: async (descriptor) => ({
-          descriptor,
-          records: [{
-            ordinal: 1,
-            value: {
-              type: "session_meta",
-              payload: {
-                id: `thread-${descriptor.id.slice("session-".length)}`,
-                title: `Session ${descriptor.id.slice("session-".length).padStart(3, "0")}`,
-                cwd: "/synthetic/large-catalog",
-                timestamp: new Date(Date.UTC(
-                  2026,
-                  0,
-                  1,
-                  0,
-                  0,
-                  Number(descriptor.id.slice("session-".length)),
-                )).toISOString(),
-              },
-            },
-          }],
-          diagnostics: [],
-          incompleteTail: false,
-        }),
-      },
-      new IdentityResolver(),
-      new DefaultSessionNormalizer(),
+      [staticSource("large", entries)],
     );
 
     const first = await repository.list({ limit: 200 });
@@ -328,45 +333,26 @@ describe("DefaultSessionRepository", () => {
   });
 
   it("bounds a page of individually valid long messages by response bytes", async () => {
-    const descriptor = {
-      id: "long-session",
-      canonicalPath: "/synthetic/rollout-long-session.jsonl",
-      archived: false,
-      size: 1,
-      mtimeMs: 1,
-      device: 1,
-      inode: 1,
-    };
     const longText = "x".repeat(1_000_000);
+    const timeline: DomainTimelineRecord[] = Array.from(
+      { length: 10 },
+      (_, index) => ({
+        kind: "message",
+        id: `message-${index + 1}`,
+        ordinal: index + 1,
+        timestamp: "2026-07-28T00:00:00Z",
+        role: "assistant",
+        phase: "commentary",
+        markdown: longText,
+      }),
+    );
     const repository = new DefaultSessionRepository(
-      {
-        discover: async () => ({
-          entries: [{ descriptor }],
-          diagnostics: [],
-        }),
-      },
-      {
-        decode: async () => ({
-          descriptor,
-          records: Array.from({ length: 10 }, (_, index) => ({
-            ordinal: index + 1,
-            value: {
-              timestamp: "2026-07-28T00:00:00Z",
-              type: "response_item",
-              payload: {
-                type: "message",
-                role: "assistant",
-                phase: "commentary",
-                content: [{ type: "output_text", text: longText }],
-              },
-            },
-          })),
-          diagnostics: [],
-          incompleteTail: false,
-        }),
-      },
-      new IdentityResolver(),
-      new DefaultSessionNormalizer(),
+      [staticSource("long", [
+        sourceEntry(
+          "long-session",
+          normalizedSession("long-session", "Long session", null, timeline),
+        ),
+      ])],
     );
 
     const list = await repository.list({});
@@ -377,3 +363,75 @@ describe("DefaultSessionRepository", () => {
       .toBeLessThanOrEqual(MAX_ITEM_PAGE_BYTES + 2);
   });
 });
+
+const TEST_ORIGIN = {
+  sourceType: "test",
+  sourceInstanceId: "test-source",
+  agentName: "Test",
+  agentVersion: null,
+  formatVersion: null,
+} as const;
+
+function normalizedSession(
+  id: string,
+  title: string,
+  cwd: string | null,
+  timeline: readonly DomainTimelineRecord[],
+  timestamp = "2026-01-01T00:00:00Z",
+): NormalizedSession {
+  return {
+    session: {
+      id,
+      sourceId: id,
+      origin: TEST_ORIGIN,
+      title,
+      preview: null,
+      cwd,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+      archived: false,
+      parentId: null,
+      childIds: [],
+      agent: null,
+      sourceState: "complete",
+      messageCount: timeline.filter((item) => item.kind === "message").length,
+      toolCount: timeline.filter((item) => item.kind === "tool").length,
+      warningCount: 0,
+      diagnostics: [],
+      itemCount: timeline.length,
+    },
+    timeline,
+    toolDetails: new Map(),
+    directiveDetails: new Map(),
+  };
+}
+
+function sourceEntry(
+  localId: string,
+  normalized: NormalizedSession,
+): SourceSessionEntry {
+  return {
+    localId,
+    nativeSessionId: localId,
+    parentNativeSessionId: null,
+    origin: TEST_ORIGIN,
+    normalized,
+  };
+}
+
+function staticSource(
+  key: string,
+  sessions: readonly SourceSessionEntry[],
+): SessionSource {
+  return {
+    descriptor: {
+      sourceType: "test",
+      instanceKey: key,
+      sourceInstanceId: key,
+      displayName: "Test",
+    },
+    async refresh() {
+      return { signature: key, sessions, diagnostics: [] };
+    },
+  };
+}

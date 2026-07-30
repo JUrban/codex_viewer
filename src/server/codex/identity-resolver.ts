@@ -6,6 +6,7 @@ import { isObject } from "./rollout-decoder.js";
 
 export interface SessionMetadata {
   threadId: string | null;
+  agentVersion: string | null;
   title: string | null;
   cwd: string | null;
   createdAt: string | null;
@@ -17,6 +18,7 @@ export interface SessionMetadata {
 
 interface RawMetadata {
   id: string | null;
+  agentVersion: string | null;
   title: string | null;
   cwd: string | null;
   timestamp: string | null;
@@ -36,6 +38,7 @@ export class IdentityResolver {
 
     return {
       threadId: raw?.id ?? null,
+      agentVersion: raw?.agentVersion ?? null,
       title: raw?.title ?? null,
       cwd: raw?.cwd ?? null,
       createdAt: raw?.timestamp ?? timestampOf(decoded.records[0]?.value),
@@ -51,6 +54,7 @@ function rawMetadata(value: unknown): RawMetadata | null {
   if (!isObject(value)) return null;
   return {
     id: string(value.id),
+    agentVersion: string(value.cli_version ?? value.agent_version),
     title: string(value.title),
     cwd: string(value.cwd),
     timestamp: string(value.timestamp),

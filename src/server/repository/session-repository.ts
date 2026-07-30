@@ -12,10 +12,7 @@ import type {
 } from "../../shared/api-contract.js";
 import type { CatalogGeneration, SessionId } from "../../shared/domain.js";
 import { SessionApiMapper } from "../api/session-api-mapper.js";
-import type { CodexCatalogSource } from "../codex/catalog-source.js";
-import type { IdentityResolver } from "../codex/identity-resolver.js";
-import type { RolloutDecoder } from "../codex/rollout-decoder.js";
-import type { SessionNormalizer } from "../codex/session-normalizer.js";
+import type { SessionSource } from "../source/session-source.js";
 import {
   DEFAULT_SEARCH_BUDGET,
   type SearchBudget,
@@ -60,19 +57,13 @@ export class DefaultSessionRepository implements SessionRepository {
   readonly #mapper = new SessionApiMapper();
 
   constructor(
-    source: CodexCatalogSource,
-    decoder: RolloutDecoder,
-    identity: IdentityResolver,
-    normalizer: SessionNormalizer,
+    sources: readonly SessionSource[],
     searchBudget: SearchBudget = DEFAULT_SEARCH_BUDGET,
     freshnessMs = DEFAULT_CATALOG_FRESHNESS_MS,
     now: () => number = performance.now.bind(performance),
   ) {
     this.#store = new CatalogSnapshotStore(
-      source,
-      decoder,
-      identity,
-      normalizer,
+      sources,
       freshnessMs,
       now,
     );

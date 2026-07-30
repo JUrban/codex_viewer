@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { LOOPBACK_HOST, type ServerConfig } from "../../src/server/config.js";
 import { createApiRouter } from "../../src/server/http/api-router.js";
 import { createServer } from "../../src/server/http/create-server.js";
-import { createSessionRepository } from "../../src/server/repository/create-session-repository.js";
+import { createCodexSessionRepository } from "../../src/server/repository/create-session-repository.js";
 import { createTempDirectory } from "../helpers/temp-directories.js";
 
 const servers: ReturnType<typeof createServer>[] = [];
@@ -20,7 +20,7 @@ async function startApi(maxScannedBytes?: number) {
   await cp(resolve("tests/fixtures/codex-home"), home, { recursive: true });
   const clientDirectory = await createTempDirectory("codex-api-client-");
   await writeFile(join(clientDirectory, "index.html"), "<h1>trace notebook</h1>");
-  const repository = await createSessionRepository(
+  const repository = await createCodexSessionRepository(
     home,
     maxScannedBytes === undefined
       ? undefined
@@ -65,6 +65,13 @@ describe("versioned session API", () => {
     );
     expect(basic.session.id).toMatch(/^[A-Za-z0-9_-]{43}$/);
     expect(basic.session.sourceId).toBeUndefined();
+    expect(basic.session.origin).toEqual({
+      sourceType: "codex-jsonl",
+      sourceInstanceId: expect.stringMatching(/^[A-Za-z0-9_-]{43}$/),
+      agentName: "Codex",
+      agentVersion: null,
+      formatVersion: null,
+    });
     expect(JSON.stringify(list)).not.toContain("DEVELOPER_DIRECTIVE_CANARY");
 
     const agentSearch = await fetch(`${base}/api/v1/sessions?q=widget_review`)
@@ -94,6 +101,7 @@ describe("versioned session API", () => {
     const detail = await detailResponse.json();
     expect(detail.session.title).toBe("Synthetic trace");
     expect(detail.session.sourceId).toBe("basic-session");
+    expect(detail.session.origin).toEqual(basic.session.origin);
     expect(detail.session.itemCount).toBeGreaterThan(5);
 
     const firstPageResponse = await fetch(

@@ -2,6 +2,7 @@ import type {
   DomainDiagnostic,
   DomainMessageRecord,
   DomainSession,
+  DomainSessionOrigin,
   DomainTimelineRecord,
   NormalizedSession,
 } from "../domain/session-domain.js";
@@ -30,11 +31,19 @@ import { isObject } from "./rollout-decoder.js";
 import { ToolAccumulator } from "./tool-accumulator.js";
 
 export interface SessionNormalizer {
-  normalize(decoded: DecodedRollout, metadata: SessionMetadata): NormalizedSession;
+  normalize(
+    decoded: DecodedRollout,
+    metadata: SessionMetadata,
+    origin?: DomainSessionOrigin,
+  ): NormalizedSession;
 }
 
 export class DefaultSessionNormalizer implements SessionNormalizer {
-  normalize(decoded: DecodedRollout, metadata: SessionMetadata): NormalizedSession {
+  normalize(
+    decoded: DecodedRollout,
+    metadata: SessionMetadata,
+    origin: DomainSessionOrigin = DEFAULT_SESSION_ORIGIN,
+  ): NormalizedSession {
     const diagnostics = [...decoded.diagnostics];
     if (decoded.incompleteTail) {
       diagnostics.push({
@@ -74,6 +83,7 @@ export class DefaultSessionNormalizer implements SessionNormalizer {
     const session: DomainSession = {
       id: decoded.descriptor.id,
       sourceId: metadata.threadId,
+      origin,
       title: fallbackTitle,
       preview: firstMessage === undefined
         ? null
@@ -100,6 +110,14 @@ export class DefaultSessionNormalizer implements SessionNormalizer {
     };
   }
 }
+
+const DEFAULT_SESSION_ORIGIN: DomainSessionOrigin = {
+  sourceType: "test",
+  sourceInstanceId: "test",
+  agentName: "Test",
+  agentVersion: null,
+  formatVersion: null,
+};
 
 function consumeRecord(
   record: DecodedRecord,

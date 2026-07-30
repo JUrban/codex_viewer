@@ -23,6 +23,9 @@ describe("PathPolicy", () => {
     const descriptor = await policy.register(valid);
     const canonical = await realpath(valid);
     expect(descriptor?.canonicalPath).toBe(canonical);
+    expect(descriptor?.sourceRelativePath).toBe(
+      "sessions/2026/07/28/rollout-safe.jsonl",
+    );
     expect(descriptor?.id).toBe(opaqueIdForPath(canonical));
     expect(await policy.register(invalidName)).toBeNull();
     expect(await policy.register(outside)).toBeNull();

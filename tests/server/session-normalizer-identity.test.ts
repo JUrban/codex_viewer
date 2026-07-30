@@ -131,6 +131,21 @@ describe("session identity and recovery", () => {
     });
   });
 
+  it("extracts a declared agent version without inventing a format version", () => {
+    const decoded = decodedRollout("versioned-session", [{
+      ordinal: 1,
+      value: {
+        timestamp: "2026-07-28T12:00:00.000Z",
+        type: "session_meta",
+        payload: {
+          id: "versioned-session",
+          cli_version: "2.4.0",
+        },
+      },
+    }]);
+    expect(new IdentityResolver().resolve(decoded).agentVersion).toBe("2.4.0");
+  });
+
   it("keeps valid records after a malformed middle line and marks the source partial", async () => {
     const normalized = await normalizeFixture("rollout-2026-07-28T12-00-00-malformed-session.jsonl");
     expect(normalized.timeline.filter((item) => item.kind === "message")).toHaveLength(1);

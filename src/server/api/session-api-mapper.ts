@@ -100,6 +100,7 @@ export class SessionApiMapper {
   summary(session: DomainSession): SessionSummary {
     return {
       id: session.id,
+      origin: { ...session.origin },
       title: session.title,
       preview: session.preview,
       cwd: session.cwd,

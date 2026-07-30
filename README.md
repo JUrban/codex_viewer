@@ -94,6 +94,24 @@ The session index is paged. Use **Load more sessions** to browse past the first
 rollout changes between pages, the browser restarts safely rather than mixing
 old and new data.
 
+## Architecture
+
+The server separates stable session behavior from agent-specific storage:
+
+```text
+SessionSource adapters
+  -> source-local normalized sessions
+  -> generation-based aggregate catalog
+  -> query and search services
+  -> API DTOs
+```
+
+The Codex adapter owns `sessions/` and `archived_sessions/` discovery, JSONL
+decoding, file fingerprints, format recovery, and Codex metadata extraction.
+The aggregate catalog knows only source descriptors and normalized sessions.
+It namespaces session identity by source instance, so future adapters can
+publish overlapping native session IDs safely.
+
 ## Compatibility and limits
 
 The JSONL reader supports the observed Codex rollout record families and

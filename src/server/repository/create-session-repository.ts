@@ -1,30 +1,21 @@
-import type { CodexCatalogSource } from "../codex/catalog-source.js";
-import { IdentityResolver } from "../codex/identity-resolver.js";
-import { JsonlCatalogSource } from "../codex/jsonl-catalog-source.js";
-import { WholeFileRolloutDecoder } from "../codex/rollout-decoder.js";
-import { DefaultSessionNormalizer } from "../codex/session-normalizer.js";
-import { PathPolicy } from "../security/path-policy.js";
+import { createCodexSessionSource } from "../codex/codex-session-source.js";
 import type { SearchBudget } from "../search/search-document.js";
+import type { SessionSource } from "../source/session-source.js";
 import { DefaultSessionRepository } from "./session-repository.js";
 
-class DynamicCatalogSource implements CodexCatalogSource {
-  constructor(private readonly codexHome: string) {}
-
-  async discover() {
-    const policy = await PathPolicy.create(this.codexHome);
-    return new JsonlCatalogSource(policy).discover();
-  }
-}
-
 export function createSessionRepository(
-  codexHome: string,
+  sources: readonly SessionSource[],
   searchBudget?: SearchBudget,
 ): DefaultSessionRepository {
-  return new DefaultSessionRepository(
-    new DynamicCatalogSource(codexHome),
-    new WholeFileRolloutDecoder(),
-    new IdentityResolver(),
-    new DefaultSessionNormalizer(),
+  return new DefaultSessionRepository(sources, searchBudget);
+}
+
+export async function createCodexSessionRepository(
+  codexHome: string,
+  searchBudget?: SearchBudget,
+): Promise<DefaultSessionRepository> {
+  return createSessionRepository(
+    [await createCodexSessionSource(codexHome)],
     searchBudget,
   );
 }

@@ -37,6 +37,7 @@ export function decodedRollout(id: string, records: DecodedRecord[]): DecodedRol
     descriptor: {
       id,
       canonicalPath: `/synthetic/rollout-${id}.jsonl`,
+      sourceRelativePath: `sessions/rollout-${id}.jsonl`,
       archived: false,
       size: 1,
       mtimeMs: 1,
@@ -54,6 +55,7 @@ export function sessionMetadata(
 ): SessionMetadata {
   return {
     threadId: null,
+    agentVersion: null,
     title: null,
     cwd: null,
     createdAt: null,

@@ -4,8 +4,10 @@ import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MessageItem, safeUrlTransform } from "../../src/client/components/MessageItem";
+import { SessionHeader } from "../../src/client/components/SessionHeader";
 import { groupSessions, SessionTree } from "../../src/client/components/SessionTree";
 import { Timeline } from "../../src/client/components/Timeline";
+import { DEFAULT_TIMELINE_VISIBILITY } from "../../src/client/state/timeline-visibility";
 import {
   baseSession,
   CHILD_ID,
@@ -137,6 +139,41 @@ describe("session browser components", () => {
     expect(groups[0]?.children[0]?.root.session.title).toBe("Child");
     expect(groups[0]?.children[0]?.children[0]?.root.session.title).toBe("Grandchild");
     expect(groups[1]).toMatchObject({ orphan: true, root: { session: { title: "Orphan" } } });
+  });
+
+  it("shows normalized source metadata in the catalog and session detail", () => {
+    const versioned = {
+      ...baseSession,
+      origin: {
+        ...baseSession.origin,
+        agentVersion: "1.2.3",
+        formatVersion: "rollout-v1",
+      },
+    };
+    const { unmount } = render(
+      <SessionTree
+        entries={[entry(versioned)]}
+        selectedId={null}
+        onSelect={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("Codex", { selector: ".source-label" })).toBeInTheDocument();
+    unmount();
+
+    render(
+      <SessionHeader
+        session={{
+          ...versioned,
+          sourceId: "native-session",
+          diagnostics: [],
+          itemCount: 0,
+        }}
+        visibility={DEFAULT_TIMELINE_VISIBILITY}
+        onVisibilityChange={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("Codex 1.2.3 · format rollout-v1")).toBeInTheDocument();
+    expect(screen.getByText(/native-session/)).toBeInTheDocument();
   });
 
   it("collapses child sessions and presents structured agent task identity", async () => {

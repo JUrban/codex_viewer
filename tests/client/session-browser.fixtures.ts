@@ -12,6 +12,13 @@ export const OTHER_ID = "otherabcdefghijklmnopqrs";
 
 export const baseSession: SessionSummary = {
   id: SESSION_ID, title: "Reader work", preview: "preview", cwd: "/project/reader",
+  origin: {
+    sourceType: "codex-jsonl",
+    sourceInstanceId: "source-instance",
+    agentName: "Codex",
+    agentVersion: null,
+    formatVersion: null,
+  },
   createdAt: "2026-07-28T10:00:00Z", updatedAt: "2026-07-28T11:00:00Z",
   archived: false, parentId: null, childIds: [], sourceState: "complete" as const,
   agent: null,

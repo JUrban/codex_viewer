@@ -18,9 +18,18 @@ export interface DomainAgentIdentity {
   readonly role: string | null;
 }
 
+export interface DomainSessionOrigin {
+  readonly sourceType: string;
+  readonly sourceInstanceId: string;
+  readonly agentName: string;
+  readonly agentVersion: string | null;
+  readonly formatVersion: string | null;
+}
+
 export interface DomainSession {
   readonly id: DomainSessionId;
   readonly sourceId: string | null;
+  readonly origin: DomainSessionOrigin;
   readonly title: string;
   readonly preview: string | null;
   readonly cwd: string | null;

@@ -1,7 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
 import { SessionApiMapper } from "../../src/server/api/session-api-mapper.js";
-import { IdentityResolver } from "../../src/server/codex/identity-resolver.js";
-import { DefaultSessionNormalizer } from "../../src/server/codex/session-normalizer.js";
 import type {
   DomainSession,
   DomainTimelineRecord,
@@ -15,10 +13,21 @@ import {
   RepositoryQueryError,
   SessionQueryService,
 } from "../../src/server/repository/session-query-service.js";
+import type {
+  SessionSource,
+  SourceSessionEntry,
+} from "../../src/server/source/session-source.js";
 
 const session: DomainSession = {
   id: "session-one",
   sourceId: "private-source-id",
+  origin: {
+    sourceType: "test",
+    sourceInstanceId: "test-source",
+    agentName: "Test Agent",
+    agentVersion: "1.0.0",
+    formatVersion: null,
+  },
   title: "Session one",
   preview: "Preview",
   cwd: "/project",
@@ -75,6 +84,13 @@ describe("server architecture boundaries", () => {
 
     expect(summary).toEqual({
       id: "session-one",
+      origin: {
+        sourceType: "test",
+        sourceInstanceId: "test-source",
+        agentName: "Test Agent",
+        agentVersion: "1.0.0",
+        formatVersion: null,
+      },
       title: "Session one",
       preview: "Preview",
       cwd: "/project",
@@ -138,51 +154,50 @@ describe("server architecture boundaries", () => {
     );
   });
 
-  it("degrades expected rollout I/O failures but propagates unknown decoder failures", async () => {
-    const descriptor = {
-      id: "session-one",
-      canonicalPath: "/gone/session.jsonl",
-      archived: false,
-      size: 1,
-      mtimeMs: 1,
-      device: 1,
-      inode: 1,
-    };
+  it("rejects duplicate source instances and propagates source invariant failures", async () => {
     const source = {
-      discover: vi.fn(async () => ({
-        entries: [{
-          descriptor,
-        }],
-        diagnostics: [],
-      })),
-    };
-    const unavailable = new CatalogSnapshotStore(
-      source,
-      {
-        decode: vi.fn(async () => {
-          throw Object.assign(new Error("gone"), { code: "ENOENT" });
-        }),
+      descriptor: {
+        sourceType: "test",
+        instanceKey: "test-source",
+        sourceInstanceId: "test-source",
+        displayName: "Test",
       },
-      new IdentityResolver(),
-      new DefaultSessionNormalizer(),
+      refresh: vi.fn(async () => {
+        throw new Error("source invariant");
+      }),
+    };
+    expect(() => new CatalogSnapshotStore([source, source])).toThrow(
+      "Duplicate session source instance key",
     );
-    const unavailableSession = (await unavailable.current()).sessions.get("session-one")?.session;
-    expect(unavailableSession)
-      .toMatchObject({
-        sourceId: null,
-        title: "Unavailable session",
-        cwd: null,
-        sourceState: "unavailable",
-        warningCount: 1,
-      });
+    await expect(new CatalogSnapshotStore([source]).current()).rejects.toThrow(
+      "source invariant",
+    );
+  });
 
-    const broken = new CatalogSnapshotStore(
-      source,
-      { decode: vi.fn(async () => { throw new Error("decoder invariant"); }) },
-      new IdentityResolver(),
-      new DefaultSessionNormalizer(),
+  it("namespaces source identities, links parents locally, and ignores source order", async () => {
+    const sourceA = testSource("source-a", [
+      sourceEntry("parent", null, "Source A parent"),
+      sourceEntry("child", "parent", "Source A child"),
+    ]);
+    const sourceB = testSource("source-b", [
+      sourceEntry("parent", null, "Source B parent"),
+      sourceEntry("child", "missing-in-source-b", "Source B child"),
+    ]);
+    const first = await new CatalogSnapshotStore([sourceA, sourceB]).current();
+    const reordered = await new CatalogSnapshotStore([sourceB, sourceA]).current();
+
+    expect(first.signature).toBe(reordered.signature);
+    expect([...first.sessions.keys()].sort()).toEqual(
+      [...reordered.sessions.keys()].sort(),
     );
-    await expect(broken.current()).rejects.toThrow("decoder invariant");
+    const byTitle = new Map(
+      [...first.sessions.values()].map((value) => [value.session.title, value.session]),
+    );
+    expect(byTitle.get("Source A parent")?.id)
+      .not.toBe(byTitle.get("Source B parent")?.id);
+    expect(byTitle.get("Source A child")?.parentId)
+      .toBe(byTitle.get("Source A parent")?.id);
+    expect(byTitle.get("Source B child")?.parentId).toBeNull();
   });
 });
 
@@ -192,7 +207,6 @@ function snapshotOf(value: NormalizedSession): CatalogSnapshot {
     signature: "snapshot",
     diagnostics: [],
     sessions: new Map([[value.session.id, value]]),
-    cache: new Map(),
     documents: [{
       sessionId: value.session.id,
       title: value.session.title,
@@ -202,5 +216,54 @@ function snapshotOf(value: NormalizedSession): CatalogSnapshot {
     }],
     orderedIds: [value.session.id],
     warningCount: 1,
+  };
+}
+
+function sourceEntry(
+  nativeSessionId: string,
+  parentNativeSessionId: string | null,
+  title: string,
+): SourceSessionEntry {
+  const origin = {
+    sourceType: "test",
+    sourceInstanceId: "replaced-by-source",
+    agentName: "Test",
+    agentVersion: null,
+    formatVersion: null,
+  };
+  return {
+    localId: nativeSessionId,
+    nativeSessionId,
+    parentNativeSessionId,
+    origin,
+    normalized: {
+      ...normalized,
+      session: {
+        ...normalized.session,
+        id: nativeSessionId,
+        sourceId: nativeSessionId,
+        origin,
+        title,
+        parentId: parentNativeSessionId,
+        childIds: [],
+      },
+    },
+  };
+}
+
+function testSource(
+  instanceKey: string,
+  sessions: readonly SourceSessionEntry[],
+): SessionSource {
+  return {
+    descriptor: {
+      sourceType: "test",
+      instanceKey,
+      sourceInstanceId: instanceKey,
+      displayName: "Test",
+    },
+    async refresh() {
+      return { signature: "stable", sessions, diagnostics: [] };
+    },
   };
 }
