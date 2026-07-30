@@ -128,7 +128,7 @@ Review must cover all code and documentation introduced for the reader, includin
 - Observation: Timeline item IDs are session-local, so a React key based only on `tool-${ordinal}` can preserve sensitive detail across sessions.
   Evidence: Tool detail is local component state and tool IDs repeat naturally. Timeline keys now include the session ID, detail resets when generation changes, and a same-ordinal cross-session regression proves the first session's output disappears.
 
-- Observation: The declared `live` source state had no server-side producer.
+- Observation: The declared `live` marker had no server-side producer.
   Evidence: The normalizer emitted only `complete` or `partial`, while the client polled only `live`; the prior polling test constructed an impossible response. The client now polls any selected readable session every eight seconds only while visible, and the unreachable state was removed from the shared contract.
 
 - Observation: Cancelling a timer does not cancel an async timer callback that has already passed its `await`.
@@ -159,7 +159,7 @@ Review must cover all code and documentation introduced for the reader, includin
   Date/Author: 2026-07-28 / User and Codex
 
 - Decision: Treat the catalog, opaque ID registry, normalized cache, and search documents as one generation.
-  Rationale: Publishing them atomically prevents list, detail, and search endpoints from observing contradictory source states.
+  Rationale: Publishing them atomically prevents list, detail, and search endpoints from observing contradictory snapshot data.
   Date/Author: 2026-07-28 / Codex
 
 - Decision: Give the reader a “trace notebook” visual direction.
@@ -333,8 +333,8 @@ Add versioned handlers:
 
 - `GET /api/v1/status` returns availability, adapter mode, generation, session count, and safe warning counts without paths.
 - `GET /api/v1/sessions` accepts `q`, `project`, `from`, `to`, `archived`, and `limit`, then returns filtered summaries, project facets, parent-child IDs, permitted match excerpts, generation, and partial warnings.
-- `GET /api/v1/sessions/:id` returns metadata, diagnostics, item count, source state, and generation.
-- `GET /api/v1/sessions/:id/items` accepts `afterOrdinal`, `limit`, and `view=conversation|internal`, then returns a bounded page, `nextAfterOrdinal`, `hasMore`, generation, and source state.
+- `GET /api/v1/sessions/:id` returns metadata, diagnostics, item count, and generation.
+- `GET /api/v1/sessions/:id/items` accepts `afterOrdinal`, `limit`, and `view=conversation|internal`, then returns a bounded page, `nextAfterOrdinal`, `hasMore`, and generation.
 - `GET /api/v1/sessions/:id/items/:itemId/tool` returns bounded plain-text tool input/output only for a registered tool item. It never renders Markdown and may return truncated text.
 
 The page cursor is snapshot-scoped: clients send the generation with subsequent item requests or restart from the first page when the generation changes. Ordinals are not promised stable across generations. API logs contain only opaque IDs and error categories, never search terms, paths, messages, or tool content.
@@ -620,7 +620,6 @@ The first visual pass retained only the semantic trace rail as the signature mot
       archived: boolean;
       parentId: SessionId | null;
       childIds: SessionId[];
-      sourceState: "complete" | "partial" | "unavailable";
       messageCount: number;
       toolCount: number;
       warningCount: number;

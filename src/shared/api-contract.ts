@@ -5,7 +5,6 @@ import type {
   SessionDetail,
   SessionId,
   SessionSummary,
-  SourceState,
   TimelineItem,
 } from "./domain.js";
 
@@ -84,7 +83,6 @@ export interface ItemPageResponse {
   items: TimelineItem[];
   nextAfterOrdinal: number | null;
   hasMore: boolean;
-  sourceState: SourceState;
   diagnostics: Diagnostic[];
 }
 

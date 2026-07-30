@@ -203,8 +203,6 @@
   overflow-x: auto;
 }
 .event-toggle { flex: 0 0 auto; margin-top: 0; }
-.state { align-self: flex-start; font-family: var(--mono-font); font-size: .72rem; color: var(--current); white-space: nowrap; }
-.state-partial, .state-unavailable { color: #934a38; }
 .timeline { padding: 2.5rem 0 0; margin: 0; list-style: none; }
 .trace-event { --trace-color: var(--current); position: relative; display: grid; grid-template-columns: 2.25rem minmax(0, 1fr); padding-bottom: 2.5rem; }
 .trace-event::before { content: ""; position: absolute; left: .45rem; top: .85rem; bottom: -.85rem; width: 1px; background: var(--mist); }
@@ -284,7 +282,6 @@
   .child-list { margin-left: .45rem; }
   .reader { padding-top: 2.5rem; }
   .reader-header { display: block; }
-  .state { display: inline-block; margin-top: .5rem; }
 }
 @media (prefers-reduced-motion: no-preference) {
   .trace-event::before { animation: trace-draw 240ms ease-out both; transform-origin: top; }

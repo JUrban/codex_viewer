@@ -146,11 +146,10 @@ describe("session identity and recovery", () => {
     expect(new IdentityResolver().resolve(decoded).agentVersion).toBe("2.4.0");
   });
 
-  it("keeps valid records after a malformed middle line and marks the source partial", async () => {
+  it("keeps valid records after a malformed middle line and reports a diagnostic", async () => {
     const normalized = await normalizeFixture("rollout-2026-07-28T12-00-00-malformed-session.jsonl");
     expect(normalized.timeline.filter((item) => item.kind === "message")).toHaveLength(1);
     expect(normalized.timeline.filter((item) => item.kind === "directive")).toHaveLength(1);
-    expect(normalized.session.sourceState).toBe("partial");
     expect(normalized.session.diagnostics).toEqual([
       expect.objectContaining({ code: "malformed_json", ordinal: 3 }),
     ]);

@@ -2,7 +2,6 @@ export type SessionId = string;
 export type ItemId = string;
 export type CatalogGeneration = number;
 
-export type SourceState = "complete" | "partial" | "unavailable";
 export type DiagnosticSeverity = "info" | "warning" | "error";
 
 export interface Diagnostic {
@@ -38,7 +37,6 @@ export interface SessionSummary {
   parentId: SessionId | null;
   childIds: SessionId[];
   agent: AgentIdentity | null;
-  sourceState: SourceState;
   messageCount: number;
   toolCount: number;
   warningCount: number;

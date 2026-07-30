@@ -171,10 +171,10 @@ curl --fail --silent http://127.0.0.1:4173/api/v1/status
 containing `sessions/`, not to `sessions/` itself. Check that rollout files are
 regular files named `rollout-*.jsonl`.
 
-**A session is partial or unavailable.** Codex may still be writing its final
-line, a record may exceed a safety limit, or the source permissions may have
-changed. Wait for the writer to finish, restore read permission, and reload.
-Restarting the reader clears all derived in-memory state.
+**A session reports diagnostics.** Codex may still be writing its final line or
+a record may exceed a safety limit. Wait for the writer to finish and reload.
+Rollouts that cannot be read are omitted from the catalog and counted in the
+status endpoint's warnings until a later refresh can read them.
 
 **Search reports partial results.** Add a project/date filter or use a more
 specific phrase. Partial is an intentional bound, not evidence that source files

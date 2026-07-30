@@ -235,18 +235,17 @@ function SessionButton({ entry, selected, onSelect, child = false }: SessionButt
         : null}
       <span className="source-label">{session.origin.agentName}</span>
       {showOriginalTitle ? <small className="session-subtitle">{session.title}</small> : null}
-      <small className="session-meta-line">
-        {child
-          ? (
-              <>
-                {agentLabels.map((label) => (
-                  <span className="agent-label" key={label}>{label}</span>
-                ))}
-                <span>{session.sourceState}</span>
-              </>
-            )
-          : <>{session.cwd ?? "Project unavailable"} · {session.sourceState}</>}
-      </small>
+      {child && agentLabels.length === 0
+        ? null
+        : (
+            <small className="session-meta-line">
+              {child
+                ? agentLabels.map((label) => (
+                    <span className="agent-label" key={label}>{label}</span>
+                  ))
+                : session.cwd ?? "Project unavailable"}
+            </small>
+          )}
       {matches[0] ? <small className="match">{matches[0].excerpt}</small> : null}
     </button>
   );

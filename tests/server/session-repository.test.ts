@@ -393,7 +393,6 @@ function normalizedSession(
       parentId: null,
       childIds: [],
       agent: null,
-      sourceState: "complete",
       messageCount: timeline.filter((item) => item.kind === "message").length,
       toolCount: timeline.filter((item) => item.kind === "tool").length,
       warningCount: 0,

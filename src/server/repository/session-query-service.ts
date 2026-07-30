@@ -7,7 +7,6 @@ import type {
   DomainDiagnostic,
   DomainDirectiveDetail,
   DomainSession,
-  DomainSourceState,
   DomainTimelineRecord,
   DomainToolDetail,
   NormalizedSession,
@@ -61,7 +60,6 @@ export interface ItemPageResult {
   readonly items: readonly DomainTimelineRecord[];
   readonly nextAfterOrdinal: number | null;
   readonly hasMore: boolean;
-  readonly sourceState: DomainSourceState;
   readonly diagnostics: readonly DomainDiagnostic[];
 }
 
@@ -149,7 +147,6 @@ export class SessionQueryService {
       items,
       nextAfterOrdinal: hasMore ? items.at(-1)?.ordinal ?? null : null,
       hasMore,
-      sourceState: normalized.session.sourceState,
       diagnostics: normalized.session.diagnostics,
     };
   }

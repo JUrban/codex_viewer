@@ -61,7 +61,6 @@ export class SessionApiMapper {
       items: result.items.map((item) => this.timelineItem(item)),
       nextAfterOrdinal: result.nextAfterOrdinal,
       hasMore: result.hasMore,
-      sourceState: result.sourceState,
       diagnostics: result.diagnostics.map((item) => this.diagnostic(item)),
     };
   }
@@ -110,7 +109,6 @@ export class SessionApiMapper {
       parentId: session.parentId,
       childIds: [...session.childIds],
       agent: session.agent === null ? null : { ...session.agent },
-      sourceState: session.sourceState,
       messageCount: session.messageCount,
       toolCount: session.toolCount,
       warningCount: session.warningCount,

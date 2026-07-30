@@ -62,12 +62,12 @@ try {
   await rename(replacement, specialPath);
   const afterReplace = await repository.refresh();
 
-  let permissionProbe: "unavailable" | "portable-skip" = "portable-skip";
+  let permissionProbe: "hidden" | "portable-skip" = "portable-skip";
   try {
     await chmod(specialPath, 0);
     await repository.refresh();
     const unavailable = await repository.getSession(selected.session.id);
-    if (unavailable?.session.sourceState === "unavailable") permissionProbe = "unavailable";
+    if (unavailable === null) permissionProbe = "hidden";
   } finally {
     await chmod(specialPath, 0o600);
   }

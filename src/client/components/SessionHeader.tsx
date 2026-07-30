@@ -54,9 +54,6 @@ export function SessionHeader({
           ))}
         </div>
       </div>
-      <span className={`state state-${session.sourceState}`}>
-        <span aria-hidden="true">●</span> {session.sourceState}
-      </span>
     </header>
   );
 }

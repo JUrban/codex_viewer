@@ -53,6 +53,8 @@ export class CodexSessionSource implements SessionSource {
   readonly descriptor: SessionSourceDescriptor;
   #cache = new Map<string, CodexCacheEntry>();
   #snapshot: SessionSourceSnapshot | null = null;
+  #discoverySignature: string | null = null;
+  #hasUnavailableRollouts = false;
 
   constructor(
     private readonly codexHome: string,
@@ -72,30 +74,51 @@ export class CodexSessionSource implements SessionSource {
   async refresh(): Promise<SessionSourceSnapshot> {
     const policy = await PathPolicy.create(this.codexHome);
     const discovery = await new JsonlCatalogSource(policy).discover();
-    const signature = JSON.stringify({
+    const discoverySignature = JSON.stringify({
       diagnostics: discovery.diagnostics,
       entries: discovery.entries.map(({ descriptor }) => fingerprintOf(descriptor)),
     });
-    if (this.#snapshot?.signature === signature) return this.#snapshot;
+    if (
+      this.#snapshot !== null &&
+      this.#discoverySignature === discoverySignature &&
+      !this.#hasUnavailableRollouts
+    ) {
+      return this.#snapshot;
+    }
 
     const nextCache = new Map<string, CodexCacheEntry>();
+    const unavailableRollouts: string[] = [];
+    const loadDiagnostics: DomainDiagnostic[] = [];
     for (const { descriptor } of discovery.entries) {
       const fingerprint = fingerprintOf(descriptor);
       const cached = this.#cache.get(descriptor.canonicalPath);
       if (cached !== undefined && sameFingerprint(cached.fingerprint, fingerprint)) {
         nextCache.set(descriptor.canonicalPath, cached);
       } else {
-        nextCache.set(descriptor.canonicalPath, await this.#load(descriptor, fingerprint));
+        const loaded = await this.#load(descriptor, fingerprint);
+        if (loaded === null) {
+          unavailableRollouts.push(descriptor.sourceRelativePath);
+          loadDiagnostics.push(rolloutUnavailableDiagnostic());
+        } else {
+          nextCache.set(descriptor.canonicalPath, loaded);
+        }
       }
     }
     this.#cache = nextCache;
+    this.#discoverySignature = discoverySignature;
+    this.#hasUnavailableRollouts = unavailableRollouts.length > 0;
 
     const entries = sourceEntries(nextCache);
     const diagnostics = [
       ...discovery.diagnostics.map((item) => ({ ...item })),
+      ...loadDiagnostics,
       ...entries.diagnostics,
     ];
     const { sessions } = entries;
+    const signature = JSON.stringify({
+      discoverySignature,
+      unavailableRollouts,
+    });
     const snapshot = { signature, sessions, diagnostics };
     this.#snapshot = snapshot;
     return snapshot;
@@ -104,7 +127,7 @@ export class CodexSessionSource implements SessionSource {
   async #load(
     descriptor: RolloutDescriptor,
     fingerprint: FileFingerprint,
-  ): Promise<CodexCacheEntry> {
+  ): Promise<CodexCacheEntry | null> {
     try {
       const decoded = await this.decoder.decode(descriptor);
       const metadata = this.identity.resolve(decoded);
@@ -118,14 +141,7 @@ export class CodexSessionSource implements SessionSource {
       };
     } catch (error) {
       if (!isExpectedRolloutIoError(error)) throw error;
-      const origin = this.#origin(null);
-      return {
-        fingerprint,
-        normalized: unavailableSession(descriptor, origin),
-        threadId: null,
-        parentThreadId: null,
-        origin,
-      };
+      return null;
     }
   }
 
@@ -200,39 +216,12 @@ function sourceLocalId(
   return `thread:${threadId}`;
 }
 
-function unavailableSession(
-  descriptor: RolloutDescriptor,
-  origin: DomainSessionOrigin,
-): NormalizedSession {
+function rolloutUnavailableDiagnostic(): DomainDiagnostic {
   return {
-    session: {
-      id: descriptor.id,
-      sourceId: null,
-      origin,
-      title: "Unavailable session",
-      preview: null,
-      cwd: null,
-      createdAt: null,
-      updatedAt: null,
-      archived: descriptor.archived,
-      parentId: null,
-      childIds: [],
-      agent: null,
-      sourceState: "unavailable",
-      messageCount: 0,
-      toolCount: 0,
-      warningCount: 1,
-      diagnostics: [{
-        code: "rollout_unavailable",
-        severity: "warning",
-        message: "The registered rollout could not be read.",
-        ordinal: null,
-      }],
-      itemCount: 0,
-    },
-    timeline: [],
-    toolDetails: new Map(),
-    directiveDetails: new Map(),
+    code: "rollout_unavailable",
+    severity: "warning",
+    message: "A registered rollout could not be read.",
+    ordinal: null,
   };
 }
 

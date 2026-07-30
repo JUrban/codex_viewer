@@ -20,7 +20,7 @@ export const baseSession: SessionSummary = {
     formatVersion: null,
   },
   createdAt: "2026-07-28T10:00:00Z", updatedAt: "2026-07-28T11:00:00Z",
-  archived: false, parentId: null, childIds: [], sourceState: "complete" as const,
+  archived: false, parentId: null, childIds: [],
   agent: null,
   messageCount: 2, toolCount: 1, warningCount: 0,
 };
@@ -55,7 +55,7 @@ export const directiveItem: Directive = {
 };
 
 export const firstPage: ItemPageResponse = {
-  generation: 1, sourceState: "complete", diagnostics: [],
+  generation: 1, diagnostics: [],
   items: [
     { kind: "message", id: "message-1", ordinal: 1, timestamp: null, role: "user", phase: null, markdown: "Hello" },
     toolItem,

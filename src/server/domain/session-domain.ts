@@ -2,7 +2,6 @@ export type DomainSessionId = string;
 export type DomainItemId = string;
 export type DomainCatalogGeneration = number;
 
-export type DomainSourceState = "complete" | "partial" | "unavailable";
 export type DomainDiagnosticSeverity = "info" | "warning" | "error";
 
 export interface DomainDiagnostic {
@@ -39,7 +38,6 @@ export interface DomainSession {
   readonly parentId: DomainSessionId | null;
   readonly childIds: readonly DomainSessionId[];
   readonly agent: DomainAgentIdentity | null;
-  readonly sourceState: DomainSourceState;
   readonly messageCount: number;
   readonly toolCount: number;
   readonly warningCount: number;

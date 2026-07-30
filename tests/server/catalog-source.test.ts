@@ -7,6 +7,8 @@ import {
 } from "../../src/server/adapters/codex/codex-session-source.js";
 import { JsonlCatalogSource } from "../../src/server/adapters/codex/jsonl-catalog-source.js";
 import { PathPolicy } from "../../src/server/adapters/codex/path-policy.js";
+import { WholeFileRolloutDecoder } from "../../src/server/adapters/codex/rollout-decoder.js";
+import { DefaultSessionRepository } from "../../src/server/repository/session-repository.js";
 import { createTempDirectory } from "../helpers/temp-directories.js";
 
 describe("catalog discovery", () => {
@@ -52,24 +54,68 @@ describe("catalog discovery", () => {
     expect(JSON.stringify(changed.diagnostics)).not.toContain(changedHome);
   });
 
-  it("owns rollout I/O recovery and propagates unexpected decoder failures", async () => {
+  it("hides unreadable rollouts, reports them internally, and retries them", async () => {
     const home = await createTempDirectory("codex-adapter-errors-");
     await mkdir(join(home, "sessions"));
     await writeFile(
       join(home, "sessions/rollout-error.jsonl"),
       '{"type":"session_meta","payload":{"id":"error"}}\n',
     );
-    const unavailable = new CodexSessionSource(home, "codex-errors", {
-      async decode() {
-        throw Object.assign(new Error("gone"), { code: "ENOENT" });
+    const decoder = new WholeFileRolloutDecoder();
+    let attempts = 0;
+    const recovering = new CodexSessionSource(home, "codex-errors", {
+      async decode(descriptor) {
+        attempts += 1;
+        if (attempts <= 2) {
+          throw Object.assign(new Error("gone"), { code: "ENOENT" });
+        }
+        return decoder.decode(descriptor);
       },
     });
-    const snapshot = await unavailable.refresh();
-    expect(snapshot.sessions[0]?.normalized.session).toMatchObject({
-      sourceState: "unavailable",
-      title: "Unavailable session",
+    const unavailable = await recovering.refresh();
+    expect(unavailable.sessions).toEqual([]);
+    expect(unavailable.diagnostics).toEqual([
+      expect.objectContaining({
+        code: "rollout_unavailable",
+        severity: "warning",
+      }),
+    ]);
+    expect(JSON.stringify(unavailable.diagnostics)).not.toContain(home);
+
+    const repository = new DefaultSessionRepository([recovering]);
+    const unavailableStatus = await repository.getStatus();
+    expect(unavailableStatus).toMatchObject({
+      available: false,
+      sessionCount: 0,
+      warningCount: 1,
+    });
+    await expect(repository.list({})).resolves.toMatchObject({
+      sessions: [],
+      total: 0,
+      warnings: [],
     });
 
+    const recoveredGeneration = await repository.refresh();
+    expect(recoveredGeneration).toBeGreaterThan(unavailableStatus.generation);
+    await expect(repository.getStatus()).resolves.toMatchObject({
+      available: true,
+      sessionCount: 1,
+      warningCount: 0,
+    });
+    const recovered = await recovering.refresh();
+    expect(attempts).toBe(3);
+    expect(recovered.sessions).toHaveLength(1);
+    expect(recovered.diagnostics).toEqual([]);
+    expect(recovered.signature).not.toBe(unavailable.signature);
+  });
+
+  it("propagates unexpected decoder failures", async () => {
+    const home = await createTempDirectory("codex-adapter-broken-");
+    await mkdir(join(home, "sessions"));
+    await writeFile(
+      join(home, "sessions/rollout-error.jsonl"),
+      '{"type":"session_meta","payload":{"id":"error"}}\n',
+    );
     const broken = new CodexSessionSource(home, "codex-broken", {
       async decode() {
         throw new Error("decoder invariant");
