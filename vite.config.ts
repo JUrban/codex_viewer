@@ -6,6 +6,7 @@ export default defineConfig({
   build: {
     outDir: "dist/client",
     emptyOutDir: true,
+    chunkSizeWarningLimit: 700,
   },
   server: {
     host: "127.0.0.1",
@@ -13,4 +14,3 @@ export default defineConfig({
     strictPort: true,
   },
 });
-

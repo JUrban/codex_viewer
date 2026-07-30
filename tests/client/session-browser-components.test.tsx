@@ -200,16 +200,17 @@ describe("session browser components", () => {
     expect(safeUrlTransform("file:///tmp/secret")).toBe("");
   });
 
-  it("renders inline and display Markdown math with KaTeX", () => {
+  it("renders single-line double-dollar math inline and multiline math as display", () => {
     render(<MessageItem item={{
       kind: "message", id: "message-math", ordinal: 10, timestamp: null,
       role: "assistant", phase: "final",
-      markdown: "Inline $E = mc^2$.\n\n$$\\int_0^1 x^2\\,dx = \\frac{1}{3}$$",
+      markdown: "Inline $E = mc^2$.\n\n$$a^2 + b^2 = c^2$$\n\n$$\n\\int_0^1 x^2\\,dx = \\frac{1}{3}\n$$",
     }} />);
 
     expect(document.querySelector(".katex")).toBeInTheDocument();
     expect(document.querySelector(".katex-display .katex")).toBeInTheDocument();
-    expect(document.querySelectorAll(".katex")).toHaveLength(2);
+    expect(document.querySelectorAll(".katex")).toHaveLength(3);
+    expect(document.querySelectorAll(".katex-display .katex")).toHaveLength(1);
   });
 
   it("leaves math syntax in code untouched and keeps invalid math readable", () => {
