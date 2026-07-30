@@ -1,8 +1,8 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { WholeFileRolloutDecoder } from "../../src/server/codex/rollout-decoder.js";
-import { PathPolicy } from "../../src/server/security/path-policy.js";
+import { WholeFileRolloutDecoder } from "../../src/server/adapters/codex/rollout-decoder.js";
+import { PathPolicy } from "../../src/server/adapters/codex/path-policy.js";
 import { createTempDirectory } from "../helpers/temp-directories.js";
 
 describe("WholeFileRolloutDecoder", () => {

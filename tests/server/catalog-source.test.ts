@@ -4,9 +4,9 @@ import { describe, expect, it } from "vitest";
 import {
   CodexSessionSource,
   createCodexSessionSource,
-} from "../../src/server/codex/codex-session-source.js";
-import { JsonlCatalogSource } from "../../src/server/codex/jsonl-catalog-source.js";
-import { PathPolicy } from "../../src/server/security/path-policy.js";
+} from "../../src/server/adapters/codex/codex-session-source.js";
+import { JsonlCatalogSource } from "../../src/server/adapters/codex/jsonl-catalog-source.js";
+import { PathPolicy } from "../../src/server/adapters/codex/path-policy.js";
 import { createTempDirectory } from "../helpers/temp-directories.js";
 
 describe("catalog discovery", () => {

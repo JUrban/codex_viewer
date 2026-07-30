@@ -1,7 +1,7 @@
 import { loadConfig } from "./config.js";
 import { createApiRouter } from "./http/api-router.js";
 import { createServer } from "./http/create-server.js";
-import { createCodexSessionRepository } from "./repository/create-session-repository.js";
+import { createCodexSessionRepository } from "./create-session-repository.js";
 
 const config = loadConfig();
 const repository = await createCodexSessionRepository(config.codexHome);

@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { LOOPBACK_HOST, type ServerConfig } from "../../src/server/config.js";
 import { createApiRouter } from "../../src/server/http/api-router.js";
 import { createServer } from "../../src/server/http/create-server.js";
-import { createCodexSessionRepository } from "../../src/server/repository/create-session-repository.js";
+import { createCodexSessionRepository } from "../../src/server/create-session-repository.js";
 import { createTempDirectory } from "../helpers/temp-directories.js";
 
 const servers: ReturnType<typeof createServer>[] = [];

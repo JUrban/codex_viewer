@@ -1,8 +1,12 @@
 import type {
   DomainToolDetail as NormalizedToolDetail,
   DomainToolRecord as ToolItem,
-} from "../domain/session-domain.js";
-import { MAX_PREVIEW_CHARS, MAX_TOOL_DETAIL_CHARS, truncateText } from "./limits.js";
+} from "../../domain/session-domain.js";
+import {
+  MAX_PREVIEW_CHARS,
+  truncateText,
+} from "../../domain/session-text.js";
+import { MAX_TOOL_DETAIL_CHARS } from "./limits.js";
 
 export interface ToolCall {
   callId: string;

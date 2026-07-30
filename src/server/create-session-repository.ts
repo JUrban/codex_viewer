@@ -1,7 +1,7 @@
-import { createCodexSessionSource } from "../codex/codex-session-source.js";
-import type { SearchBudget } from "../search/search-document.js";
-import type { SessionSource } from "../source/session-source.js";
-import { DefaultSessionRepository } from "./session-repository.js";
+import { createCodexSessionSource } from "./adapters/codex/codex-session-source.js";
+import type { SearchBudget } from "./search/search-document.js";
+import type { SessionSource } from "./source/session-source.js";
+import { DefaultSessionRepository } from "./repository/session-repository.js";
 
 export function createSessionRepository(
   sources: readonly SessionSource[],

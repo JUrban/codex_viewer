@@ -3,7 +3,7 @@ import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   createCodexSessionRepository,
-} from "../../src/server/repository/create-session-repository.js";
+} from "../../src/server/create-session-repository.js";
 import type {
   SessionSource,
   SourceSessionEntry,

@@ -2,7 +2,10 @@ import type {
   DomainMessageRecord as MessageItem,
   NormalizedSession,
 } from "../domain/session-domain.js";
-import { MAX_PREVIEW_CHARS, truncateText } from "../codex/limits.js";
+import {
+  MAX_PREVIEW_CHARS,
+  truncateText,
+} from "../domain/session-text.js";
 
 export const MAX_SEARCH_QUERY_CHARS = 200;
 

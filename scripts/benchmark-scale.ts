@@ -1,7 +1,7 @@
 import { chmod, mkdir, mkdtemp, rename, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { performance } from "node:perf_hooks";
-import { createCodexSessionRepository } from "../src/server/repository/create-session-repository.js";
+import { createCodexSessionRepository } from "../src/server/create-session-repository.js";
 
 const SESSION_COUNT = 3_000;
 const MIN_CORPUS_BYTES = 100 * 1024 * 1024;

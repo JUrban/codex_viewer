@@ -3,13 +3,15 @@ import type {
   DomainDirectiveRecord,
   DomainMessageRecord,
   DomainTimelineRecord,
-} from "../domain/session-domain.js";
+} from "../../domain/session-domain.js";
 import {
-  MAX_DIRECTIVE_CHARS,
-  MAX_MESSAGE_CHARS,
   MAX_PREVIEW_CHARS,
   normalizeSessionTitle,
   truncateText,
+} from "../../domain/session-text.js";
+import {
+  MAX_DIRECTIVE_CHARS,
+  MAX_MESSAGE_CHARS,
 } from "./limits.js";
 import { isObject } from "./rollout-decoder.js";
 

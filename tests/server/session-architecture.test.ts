@@ -1,3 +1,5 @@
+import { readdir, readFile } from "node:fs/promises";
+import { join, resolve } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { SessionApiMapper } from "../../src/server/api/session-api-mapper.js";
 import type {
@@ -76,6 +78,32 @@ const normalized: NormalizedSession = {
 };
 
 describe("server architecture boundaries", () => {
+  it("keeps generic server modules independent from the Codex adapter", async () => {
+    const genericDirectories = [
+      "api",
+      "domain",
+      "http",
+      "repository",
+      "search",
+      "security",
+      "source",
+    ];
+    const files = (
+      await Promise.all(
+        genericDirectories.map((directory) =>
+          typescriptFiles(resolve("src/server", directory))
+        ),
+      )
+    ).flat();
+
+    for (const file of files) {
+      const source = await readFile(file, "utf8");
+      expect(source, file).not.toMatch(
+        /(?:from\s+|import\s*\()["'][^"']*adapters\/codex/,
+      );
+    }
+  });
+
   it("maps domain values exactly without leaking private summary fields or mutable references", () => {
     const mapper = new SessionApiMapper();
     const detail = mapper.detail(7, session);
@@ -200,6 +228,18 @@ describe("server architecture boundaries", () => {
     expect(byTitle.get("Source B child")?.parentId).toBeNull();
   });
 });
+
+async function typescriptFiles(directory: string): Promise<string[]> {
+  const entries = await readdir(directory, { withFileTypes: true });
+  const files = await Promise.all(
+    entries.map((entry) => {
+      const path = join(directory, entry.name);
+      if (entry.isDirectory()) return typescriptFiles(path);
+      return entry.isFile() && entry.name.endsWith(".ts") ? [path] : [];
+    }),
+  );
+  return files.flat();
+}
 
 function snapshotOf(value: NormalizedSession): CatalogSnapshot {
   return {

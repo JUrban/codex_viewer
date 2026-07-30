@@ -1,5 +1,5 @@
 import { basename } from "node:path";
-import type { AgentIdentity } from "../../shared/domain.js";
+import type { AgentIdentity } from "../../../shared/domain.js";
 import { nonEmptyAgentIdentity, taskNameFromAgentPath } from "./agent-identity.js";
 import type { DecodedRollout } from "./rollout-decoder.js";
 import { isObject } from "./rollout-decoder.js";

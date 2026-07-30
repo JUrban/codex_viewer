@@ -3,9 +3,9 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   MAX_DIRECTIVE_CHARS,
-  MAX_PREVIEW_CHARS,
   MAX_TOOL_DETAIL_CHARS,
-} from "../../src/server/codex/limits.js";
+} from "../../src/server/adapters/codex/limits.js";
+import { MAX_PREVIEW_CHARS } from "../../src/server/domain/session-text.js";
 import {
   fixtureHome,
   normalizeFixture,

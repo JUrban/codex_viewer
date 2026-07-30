@@ -2,8 +2,11 @@ import type {
   DomainInternalEventRecord,
   DomainTokenRecord,
   DomainTokenUsageCounters,
-} from "../domain/session-domain.js";
-import { MAX_PREVIEW_CHARS, truncateText } from "./limits.js";
+} from "../../domain/session-domain.js";
+import {
+  MAX_PREVIEW_CHARS,
+  truncateText,
+} from "../../domain/session-text.js";
 import { isObject } from "./rollout-decoder.js";
 
 export function reasoningInternalItem(

@@ -5,7 +5,12 @@ import type {
   DomainSessionOrigin,
   DomainTimelineRecord,
   NormalizedSession,
-} from "../domain/session-domain.js";
+} from "../../domain/session-domain.js";
+import {
+  MAX_PREVIEW_CHARS,
+  normalizeSessionTitle,
+  truncateText,
+} from "../../domain/session-text.js";
 import {
   internalItem,
   internalItemFromPayload,
@@ -17,11 +22,6 @@ import {
   type MessageCandidate,
 } from "./message-normalizer.js";
 import type { SessionMetadata } from "./identity-resolver.js";
-import {
-  MAX_PREVIEW_CHARS,
-  normalizeSessionTitle,
-  truncateText,
-} from "./limits.js";
 import {
   parseResponseItem,
   type ParsedResponseItem,

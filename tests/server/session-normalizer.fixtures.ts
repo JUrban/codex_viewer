@@ -1,12 +1,12 @@
 import { resolve } from "node:path";
-import { IdentityResolver, type SessionMetadata } from "../../src/server/codex/identity-resolver.js";
+import { IdentityResolver, type SessionMetadata } from "../../src/server/adapters/codex/identity-resolver.js";
 import {
   WholeFileRolloutDecoder,
   type DecodedRecord,
   type DecodedRollout,
-} from "../../src/server/codex/rollout-decoder.js";
-import { DefaultSessionNormalizer } from "../../src/server/codex/session-normalizer.js";
-import { PathPolicy } from "../../src/server/security/path-policy.js";
+} from "../../src/server/adapters/codex/rollout-decoder.js";
+import { DefaultSessionNormalizer } from "../../src/server/adapters/codex/session-normalizer.js";
+import { PathPolicy } from "../../src/server/adapters/codex/path-policy.js";
 
 export const fixtureHome = resolve("tests/fixtures/codex-home");
 

@@ -1,6 +1,6 @@
 import { lstat, realpath, stat } from "node:fs/promises";
 import { basename, relative, resolve, sep } from "node:path";
-import { opaqueIdForPath } from "./opaque-id.js";
+import { opaqueIdForPath } from "../../security/opaque-id.js";
 
 const ROLLOUT_NAME = /^rollout-[A-Za-z0-9][A-Za-z0-9._-]*\.jsonl$/;
 

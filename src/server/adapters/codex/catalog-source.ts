@@ -1,5 +1,5 @@
-import type { Diagnostic } from "../../shared/domain.js";
-import type { RolloutDescriptor } from "../security/path-policy.js";
+import type { Diagnostic } from "../../../shared/domain.js";
+import type { RolloutDescriptor } from "./path-policy.js";
 
 export interface CatalogEntry {
   descriptor: RolloutDescriptor;

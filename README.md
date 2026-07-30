@@ -108,6 +108,9 @@ SessionSource adapters
 
 The Codex adapter owns `sessions/` and `archived_sessions/` discovery, JSONL
 decoding, file fingerprints, format recovery, and Codex metadata extraction.
+Its implementation lives under `src/server/adapters/codex`; generic server
+modules do not import the adapter directly, and the root composition factory
+connects it to the session repository.
 The aggregate catalog knows only source descriptors and normalized sessions.
 It namespaces session identity by source instance, so future adapters can
 publish overlapping native session IDs safely.

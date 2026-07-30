@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { IdentityResolver } from "../../src/server/codex/identity-resolver.js";
-import { MAX_SESSION_TITLE_CHARS } from "../../src/server/codex/limits.js";
-import { DefaultSessionNormalizer } from "../../src/server/codex/session-normalizer.js";
+import { IdentityResolver } from "../../src/server/adapters/codex/identity-resolver.js";
+import { DefaultSessionNormalizer } from "../../src/server/adapters/codex/session-normalizer.js";
+import { MAX_SESSION_TITLE_CHARS } from "../../src/server/domain/session-text.js";
 import {
   decodedRollout,
   normalizeFixture,

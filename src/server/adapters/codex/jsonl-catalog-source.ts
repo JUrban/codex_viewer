@@ -1,7 +1,7 @@
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
-import type { Diagnostic } from "../../shared/domain.js";
-import type { PathPolicy, RolloutDescriptor } from "../security/path-policy.js";
+import type { Diagnostic } from "../../../shared/domain.js";
+import type { PathPolicy, RolloutDescriptor } from "./path-policy.js";
 import type { CatalogDiscovery, CatalogEntry, CodexCatalogSource } from "./catalog-source.js";
 
 export class JsonlCatalogSource implements CodexCatalogSource {

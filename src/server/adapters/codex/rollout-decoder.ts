@@ -1,7 +1,7 @@
 import { createReadStream } from "node:fs";
 import { StringDecoder } from "node:string_decoder";
-import type { Diagnostic } from "../../shared/domain.js";
-import type { RolloutDescriptor } from "../security/path-policy.js";
+import type { Diagnostic } from "../../../shared/domain.js";
+import type { RolloutDescriptor } from "./path-policy.js";
 import { MAX_JSONL_LINE_BYTES } from "./limits.js";
 
 export interface DecodedRecord {

@@ -2,7 +2,7 @@ import { mkdir, realpath, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { opaqueIdForPath } from "../../src/server/security/opaque-id.js";
-import { PathPolicy } from "../../src/server/security/path-policy.js";
+import { PathPolicy } from "../../src/server/adapters/codex/path-policy.js";
 import { createTempDirectory } from "../helpers/temp-directories.js";
 
 describe("PathPolicy", () => {

@@ -3,15 +3,15 @@ import type {
   DomainDiagnostic,
   DomainSessionOrigin,
   NormalizedSession,
-} from "../domain/session-domain.js";
-import { opaqueIdForParts } from "../security/opaque-id.js";
-import { PathPolicy, type RolloutDescriptor } from "../security/path-policy.js";
+} from "../../domain/session-domain.js";
+import { opaqueIdForParts } from "../../security/opaque-id.js";
+import { PathPolicy, type RolloutDescriptor } from "./path-policy.js";
 import type {
   SessionSource,
   SessionSourceDescriptor,
   SessionSourceSnapshot,
   SourceSessionEntry,
-} from "../source/session-source.js";
+} from "../../source/session-source.js";
 import { IdentityResolver } from "./identity-resolver.js";
 import { JsonlCatalogSource } from "./jsonl-catalog-source.js";
 import { DECODER_VERSION } from "./limits.js";

@@ -1,4 +1,4 @@
-import type { DomainTimelineRecord } from "../domain/session-domain.js";
+import type { DomainTimelineRecord } from "../../domain/session-domain.js";
 import {
   internalItem,
   reasoningInternalItem,
