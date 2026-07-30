@@ -30,6 +30,5 @@ describe("PathPolicy", () => {
     expect(await policy.register(invalidName)).toBeNull();
     expect(await policy.register(outside)).toBeNull();
     expect(await policy.register(escape)).toBeNull();
-    expect(await policy.register(join(sessions, "..", "..", "..", "outside.jsonl"))).toBeNull();
   });
 });

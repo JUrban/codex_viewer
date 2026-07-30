@@ -143,9 +143,6 @@ function parseListQuery(params: URLSearchParams): SessionListQuery {
   if (project !== undefined) query.project = project;
   if (from !== undefined) query.from = from;
   if (to !== undefined) query.to = to;
-  if (params.has("archived")) {
-    invalid("archived is no longer supported; use archiveScope");
-  }
   if (archiveScope !== undefined) {
     if (
       archiveScope !== "active" &&

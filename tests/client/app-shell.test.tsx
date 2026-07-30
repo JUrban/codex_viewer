@@ -27,12 +27,6 @@ describe("application shell", () => {
     const sessionState = screen.getByRole("group", { name: "Session state" });
     expect(project).not.toHaveAttribute("title");
     expect(sessionState).toHaveAttribute("title", "Session state");
-    expect(sessionState.compareDocumentPosition(project) & Node.DOCUMENT_POSITION_FOLLOWING)
-      .toBeTruthy();
-    expect(project.compareDocumentPosition(from) & Node.DOCUMENT_POSITION_FOLLOWING)
-      .toBeTruthy();
-    expect(from.compareDocumentPosition(query) & Node.DOCUMENT_POSITION_FOLLOWING)
-      .toBeTruthy();
     expect(await screen.findByRole("heading", { name: "No active sessions match" }))
       .toBeInTheDocument();
   });

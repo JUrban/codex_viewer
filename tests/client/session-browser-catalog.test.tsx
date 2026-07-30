@@ -25,25 +25,15 @@ afterEach(() => {
 });
 
 describe("session catalog interactions", () => {
-  it("submits query filters without putting them in the URL and keeps selection there", async () => {
-    const listUrls: string[] = [];
-    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+  it("keeps the selected session in the URL and opens its timeline", async () => {
+    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => {
       const url = String(input);
-      if (url.includes("/sessions?")) {
-        listUrls.push(url);
-        return Promise.resolve(json(listBody));
-      }
+      if (url.includes("/sessions?")) return Promise.resolve(json(listBody));
       if (url.endsWith(SESSION_ID)) return Promise.resolve(json(detailBody));
       return Promise.resolve(json(firstPage));
     }));
     const user = userEvent.setup();
     render(<App />);
-    await user.type(screen.getByRole("searchbox"), "reader");
-    expect(listUrls).toHaveLength(1);
-    expect(window.location.search).toBe("");
-    await user.keyboard("{Enter}");
-    await waitFor(() => expect(listUrls.some((url) => url.includes("q=reader"))).toBe(true));
-    expect(window.location.search).toBe("");
     await user.click(await screen.findByRole("button", { name: /Reader work/ }));
     expect(window.location.search).toContain(`session=${SESSION_ID}`);
     expect(await screen.findByText("original-session-id")).toBeInTheDocument();

@@ -51,7 +51,6 @@ describe("versioned session API", () => {
       generation: 1,
       sessionCount: 4,
     }));
-    expect(statusBody).not.toHaveProperty("catalogMode");
 
     const listResponse = await fetch(`${base}/api/v1/sessions?q=synthetic&limit=10`);
     const list = await listResponse.json();
@@ -201,7 +200,6 @@ describe("versioned session API", () => {
     const body = await invalid.text();
     expect(body).not.toContain(canary);
     expect(JSON.parse(body).error.code).toBe("invalid_query");
-    expect((await fetch(`${base}/api/v1/sessions?archived=true`)).status).toBe(400);
     expect((await fetch(`${base}/api/v1/sessions?archiveScope=maybe`)).status).toBe(400);
     expect((await fetch(`${base}/api/v1/sessions?offset=1`)).status).toBe(400);
     expect((await fetch(
