@@ -71,7 +71,7 @@ export class DefaultSessionRepository implements SessionRepository {
   }
 
   async refresh(): Promise<CatalogGeneration> {
-    return (await this.#store.refresh()).generation;
+    return (await this.#store.refresh()).catalogGeneration;
   }
 
   async getStatus(): Promise<StatusResponse> {
@@ -86,7 +86,9 @@ export class DefaultSessionRepository implements SessionRepository {
   async getSession(id: SessionId): Promise<SessionDetailResponse | null> {
     const snapshot = await this.#store.current();
     const session = this.#queries.session(snapshot, id);
-    return session === null ? null : this.#mapper.detail(snapshot.generation, session);
+    return session === null
+      ? null
+      : this.#mapper.detail(session.revision, session.normalized.session);
   }
 
   async getItems(id: SessionId, query: ItemPageQuery): Promise<ItemPageResponse | null> {
@@ -101,10 +103,15 @@ export class DefaultSessionRepository implements SessionRepository {
     query: ToolDetailQuery,
   ): Promise<ToolDetailResponse | null> {
     const snapshot = await this.#store.current();
-    const detail = this.#queries.toolDetail(snapshot, id, itemId, query.generation);
+    const detail = this.#queries.toolDetail(
+      snapshot,
+      id,
+      itemId,
+      query.sessionRevision,
+    );
     return detail === null
       ? null
-      : this.#mapper.toolDetail(snapshot.generation, id, itemId, detail);
+      : this.#mapper.toolDetail(query.sessionRevision, id, itemId, detail);
   }
 
   async getDirectiveDetail(
@@ -117,10 +124,10 @@ export class DefaultSessionRepository implements SessionRepository {
       snapshot,
       id,
       itemId,
-      query.generation,
+      query.sessionRevision,
     );
     return detail === null
       ? null
-      : this.#mapper.directiveDetail(snapshot.generation, id, itemId, detail);
+      : this.#mapper.directiveDetail(query.sessionRevision, id, itemId, detail);
   }
 }

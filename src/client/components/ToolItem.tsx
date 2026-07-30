@@ -1,26 +1,29 @@
 import { useCallback, useState } from "react";
 import type { ToolDetailResponse } from "../../shared/api-contract";
-import type { ToolItem as Tool } from "../../shared/domain";
+import type {
+  SessionRevision,
+  ToolItem as Tool,
+} from "../../shared/domain";
 import { api } from "../api/client";
 import { useLazyDetail } from "../state/use-lazy-detail";
 
 interface ToolItemProps {
   item: Tool;
   sessionId: string;
-  generation: number;
+  sessionRevision: SessionRevision;
   onStale: () => void;
 }
 
-export function ToolItem({ item, sessionId, generation, onStale }: ToolItemProps) {
+export function ToolItem({ item, sessionId, sessionRevision, onStale }: ToolItemProps) {
   const [open, setOpen] = useState(false);
   const loadDetail = useCallback(
     (signal: AbortSignal): Promise<ToolDetailResponse> =>
-      api.tool(sessionId, item.id, generation, signal),
-    [generation, item.id, sessionId],
+      api.tool(sessionId, item.id, sessionRevision, signal),
+    [item.id, sessionId, sessionRevision],
   );
   const { detail, error } = useLazyDetail({
     enabled: open && item.hasDetail,
-    generation,
+    sessionRevision,
     load: loadDetail,
     unavailableMessage: "Tool detail unavailable",
     onStale,

@@ -1,4 +1,13 @@
-import { chmod, mkdir, mkdtemp, rename, rm, stat, writeFile } from "node:fs/promises";
+import {
+  appendFile,
+  chmod,
+  mkdir,
+  mkdtemp,
+  rename,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import { join } from "node:path";
 import { performance } from "node:perf_hooks";
 import { createCodexSessionRepository } from "../src/server/create-session-repository.js";
@@ -9,12 +18,11 @@ const FILLER_CHARS = 18_000;
 
 interface Measurement {
   milliseconds: number;
-  rssBytes: number;
+  rssAfterBytes: number;
 }
 
 const root = await mkdtemp("/private/tmp/codex-viewer-scale-");
 const sessions = join(root, "sessions", "2026", "07", "28");
-let peakRssBytes = process.memoryUsage().rss;
 
 try {
   await mkdir(sessions, { recursive: true });
@@ -27,40 +35,97 @@ try {
   const repository = await createCodexSessionRepository(root);
   const coldCatalog = await measure(() => repository.list({ limit: 200 }));
   const firstList = coldCatalog.value;
+  const noChangeRefresh = await measure(() => repository.refresh());
+  if (noChangeRefresh.value !== firstList.catalogGeneration) {
+    throw new Error("A no-change refresh advanced catalogGeneration");
+  }
   const search = await measure(() => repository.list({ q: "needle-scale", limit: 200 }));
   const absentSearch = await measure(() =>
     repository.list({ q: "absent-search-value", limit: 200 }));
   const selected = search.value.sessions[0];
   if (selected === undefined) throw new Error("Scale search did not find the special session");
+  const unrelated = firstList.sessions.find((entry) => entry.session.id !== selected.session.id);
+  if (unrelated === undefined) throw new Error("Scale catalog did not contain an unrelated session");
   const detailFirstPage = await measure(async () => {
     const detail = await repository.getSession(selected.session.id);
+    if (detail === null) throw new Error("Scale session detail disappeared");
     const items = await repository.getItems(selected.session.id, {
-      generation: detail?.generation,
+      sessionRevision: detail.sessionRevision,
       limit: 50,
     });
+    if (items === null) throw new Error("Scale session item page disappeared");
     return { detail, items };
   });
-  const tool = detailFirstPage.value.items?.items.find((item) => item.kind === "tool");
+  const unrelatedDetail = await repository.getSession(unrelated.session.id);
+  if (unrelatedDetail === null) throw new Error("Unrelated scale session detail disappeared");
+  const tool = detailFirstPage.value.items.items.find((item) => item.kind === "tool");
   if (tool?.kind !== "tool") throw new Error("Large tool was not normalized");
   const toolDetail = await repository.getToolDetail(
     selected.session.id,
     tool.id,
-    { generation: detailFirstPage.value.items!.generation },
+    { sessionRevision: detailFirstPage.value.items.sessionRevision },
   );
   if (!toolDetail?.truncated) throw new Error("Large tool detail was not truncated");
-  const message = detailFirstPage.value.items?.items.find((item) => item.kind === "message");
+  const message = detailFirstPage.value.items.items.find((item) => item.kind === "message");
   if (message?.kind !== "message" || message.markdown.length !== 1_000_000) {
     throw new Error("Long message limit was not exercised");
   }
 
   const specialPath = paths[0]!;
-  const beforeMutation = firstList.generation;
-  await writeFile(specialPath, `${await rollout(0, "truncate-replacement", 128)}\n`);
-  const afterTruncate = await repository.refresh();
+  const beforeMutation = firstList.catalogGeneration;
+  const beforeMutatedRevision = detailFirstPage.value.detail.sessionRevision;
+  const unrelatedRevision = unrelatedDetail.sessionRevision;
+  await appendFile(
+    specialPath,
+    `${JSON.stringify({
+      timestamp: "2026-07-28T12:01:00.000Z",
+      type: "response_item",
+      payload: {
+        type: "message",
+        role: "assistant",
+        phase: "final_answer",
+        content: [{ type: "output_text", text: "single-session append" }],
+      },
+    })}\n`,
+  );
+  const appendRefresh = await measure(() => repository.refresh());
+  const afterAppendDetail = await requiredDetail(repository, selected.session.id);
+  const afterAppendUnrelated = await requiredDetail(repository, unrelated.session.id);
+  assertMutationIsolation({
+    label: "append",
+    previousCatalogGeneration: beforeMutation,
+    currentCatalogGeneration: appendRefresh.value,
+    previousMutatedRevision: beforeMutatedRevision,
+    currentMutatedRevision: afterAppendDetail.sessionRevision,
+    unrelatedRevision,
+    currentUnrelatedRevision: afterAppendUnrelated.sessionRevision,
+  });
+  await assertOldRevisionReadable(
+    repository,
+    unrelated.session.id,
+    unrelatedRevision,
+  );
+
   const replacement = `${specialPath}.replacement`;
   await writeFile(replacement, `${await rollout(0, "atomic-replacement", 256)}\n`);
   await rename(replacement, specialPath);
-  const afterReplace = await repository.refresh();
+  const replaceRefresh = await measure(() => repository.refresh());
+  const afterReplaceDetail = await requiredDetail(repository, selected.session.id);
+  const afterReplaceUnrelated = await requiredDetail(repository, unrelated.session.id);
+  assertMutationIsolation({
+    label: "replacement",
+    previousCatalogGeneration: appendRefresh.value,
+    currentCatalogGeneration: replaceRefresh.value,
+    previousMutatedRevision: afterAppendDetail.sessionRevision,
+    currentMutatedRevision: afterReplaceDetail.sessionRevision,
+    unrelatedRevision,
+    currentUnrelatedRevision: afterReplaceUnrelated.sessionRevision,
+  });
+  await assertOldRevisionReadable(
+    repository,
+    unrelated.session.id,
+    unrelatedRevision,
+  );
 
   let permissionProbe: "hidden" | "portable-skip" = "portable-skip";
   try {
@@ -80,15 +145,21 @@ try {
     },
     timingMs: {
       coldCatalog: round(coldCatalog.measurement.milliseconds),
+      noChangeRefresh: round(noChangeRefresh.measurement.milliseconds),
+      singleSessionAppendRefresh: round(appendRefresh.measurement.milliseconds),
+      singleSessionReplaceRefresh: round(replaceRefresh.measurement.milliseconds),
       search: round(search.measurement.milliseconds),
       boundedAbsentSearch: round(absentSearch.measurement.milliseconds),
       detailFirstPage: round(detailFirstPage.measurement.milliseconds),
     },
     memory: {
-      peakRssBytes,
-      coldCatalogRssBytes: coldCatalog.measurement.rssBytes,
-      searchRssBytes: search.measurement.rssBytes,
-      detailFirstPageRssBytes: detailFirstPage.measurement.rssBytes,
+      processMaxRssBytes: process.resourceUsage().maxRSS * 1024,
+      coldCatalogRssAfterBytes: coldCatalog.measurement.rssAfterBytes,
+      noChangeRefreshRssAfterBytes: noChangeRefresh.measurement.rssAfterBytes,
+      appendRefreshRssAfterBytes: appendRefresh.measurement.rssAfterBytes,
+      replaceRefreshRssAfterBytes: replaceRefresh.measurement.rssAfterBytes,
+      searchRssAfterBytes: search.measurement.rssAfterBytes,
+      detailFirstPageRssAfterBytes: detailFirstPage.measurement.rssAfterBytes,
     },
     responseBytes: {
       firstList: jsonBytes(firstList),
@@ -107,10 +178,19 @@ try {
       permissionProbe,
     },
     mutations: {
-      before: beforeMutation,
-      afterTruncate,
-      afterReplace,
-      generationsAdvanced: beforeMutation < afterTruncate && afterTruncate < afterReplace,
+      catalogGeneration: {
+        before: beforeMutation,
+        afterAppend: appendRefresh.value,
+        afterReplace: replaceRefresh.value,
+      },
+      mutatedSessionRevisionChanged: {
+        afterAppend: beforeMutatedRevision !== afterAppendDetail.sessionRevision,
+        afterReplace: afterAppendDetail.sessionRevision !== afterReplaceDetail.sessionRevision,
+      },
+      unrelatedSessionRevisionStable:
+        unrelatedRevision === afterAppendUnrelated.sessionRevision &&
+        unrelatedRevision === afterReplaceUnrelated.sessionRevision,
+      unrelatedOldRevisionReadable: true,
     },
   };
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
@@ -155,7 +235,7 @@ async function generateCorpus(directory: string): Promise<string[]> {
       }
       const tail = index === 1 ? "\n{\"timestamp\":\"partial" : "\n";
       await writeFile(path, `${(await Promise.all(records)).join("\n")}${tail}`);
-      paths.push(path);
+      paths[index] = path;
     });
     await Promise.all(batch);
   }
@@ -211,9 +291,8 @@ async function measure<T>(action: () => Promise<T>): Promise<{
   const value = await action();
   const measurement = {
     milliseconds: performance.now() - startedAt,
-    rssBytes: process.memoryUsage().rss,
+    rssAfterBytes: process.memoryUsage().rss,
   };
-  peakRssBytes = Math.max(peakRssBytes, measurement.rssBytes);
   return { value, measurement };
 }
 
@@ -223,4 +302,46 @@ function jsonBytes(value: unknown): number {
 
 function round(value: number): number {
   return Math.round(value * 10) / 10;
+}
+
+type Repository = Awaited<ReturnType<typeof createCodexSessionRepository>>;
+
+async function requiredDetail(repository: Repository, sessionId: string) {
+  const detail = await repository.getSession(sessionId);
+  if (detail === null) throw new Error(`Scale session disappeared: ${sessionId}`);
+  return detail;
+}
+
+function assertMutationIsolation(input: {
+  label: string;
+  previousCatalogGeneration: number;
+  currentCatalogGeneration: number;
+  previousMutatedRevision: string;
+  currentMutatedRevision: string;
+  unrelatedRevision: string;
+  currentUnrelatedRevision: string;
+}): void {
+  if (input.currentCatalogGeneration <= input.previousCatalogGeneration) {
+    throw new Error(`${input.label} did not advance catalogGeneration`);
+  }
+  if (input.currentMutatedRevision === input.previousMutatedRevision) {
+    throw new Error(`${input.label} did not change the mutated sessionRevision`);
+  }
+  if (input.currentUnrelatedRevision !== input.unrelatedRevision) {
+    throw new Error(`${input.label} changed an unrelated sessionRevision`);
+  }
+}
+
+async function assertOldRevisionReadable(
+  repository: Repository,
+  sessionId: string,
+  sessionRevision: string,
+): Promise<void> {
+  const page = await repository.getItems(sessionId, {
+    sessionRevision,
+    limit: 1,
+  });
+  if (page === null || page.sessionRevision !== sessionRevision) {
+    throw new Error("An unrelated session's old revision was not readable");
+  }
 }

@@ -16,8 +16,10 @@ import {
   firstPage,
   json,
   listBody,
+  NEXT_SESSION_REVISION,
   OTHER_ID,
   SESSION_ID,
+  SESSION_REVISION,
   toolItem,
 } from "./session-browser.fixtures";
 
@@ -35,7 +37,7 @@ describe("session timeline interactions", () => {
     const fetchMock = vi.fn((input: RequestInfo | URL) => {
       const url = String(input);
       if (url.includes("/items/tool-2/tool")) return Promise.resolve(json({
-        generation: 1, sessionId: SESSION_ID, itemId: "tool-2",
+        sessionRevision: SESSION_REVISION, sessionId: SESSION_ID, itemId: "tool-2",
         input: "<unsafe stays text>", output: "done", truncated: true,
       }));
       if (url.includes("afterOrdinal=2")) return Promise.resolve(json({
@@ -62,6 +64,10 @@ describe("session timeline interactions", () => {
     await user.click(screen.getByRole("button", { name: "Show tool detail" }));
     expect(await screen.findByText("<unsafe stays text>")).toBeInTheDocument();
     expect(screen.queryByText("unsafe stays text", { selector: "em" })).not.toBeInTheDocument();
+    expect(fetchMock.mock.calls.every(([url]) =>
+      !String(url).includes("/items") ||
+      String(url).includes(`sessionRevision=${SESSION_REVISION}`)
+    )).toBe(true);
   });
 
   it("keeps load more available when the loaded range is fully filtered", async () => {
@@ -106,7 +112,7 @@ describe("session timeline interactions", () => {
     });
     const other = { ...baseSession, id: OTHER_ID, title: "Other session" };
     const otherDetail = {
-      generation: 1,
+      sessionRevision: SESSION_REVISION,
       session: { ...other, diagnostics: [], itemCount: 1 },
     };
     vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => {
@@ -154,7 +160,7 @@ describe("session timeline interactions", () => {
     vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => {
       const url = String(input);
       return Promise.resolve(json({
-        generation: 1,
+        sessionRevision: SESSION_REVISION,
         sessionId: url.includes(OTHER_ID) ? OTHER_ID : SESSION_ID,
         itemId: "tool-2",
         input: null,
@@ -164,7 +170,7 @@ describe("session timeline interactions", () => {
     }));
     const props = {
       items: [toolItem],
-      generation: 1,
+      sessionRevision: SESSION_REVISION,
       hasMore: false,
       loading: false,
       onLoadMore: vi.fn(),
@@ -180,19 +186,19 @@ describe("session timeline interactions", () => {
   });
 
   it.each(["tool", "directive"] as const)(
-    "waits for a new generation before retrying stale %s detail",
+    "waits for a new session revision before retrying stale %s detail",
     async (kind) => {
       const onStale = vi.fn();
       const fetchMock = vi.fn((input: RequestInfo | URL) => {
         const url = String(input);
-        if (url.includes("generation=1")) {
+        if (url.includes(`sessionRevision=${SESSION_REVISION}`)) {
           return Promise.resolve(
-            json({ error: { code: "stale_generation", message: "stale" } }, 409),
+            json({ error: { code: "stale_session_revision", message: "stale" } }, 409),
           );
         }
         return Promise.resolve(json(kind === "tool"
           ? {
-              generation: 2,
+              sessionRevision: NEXT_SESSION_REVISION,
               sessionId: SESSION_ID,
               itemId: "tool-2",
               input: null,
@@ -200,7 +206,7 @@ describe("session timeline interactions", () => {
               truncated: false,
             }
           : {
-              generation: 2,
+              sessionRevision: NEXT_SESSION_REVISION,
               sessionId: SESSION_ID,
               itemId: "directive-4",
               text: "Fresh directive",
@@ -208,30 +214,30 @@ describe("session timeline interactions", () => {
             }));
       });
       vi.stubGlobal("fetch", fetchMock);
-      const subject = (generation: number) => kind === "tool"
+      const subject = (sessionRevision: string) => kind === "tool"
         ? <ToolItem
             item={toolItem}
             sessionId={SESSION_ID}
-            generation={generation}
+            sessionRevision={sessionRevision}
             onStale={onStale}
           />
         : <DirectiveItem
             item={directiveItem}
             sessionId={SESSION_ID}
-            generation={generation}
+            sessionRevision={sessionRevision}
             onStale={onStale}
           />;
-      const { rerender } = render(subject(1));
+      const { rerender } = render(subject(SESSION_REVISION));
       fireEvent.click(screen.getByRole("button", {
         name: kind === "tool" ? "Show tool detail" : "Show directive",
       }));
       await waitFor(() => expect(onStale).toHaveBeenCalledTimes(1));
-      rerender(subject(1));
+      rerender(subject(SESSION_REVISION));
       await act(async () => Promise.resolve());
       expect(fetchMock.mock.calls.filter(
-        ([url]) => String(url).includes("generation=1"),
+        ([url]) => String(url).includes(`sessionRevision=${SESSION_REVISION}`),
       )).toHaveLength(1);
-      rerender(subject(2));
+      rerender(subject(NEXT_SESSION_REVISION));
       expect(await screen.findByText(
         kind === "tool" ? "Fresh tool detail" : "Fresh directive",
       )).toBeInTheDocument();
@@ -245,7 +251,7 @@ describe("session timeline interactions", () => {
     const fetchMock = vi.fn((input: RequestInfo | URL) => {
       const url = String(input);
       return Promise.resolve(json({
-        generation: 1,
+        sessionRevision: SESSION_REVISION,
         sessionId: url.includes(OTHER_ID) ? OTHER_ID : SESSION_ID,
         itemId: "directive-4",
         text: url.includes(OTHER_ID) ? "Other directive" : "Reader directive",
@@ -255,7 +261,7 @@ describe("session timeline interactions", () => {
     vi.stubGlobal("fetch", fetchMock);
     const props = {
       items: [directiveItem],
-      generation: 1,
+      sessionRevision: SESSION_REVISION,
       hasMore: false,
       loading: false,
       onLoadMore: vi.fn(),
@@ -272,25 +278,63 @@ describe("session timeline interactions", () => {
     expect(await screen.findByText("Other directive")).toBeInTheDocument();
   });
 
-  it("restarts from the first page when a generation becomes stale", async () => {
+  it("restarts from the first page when a session revision becomes stale", async () => {
     let detailCalls = 0;
     let itemCalls = 0;
     vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => {
       const url = String(input);
       if (url.includes("/items")) {
         itemCalls += 1;
-        if (itemCalls === 1) return Promise.resolve(json({ error: { code: "stale_generation", message: "stale" } }, 409));
-        return Promise.resolve(json({ ...firstPage, generation: 2, hasMore: false }));
+        if (itemCalls === 1) {
+          return Promise.resolve(json({
+            error: { code: "stale_session_revision", message: "stale" },
+          }, 409));
+        }
+        return Promise.resolve(json({
+          ...firstPage,
+          sessionRevision: NEXT_SESSION_REVISION,
+          hasMore: false,
+        }));
       }
       if (url.endsWith(SESSION_ID)) {
         detailCalls += 1;
-        return Promise.resolve(json({ ...detailBody, generation: detailCalls }));
+        return Promise.resolve(json({
+          ...detailBody,
+          sessionRevision: detailCalls > 1 ? NEXT_SESSION_REVISION : SESSION_REVISION,
+        }));
       }
       return Promise.resolve(json(listBody));
     }));
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: /Reader work/ }));
     expect(await screen.findByText("Hello")).toBeInTheDocument();
+    expect(detailCalls).toBe(2);
+    expect(itemCalls).toBe(2);
+  });
+
+  it("bounds the detail-to-first-page retry during continuous session churn", async () => {
+    let detailCalls = 0;
+    let itemCalls = 0;
+    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/items")) {
+        itemCalls += 1;
+        return Promise.resolve(json({
+          error: { code: "stale_session_revision", message: "Session keeps changing" },
+        }, 409));
+      }
+      if (url.endsWith(SESSION_ID)) {
+        detailCalls += 1;
+        return Promise.resolve(json({
+          ...detailBody,
+          sessionRevision: detailCalls > 1 ? NEXT_SESSION_REVISION : SESSION_REVISION,
+        }));
+      }
+      return Promise.resolve(json(listBody));
+    }));
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: /Reader work/ }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Session keeps changing");
     expect(detailCalls).toBe(2);
     expect(itemCalls).toBe(2);
   });

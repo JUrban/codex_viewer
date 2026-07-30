@@ -13,6 +13,7 @@ import {
   CHILD_ID,
   entry,
   SESSION_ID,
+  SESSION_REVISION,
 } from "./session-browser.fixtures";
 
 afterEach(() => {
@@ -36,7 +37,7 @@ describe("session browser components", () => {
         summary: "Visible reasoning summary",
       }]}
       sessionId={SESSION_ID}
-      generation={1}
+      sessionRevision={SESSION_REVISION}
       hasMore={false}
       loading={false}
       onLoadMore={vi.fn()}
@@ -75,7 +76,7 @@ describe("session browser components", () => {
         },
       }]}
       sessionId={SESSION_ID}
-      generation={1}
+      sessionRevision={SESSION_REVISION}
       hasMore={false}
       loading={false}
       onLoadMore={vi.fn()}
@@ -113,7 +114,7 @@ describe("session browser components", () => {
         },
       ]}
       sessionId={SESSION_ID}
-      generation={1}
+      sessionRevision={SESSION_REVISION}
       hasMore={false}
       loading={false}
       onLoadMore={vi.fn()}

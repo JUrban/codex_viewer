@@ -60,24 +60,24 @@ describe("DefaultSessionRepository", () => {
     release();
     expect(await status).toEqual(expect.objectContaining({
       available: false,
-      generation: 1,
+      catalogGeneration: 1,
       sessionCount: 0,
     }));
-    expect((await list).generation).toBe(1);
+    expect((await list).catalogGeneration).toBe(1);
     expect(discoveries).toBe(1);
-    expect((await repository.getStatus()).generation).toBe(1);
+    expect((await repository.getStatus()).catalogGeneration).toBe(1);
     expect(discoveries).toBe(1);
     now = DEFAULT_CATALOG_FRESHNESS_MS - 1;
-    expect((await repository.getStatus()).generation).toBe(1);
+    expect((await repository.getStatus()).catalogGeneration).toBe(1);
     expect(discoveries).toBe(1);
     now = DEFAULT_CATALOG_FRESHNESS_MS;
-    expect((await repository.getStatus()).generation).toBe(1);
+    expect((await repository.getStatus()).catalogGeneration).toBe(1);
     expect(discoveries).toBe(2);
     expect(await repository.refresh()).toBe(1);
     expect(discoveries).toBe(3);
   });
 
-  it("publishes linked summaries, pages one immutable generation, and replaces it after append", async () => {
+  it("publishes linked summaries, pages one immutable revision, and replaces it after append", async () => {
     const { home, repository } = await fixtureRepository();
     const first = await repository.list({});
     expect(first.sessions).toHaveLength(3);
@@ -91,20 +91,26 @@ describe("DefaultSessionRepository", () => {
     expect(child.session.parentId).toBe(parent.session.id);
     expect(parent.session.childIds).toContain(child.session.id);
 
-    const page = await repository.getItems(parent.session.id, { limit: 2 });
+    const initialDetail = await repository.getSession(parent.session.id);
+    const page = await repository.getItems(parent.session.id, {
+      sessionRevision: initialDetail!.sessionRevision,
+      limit: 2,
+    });
     expect(page?.hasMore).toBe(true);
     expect(page?.nextAfterOrdinal).not.toBeNull();
     await expect(repository.getItems(parent.session.id, {
       afterOrdinal: page!.nextAfterOrdinal!,
+      sessionRevision: initialDetail!.sessionRevision,
       limit: 2,
-    })).rejects.toMatchObject<Partial<RepositoryQueryError>>({ code: "invalid_query" });
+    })).resolves.not.toBeNull();
     const allItems = await repository.getItems(parent.session.id, {
+      sessionRevision: initialDetail!.sessionRevision,
       limit: 200,
     });
     const directive = allItems!.items.find((item) => item.kind === "directive")!;
     expect(JSON.stringify(allItems)).not.toContain("DIRECTIVE_DETAIL_CANARY");
     expect(await repository.getDirectiveDetail(parent.session.id, directive.id, {
-      generation: allItems!.generation,
+      sessionRevision: allItems!.sessionRevision,
     })).toEqual(expect.objectContaining({
       sessionId: parent.session.id,
       itemId: directive.id,
@@ -119,21 +125,25 @@ describe("DefaultSessionRepository", () => {
     const previous = await readFile(rollout, "utf8");
     await writeFile(
       rollout,
-      `${previous}{"timestamp":"2026-07-28T10:00:10.000Z","type":"response_item","payload":{"type":"message","role":"assistant","phase":"final","content":[{"type":"output_text","text":"Appended generation"}]}}\n`,
+      `${previous}{"timestamp":"2026-07-28T10:00:10.000Z","type":"response_item","payload":{"type":"message","role":"assistant","phase":"final","content":[{"type":"output_text","text":"Appended revision"}]}}\n`,
     );
     await repository.refresh();
     const second = await repository.getSession(parent.session.id);
-    expect(second!.generation).toBeGreaterThan(first.generation);
+    expect(second!.sessionRevision).not.toBe(initialDetail!.sessionRevision);
     expect(second!.session.messageCount).toBe(parent.session.messageCount + 1);
     expect(first.sessions.find((entry) => entry.session.id === parent.session.id)?.session.messageCount)
       .toBe(parent.session.messageCount);
     await expect(repository.getItems(parent.session.id, {
       afterOrdinal: page!.nextAfterOrdinal!,
-      generation: first.generation,
-    })).rejects.toMatchObject<Partial<RepositoryQueryError>>({ code: "stale_generation" });
+      sessionRevision: initialDetail!.sessionRevision,
+    })).rejects.toMatchObject<Partial<RepositoryQueryError>>({
+      code: "stale_session_revision",
+    });
     await expect(repository.getDirectiveDetail(parent.session.id, directive.id, {
-      generation: allItems!.generation,
-    })).rejects.toMatchObject<Partial<RepositoryQueryError>>({ code: "stale_generation" });
+      sessionRevision: allItems!.sessionRevision,
+    })).rejects.toMatchObject<Partial<RepositoryQueryError>>({
+      code: "stale_session_revision",
+    });
 
     const replacement = `${rollout}.replacement`;
     await writeFile(
@@ -144,16 +154,173 @@ describe("DefaultSessionRepository", () => {
     await rename(replacement, rollout);
     await repository.refresh();
     const third = await repository.getSession(parent.session.id);
-    expect(third!.generation).toBeGreaterThan(second!.generation);
+    expect(third!.sessionRevision).not.toBe(second!.sessionRevision);
     expect(third!.session.title).toBe("Replacement trace");
     expect(third!.session.messageCount).toBe(0);
+  });
+
+  it("keeps session A reader requests valid while only session B changes", async () => {
+    const sessionA = normalizedSession("session-a", "Session A", null, [
+      {
+        kind: "message",
+        id: "message-1",
+        ordinal: 1,
+        timestamp: null,
+        role: "user",
+        phase: null,
+        markdown: "first",
+      },
+      {
+        kind: "directive",
+        id: "directive-2",
+        ordinal: 2,
+        timestamp: null,
+        summary: "detail",
+        charCount: 6,
+        truncated: false,
+        hasDetail: true,
+      },
+      {
+        kind: "message",
+        id: "message-3",
+        ordinal: 3,
+        timestamp: null,
+        role: "assistant",
+        phase: "final",
+        markdown: "later",
+      },
+    ]);
+    let sessionAWithDetail: NormalizedSession = {
+      ...sessionA,
+      directiveDetails: new Map([[
+        "directive-2",
+        { text: "secret", truncated: false },
+      ]]),
+    };
+    let sourceSignature = "initial";
+    let sessionB = normalizedSession("session-b", "Session B", null, []);
+    const source: SessionSource = {
+      ...staticSource("mutable", []),
+      async refresh() {
+        return {
+          signature: sourceSignature,
+          sessions: [
+            sourceEntry("session-a", sessionAWithDetail),
+            sourceEntry("session-b", sessionB),
+          ],
+          diagnostics: [],
+        };
+      },
+    };
+    const repository = new DefaultSessionRepository([source]);
+    const list = await repository.list({});
+    const sessionAId = list.sessions.find((entry) => entry.session.title === "Session A")!.session.id;
+    const detail = await repository.getSession(sessionAId);
+    const first = await repository.getItems(sessionAId, {
+      sessionRevision: detail!.sessionRevision,
+      limit: 2,
+    });
+    const directive = first!.items.find((item) => item.kind === "directive")!;
+
+    let latestCatalogGeneration = list.catalogGeneration;
+    for (const change of ["changed-once", "changed-twice"]) {
+      sourceSignature = `session-b-${change}`;
+      sessionB = normalizedSession("session-b", `Session B ${change}`, null, []);
+      const nextCatalogGeneration = await repository.refresh();
+      expect(nextCatalogGeneration).toBeGreaterThan(latestCatalogGeneration);
+      latestCatalogGeneration = nextCatalogGeneration;
+      expect((await repository.getSession(sessionAId))?.sessionRevision)
+        .toBe(detail!.sessionRevision);
+    }
+
+    await expect(repository.getItems(sessionAId, {
+      afterOrdinal: first!.nextAfterOrdinal!,
+      sessionRevision: first!.sessionRevision,
+      limit: 2,
+    })).resolves.toEqual(expect.objectContaining({
+      items: [expect.objectContaining({ id: "message-3" })],
+    }));
+    await expect(repository.getDirectiveDetail(sessionAId, directive.id, {
+      sessionRevision: first!.sessionRevision,
+    })).resolves.toEqual(expect.objectContaining({ text: "secret" }));
+
+    const currentList = await repository.list({});
+    const sessionBId = currentList.sessions.find(
+      (entry) => entry.session.title === "Session B changed-twice",
+    )!.session.id;
+    const sessionBDetail = await repository.getSession(sessionBId);
+    sessionAWithDetail = {
+      ...sessionAWithDetail,
+      session: { ...sessionAWithDetail.session, title: "Session A changed" },
+    };
+    sourceSignature = "session-a-changed";
+    await repository.refresh();
+
+    await expect(repository.getItems(sessionAId, {
+      sessionRevision: first!.sessionRevision,
+      limit: 2,
+    })).rejects.toMatchObject<Partial<RepositoryQueryError>>({
+      code: "stale_session_revision",
+    });
+    await expect(repository.getItems(sessionBId, {
+      sessionRevision: sessionBDetail!.sessionRevision,
+      limit: 2,
+    })).resolves.toEqual(expect.objectContaining({ items: [] }));
+  });
+
+  it("keeps a parent revision stable when source child enumeration order changes", async () => {
+    let sourceSignature = "children-z-a";
+    let childIds = ["child-z", "child-a"];
+    const source: SessionSource = {
+      ...staticSource("reordered-children", []),
+      async refresh() {
+        return {
+          signature: sourceSignature,
+          sessions: [
+            sourceEntry(
+              "parent",
+              normalizedSession("parent", "Parent", null, []),
+            ),
+            ...childIds.map((childId) =>
+              sourceEntry(
+                childId,
+                normalizedSession(childId, childId, null, []),
+                "parent",
+              )
+            ),
+          ],
+          diagnostics: [],
+        };
+      },
+    };
+    const repository = new DefaultSessionRepository([source]);
+    const firstList = await repository.list({});
+    const parentId = firstList.sessions.find(
+      ({ session }) => session.title === "Parent",
+    )!.session.id;
+    const first = await repository.getSession(parentId);
+
+    expect(first?.session.childIds).toEqual(
+      [...first!.session.childIds].sort(),
+    );
+
+    sourceSignature = "children-a-z";
+    childIds = [...childIds].reverse();
+    const nextCatalogGeneration = await repository.refresh();
+    const second = await repository.getSession(parentId);
+
+    expect(nextCatalogGeneration).toBeGreaterThan(firstList.catalogGeneration);
+    expect(second?.session.childIds).toEqual(first?.session.childIds);
+    expect(second?.sessionRevision).toBe(first?.sessionRevision);
   });
 
   it("returns every timeline event type in one unfiltered view", async () => {
     const { repository } = await fixtureRepository();
     const list = await repository.list({});
     const session = list.sessions.find((entry) => entry.session.title === "Synthetic trace")!;
+    const detail = await repository.getSession(session.session.id);
     const page = await repository.getItems(session.session.id, {
+      sessionRevision: detail!.sessionRevision,
       limit: 200,
     });
     expect(new Set(page?.items.map((item) => item.kind))).toEqual(new Set([
@@ -177,9 +344,16 @@ describe("DefaultSessionRepository", () => {
     const { repository } = await fixtureRepository();
     const list = await repository.list({});
     const session = list.sessions.find((entry) => entry.session.title === "Synthetic trace")!;
-    await expect(repository.getItems(session.session.id, { limit: 512 }))
+    const detail = await repository.getSession(session.session.id);
+    await expect(repository.getItems(session.session.id, {
+      sessionRevision: detail!.sessionRevision,
+      limit: 512,
+    }))
       .resolves.not.toBeNull();
-    await expect(repository.getItems(session.session.id, { limit: 513 }))
+    await expect(repository.getItems(session.session.id, {
+      sessionRevision: detail!.sessionRevision,
+      limit: 513,
+    }))
       .rejects.toMatchObject<Partial<RepositoryQueryError>>({ code: "invalid_query" });
   });
 
@@ -324,7 +498,7 @@ describe("DefaultSessionRepository", () => {
     const second = await repository.list({
       offset: first.nextOffset!,
       limit: 200,
-      generation: first.generation,
+      catalogGeneration: first.catalogGeneration,
     });
     expect(second).toMatchObject({ total: 205, hasMore: false, nextOffset: null });
     expect(second.sessions).toHaveLength(5);
@@ -356,7 +530,11 @@ describe("DefaultSessionRepository", () => {
     );
 
     const list = await repository.list({});
-    const page = await repository.getItems(list.sessions[0]!.session.id, { limit: 200 });
+    const detail = await repository.getSession(list.sessions[0]!.session.id);
+    const page = await repository.getItems(list.sessions[0]!.session.id, {
+      sessionRevision: detail!.sessionRevision,
+      limit: 200,
+    });
     expect(page?.hasMore).toBe(true);
     expect(page?.nextAfterOrdinal).toBe(page?.items.at(-1)?.ordinal);
     expect(Buffer.byteLength(JSON.stringify(page?.items), "utf8"))
@@ -408,11 +586,12 @@ function normalizedSession(
 function sourceEntry(
   localId: string,
   normalized: NormalizedSession,
+  parentNativeSessionId: string | null = null,
 ): SourceSessionEntry {
   return {
     localId,
     nativeSessionId: localId,
-    parentNativeSessionId: null,
+    parentNativeSessionId,
     origin: TEST_ORIGIN,
     normalized,
   };

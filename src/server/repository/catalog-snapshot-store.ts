@@ -19,14 +19,19 @@ import type {
   SourceSessionEntry,
 } from "../source/session-source.js";
 import { RefreshCoordinator } from "./refresh-coordinator.js";
+import {
+  SessionRevisionRegistry,
+  type SessionRevisionFactory,
+  type VersionedSession,
+} from "./session-revision-registry.js";
 
 export const DEFAULT_CATALOG_FRESHNESS_MS = 3_000;
 
 export interface CatalogSnapshot {
-  readonly generation: number;
+  readonly catalogGeneration: number;
   readonly signature: string;
   readonly diagnostics: readonly DomainDiagnostic[];
-  readonly sessions: ReadonlyMap<DomainSessionId, NormalizedSession>;
+  readonly sessions: ReadonlyMap<DomainSessionId, VersionedSession>;
   readonly documents: readonly SearchDocument[];
   readonly orderedIds: readonly DomainSessionId[];
   readonly warningCount: number;
@@ -34,6 +39,7 @@ export interface CatalogSnapshot {
 
 export class CatalogSnapshotStore {
   readonly #coordinator = new RefreshCoordinator<CatalogSnapshot>();
+  readonly #revisions: SessionRevisionRegistry;
   readonly #sources: readonly SessionSource[];
   #snapshot: CatalogSnapshot | null = null;
   #lastDiscoveryAt = Number.NEGATIVE_INFINITY;
@@ -42,9 +48,11 @@ export class CatalogSnapshotStore {
     sources: readonly SessionSource[],
     private readonly freshnessMs = DEFAULT_CATALOG_FRESHNESS_MS,
     private readonly now: () => number = performance.now.bind(performance),
+    revisionFactory?: SessionRevisionFactory,
   ) {
     assertUniqueSources(sources);
     this.#sources = [...sources];
+    this.#revisions = new SessionRevisionRegistry(revisionFactory);
   }
 
   async current(): Promise<CatalogSnapshot> {
@@ -81,20 +89,22 @@ export class CatalogSnapshotStore {
     );
     const linked = linkRelationships(loadedSources);
     const diagnostics = [...sourceDiagnostics, ...linked.diagnostics];
-    const { sessions } = linked;
-    const documents = [...sessions.values()].map(buildSearchDocument);
-    const orderedIds = [...sessions.values()]
+    const normalizedSessions = linked.sessions;
+    const documents = [...normalizedSessions.values()].map(buildSearchDocument);
+    const orderedIds = [...normalizedSessions.values()]
       .sort(compareSessions)
       .map((session) => session.session.id);
+    const preparedRevisions = this.#revisions.prepare(normalizedSessions);
     const snapshot: CatalogSnapshot = {
-      generation: (previous?.generation ?? 0) + 1,
+      catalogGeneration: (previous?.catalogGeneration ?? 0) + 1,
       signature,
       diagnostics,
-      sessions,
+      sessions: preparedRevisions.sessions,
       documents,
       orderedIds,
-      warningCount: warningCount(diagnostics, sessions),
+      warningCount: warningCount(diagnostics, normalizedSessions),
     };
+    preparedRevisions.commit();
     this.#snapshot = snapshot;
     return snapshot;
   }
@@ -230,7 +240,10 @@ function linkRelationships(
   const sessions = new Map<DomainSessionId, NormalizedSession>();
   for (const [id, linked] of mutable) {
     sessions.set(id, {
-      session: { ...linked.session, childIds: [...linked.session.childIds] },
+      session: {
+        ...linked.session,
+        childIds: [...linked.session.childIds].sort(),
+      },
       timeline: linked.normalized.timeline,
       toolDetails: linked.normalized.toolDetails,
       directiveDetails: linked.normalized.directiveDetails,

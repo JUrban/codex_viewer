@@ -48,7 +48,7 @@ describe("versioned session API", () => {
     const statusBody = await status.json();
     expect(statusBody).toEqual(expect.objectContaining({
       available: true,
-      generation: 1,
+      catalogGeneration: 1,
       sessionCount: 4,
     }));
 
@@ -102,21 +102,25 @@ describe("versioned session API", () => {
     expect(detail.session.sourceId).toBe("basic-session");
     expect(detail.session.origin).toEqual(basic.session.origin);
     expect(detail.session.itemCount).toBeGreaterThan(5);
+    expect(detail.sessionRevision).toMatch(/^[A-Za-z0-9_-]{32}$/);
 
     const firstPageResponse = await fetch(
-      `${base}/api/v1/sessions/${basic.session.id}/items?limit=3`,
+      `${base}/api/v1/sessions/${basic.session.id}/items?limit=3` +
+      `&sessionRevision=${detail.sessionRevision}`,
     );
     const firstPage = await firstPageResponse.json();
     expect(firstPage.items).toHaveLength(3);
     expect(firstPage.hasMore).toBe(true);
     const secondPage = await fetch(
       `${base}/api/v1/sessions/${basic.session.id}/items?limit=3` +
-      `&afterOrdinal=${firstPage.nextAfterOrdinal}&generation=${firstPage.generation}`,
+      `&afterOrdinal=${firstPage.nextAfterOrdinal}` +
+      `&sessionRevision=${firstPage.sessionRevision}`,
     );
     expect(secondPage.status).toBe(200);
 
     const allItems = await fetch(
-      `${base}/api/v1/sessions/${basic.session.id}/items?limit=512`,
+      `${base}/api/v1/sessions/${basic.session.id}/items?limit=512` +
+      `&sessionRevision=${detail.sessionRevision}`,
     ).then((response) => response.json());
     expect(JSON.stringify(allItems)).not.toContain("DIRECTIVE_DETAIL_CANARY");
     expect(JSON.stringify(allItems)).not.toContain("REASONING_CANARY_NEVER_RENDER");
@@ -134,7 +138,7 @@ describe("versioned session API", () => {
     )).status).toBe(400);
     const directiveResponse = await fetch(
       `${base}/api/v1/sessions/${basic.session.id}/items/${directive.id}/directive` +
-      `?generation=${allItems.generation}`,
+      `?sessionRevision=${allItems.sessionRevision}`,
     );
     expect(directiveResponse.status).toBe(200);
     expect(await directiveResponse.json()).toEqual(expect.objectContaining({
@@ -151,13 +155,13 @@ describe("versioned session API", () => {
       summary: "DEVELOPER_DIRECTIVE_CANARY",
     }));
     const tool = allItems.items.find((item: { kind: string }) => item.kind === "tool");
-    const missingGeneration = await fetch(
+    const missingRevision = await fetch(
       `${base}/api/v1/sessions/${basic.session.id}/items/${tool.id}/tool`,
     );
-    expect(missingGeneration.status).toBe(400);
+    expect(missingRevision.status).toBe(400);
     const toolResponse = await fetch(
       `${base}/api/v1/sessions/${basic.session.id}/items/${tool.id}/tool` +
-      `?generation=${allItems.generation}`,
+      `?sessionRevision=${allItems.sessionRevision}`,
     );
     expect(toolResponse.headers.get("content-type")).toContain("application/json");
     expect(await toolResponse.json()).toEqual(expect.objectContaining({
@@ -173,8 +177,11 @@ describe("versioned session API", () => {
     const basic = list.sessions.find(
       (entry: { session: { title: string } }) => entry.session.title === "Synthetic trace",
     );
+    const detail = await fetch(`${base}/api/v1/sessions/${basic.session.id}`)
+      .then((response) => response.json());
     const page = await fetch(
-      `${base}/api/v1/sessions/${basic.session.id}/items?limit=2`,
+      `${base}/api/v1/sessions/${basic.session.id}/items?limit=2` +
+      `&sessionRevision=${detail.sessionRevision}`,
     ).then((response) => response.json());
 
     const rollout = join(
@@ -189,10 +196,18 @@ describe("versioned session API", () => {
     await repository.refresh();
     const stale = await fetch(
       `${base}/api/v1/sessions/${basic.session.id}/items?afterOrdinal=${page.nextAfterOrdinal}` +
-      `&generation=${page.generation}`,
+      `&sessionRevision=${page.sessionRevision}`,
     );
     expect(stale.status).toBe(409);
-    expect((await stale.json()).error.code).toBe("stale_generation");
+    expect((await stale.json()).error.code).toBe("stale_session_revision");
+
+    const staleCatalog = await fetch(
+      `${base}/api/v1/sessions?offset=1&limit=1` +
+      `&catalogGeneration=${list.catalogGeneration}`,
+    );
+    expect(staleCatalog.status).toBe(409);
+    expect((await staleCatalog.json()).error.code)
+      .toBe("stale_catalog_generation");
 
     const canary = "PRIVATE_QUERY_CANARY_".repeat(20);
     const invalid = await fetch(`${base}/api/v1/sessions?q=${canary}`);
@@ -202,10 +217,71 @@ describe("versioned session API", () => {
     expect(JSON.parse(body).error.code).toBe("invalid_query");
     expect((await fetch(`${base}/api/v1/sessions?archiveScope=maybe`)).status).toBe(400);
     expect((await fetch(`${base}/api/v1/sessions?offset=1`)).status).toBe(400);
+    const itemsUrl = `${base}/api/v1/sessions/${basic.session.id}/items`;
+    expect((await fetch(`${itemsUrl}?limit=2`)).status).toBe(400);
     expect((await fetch(
-      `${base}/api/v1/sessions/${basic.session.id}/items?limit=513`,
+      `${itemsUrl}?sessionRevision=short`,
+    )).status).toBe(400);
+    expect((await fetch(
+      `${itemsUrl}?sessionRevision=${detail.sessionRevision}` +
+      `&sessionRevision=${detail.sessionRevision}`,
+    )).status).toBe(400);
+    expect((await fetch(
+      `${itemsUrl}?limit=513&sessionRevision=${detail.sessionRevision}`,
     )).status).toBe(400);
     expect((await fetch(`${base}/api/v1/sessions/not-valid`)).status).toBe(404);
+  });
+
+  it("keeps one session revision valid across an unrelated rollout change", async () => {
+    const { base, home, repository } = await startApi();
+    const list = await fetch(`${base}/api/v1/sessions?archiveScope=all`)
+      .then((response) => response.json());
+    const basic = list.sessions.find(
+      (entry: { session: { title: string } }) =>
+        entry.session.title === "Synthetic trace",
+    );
+    const detail = await fetch(`${base}/api/v1/sessions/${basic.session.id}`)
+      .then((response) => response.json());
+    const first = await fetch(
+      `${base}/api/v1/sessions/${basic.session.id}/items?limit=2` +
+      `&sessionRevision=${detail.sessionRevision}`,
+    ).then((response) => response.json());
+
+    const unrelated = join(
+      home,
+      "sessions/2026/07/28/rollout-2026-07-28T12-00-00-malformed-session.jsonl",
+    );
+    await writeFile(
+      unrelated,
+      `${await readFile(unrelated, "utf8")}` +
+      '{"timestamp":"2026-07-28T12:00:10.000Z","type":"response_item",' +
+      '"payload":{"type":"message","role":"assistant","content":' +
+      '[{"type":"output_text","text":"unrelated"}]}}\n',
+    );
+    await repository.refresh();
+
+    const refreshedList = await fetch(`${base}/api/v1/sessions?archiveScope=all`)
+      .then((response) => response.json());
+    expect(refreshedList.catalogGeneration).toBeGreaterThan(
+      list.catalogGeneration,
+    );
+    expect((await fetch(
+      `${base}/api/v1/sessions/${basic.session.id}/items?limit=2` +
+      `&afterOrdinal=${first.nextAfterOrdinal}` +
+      `&sessionRevision=${first.sessionRevision}`,
+    )).status).toBe(200);
+
+    const allItems = await fetch(
+      `${base}/api/v1/sessions/${basic.session.id}/items?limit=512` +
+      `&sessionRevision=${first.sessionRevision}`,
+    ).then((response) => response.json());
+    const directive = allItems.items.find(
+      (item: { kind: string }) => item.kind === "directive",
+    );
+    expect((await fetch(
+      `${base}/api/v1/sessions/${basic.session.id}/items/${directive.id}/directive` +
+      `?sessionRevision=${first.sessionRevision}`,
+    )).status).toBe(200);
   });
 
   it("reports bounded search as partial without exposing source paths", async () => {

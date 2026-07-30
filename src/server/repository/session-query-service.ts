@@ -2,6 +2,7 @@ import type {
   ItemPageQuery,
   SessionListQuery,
 } from "../../shared/api-contract.js";
+import type { SessionRevision } from "../../shared/domain.js";
 import type {
   DomainCatalogGeneration,
   DomainDiagnostic,
@@ -20,6 +21,7 @@ import {
   type SearchWarning,
 } from "../search/search-document.js";
 import type { CatalogSnapshot } from "./catalog-snapshot-store.js";
+import type { VersionedSession } from "./session-revision-registry.js";
 
 const DEFAULT_LIST_LIMIT = 50;
 const MAX_LIST_LIMIT = 200;
@@ -29,7 +31,10 @@ export const MAX_ITEM_PAGE_BYTES = 4 * 1024 * 1024;
 
 export class RepositoryQueryError extends Error {
   constructor(
-    readonly code: "invalid_query" | "stale_generation",
+    readonly code:
+      | "invalid_query"
+      | "stale_catalog_generation"
+      | "stale_session_revision",
     message: string,
   ) {
     super(message);
@@ -37,7 +42,7 @@ export class RepositoryQueryError extends Error {
 }
 
 export interface SessionListResult {
-  readonly generation: DomainCatalogGeneration;
+  readonly catalogGeneration: DomainCatalogGeneration;
   readonly sessions: readonly {
     readonly session: DomainSession;
     readonly matches: readonly SearchMatch[];
@@ -56,7 +61,7 @@ export interface ProjectFacet {
 }
 
 export interface ItemPageResult {
-  readonly generation: DomainCatalogGeneration;
+  readonly sessionRevision: SessionRevision;
   readonly items: readonly DomainTimelineRecord[];
   readonly nextAfterOrdinal: number | null;
   readonly hasMore: boolean;
@@ -69,11 +74,15 @@ export class SessionQueryService {
   list(snapshot: CatalogSnapshot, query: SessionListQuery): SessionListResult {
     validateListQuery(query);
     const offset = query.offset ?? 0;
-    assertGeneration(snapshot.generation, query.generation, offset > 0);
+    assertCatalogGeneration(
+      snapshot.catalogGeneration,
+      query.catalogGeneration,
+      offset > 0,
+    );
     const structurallyEligible: NormalizedSession[] = [];
     const eligibleIds = new Set<string>();
     for (const id of snapshot.orderedIds) {
-      const normalized = snapshot.sessions.get(id);
+      const normalized = snapshot.sessions.get(id)?.normalized;
       if (normalized === undefined || !passesStructuralFilters(normalized.session, query)) {
         continue;
       }
@@ -103,7 +112,7 @@ export class SessionQueryService {
     const nextOffset = offset + sessions.length;
     const hasMore = nextOffset < matchedSessions.length;
     return {
-      generation: snapshot.generation,
+      catalogGeneration: snapshot.catalogGeneration,
       sessions,
       projects: [...projects.entries()]
         .map(([project, count]) => ({ project, count }))
@@ -116,8 +125,8 @@ export class SessionQueryService {
     };
   }
 
-  session(snapshot: CatalogSnapshot, id: string): DomainSession | null {
-    return snapshot.sessions.get(id)?.session ?? null;
+  session(snapshot: CatalogSnapshot, id: string): VersionedSession | null {
+    return snapshot.sessions.get(id) ?? null;
   }
 
   items(
@@ -126,9 +135,10 @@ export class SessionQueryService {
     query: ItemPageQuery,
   ): ItemPageResult | null {
     validateItemQuery(query);
-    assertGeneration(snapshot.generation, query.generation, (query.afterOrdinal ?? 0) > 0);
-    const normalized = snapshot.sessions.get(id);
-    if (normalized === undefined) return null;
+    const versioned = snapshot.sessions.get(id);
+    if (versioned === undefined) return null;
+    assertSessionRevision(versioned.revision, query.sessionRevision);
+    const { normalized } = versioned;
     const after = query.afterOrdinal ?? 0;
     const visible = normalized.timeline.filter((item) => item.ordinal > after);
     const limit = query.limit ?? DEFAULT_ITEM_LIMIT;
@@ -143,7 +153,7 @@ export class SessionQueryService {
     }
     const hasMore = visible.length > items.length;
     return {
-      generation: snapshot.generation,
+      sessionRevision: versioned.revision,
       items,
       nextAfterOrdinal: hasMore ? items.at(-1)?.ordinal ?? null : null,
       hasMore,
@@ -155,31 +165,34 @@ export class SessionQueryService {
     snapshot: CatalogSnapshot,
     id: string,
     itemId: string,
-    generation: number,
+    sessionRevision: SessionRevision,
   ): DomainToolDetail | null {
-    assertGeneration(snapshot.generation, generation, true);
-    const normalized = snapshot.sessions.get(id);
-    return normalized === undefined
-      ? null
-      : itemDetail(normalized, itemId, "tool", normalized.toolDetails);
+    const versioned = snapshot.sessions.get(id);
+    if (versioned === undefined) return null;
+    assertSessionRevision(versioned.revision, sessionRevision);
+    return itemDetail(
+      versioned.normalized,
+      itemId,
+      "tool",
+      versioned.normalized.toolDetails,
+    );
   }
 
   directiveDetail(
     snapshot: CatalogSnapshot,
     id: string,
     itemId: string,
-    generation: number,
+    sessionRevision: SessionRevision,
   ): DomainDirectiveDetail | null {
-    assertGeneration(snapshot.generation, generation, true);
-    const normalized = snapshot.sessions.get(id);
-    return normalized === undefined
-      ? null
-      : itemDetail(
-        normalized,
-        itemId,
-        "directive",
-        normalized.directiveDetails,
-      );
+    const versioned = snapshot.sessions.get(id);
+    if (versioned === undefined) return null;
+    assertSessionRevision(versioned.revision, sessionRevision);
+    return itemDetail(
+      versioned.normalized,
+      itemId,
+      "directive",
+      versioned.normalized.directiveDetails,
+    );
   }
 }
 
@@ -255,16 +268,34 @@ function validateItemQuery(query: ItemPageQuery): void {
   }
 }
 
-function assertGeneration(
+function assertCatalogGeneration(
   current: DomainCatalogGeneration,
   requested: DomainCatalogGeneration | undefined,
   required: boolean,
 ): void {
   if (required && requested === undefined) {
-    throw new RepositoryQueryError("invalid_query", "generation is required for subsequent pages");
+    throw new RepositoryQueryError(
+      "invalid_query",
+      "catalogGeneration is required for subsequent pages",
+    );
   }
   if (requested !== undefined && requested !== current) {
-    throw new RepositoryQueryError("stale_generation", "The catalog generation changed; restart pagination");
+    throw new RepositoryQueryError(
+      "stale_catalog_generation",
+      "The catalog generation changed; restart pagination",
+    );
+  }
+}
+
+function assertSessionRevision(
+  current: SessionRevision,
+  requested: SessionRevision,
+): void {
+  if (requested !== current) {
+    throw new RepositoryQueryError(
+      "stale_session_revision",
+      "The session revision changed; restart pagination",
+    );
   }
 }
 

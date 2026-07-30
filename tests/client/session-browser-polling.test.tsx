@@ -10,8 +10,10 @@ import {
   firstPage,
   json,
   listBody,
+  NEXT_SESSION_REVISION,
   OTHER_ID,
   SESSION_ID,
+  SESSION_REVISION,
   standardFetch,
 } from "./session-browser.fixtures";
 
@@ -86,7 +88,7 @@ describe("session polling and failures", () => {
     expect(detailCalls()).toBe(before + 1);
   });
 
-  it("preserves loaded pages during a same-generation poll", async () => {
+  it("preserves loaded pages during a same-revision poll", async () => {
     vi.useFakeTimers();
     const fetchMock = vi.fn((input: RequestInfo | URL) => {
       const url = String(input);
@@ -121,6 +123,68 @@ describe("session polling and failures", () => {
       await vi.advanceTimersByTimeAsync(8_000);
     });
     expect(screen.getByText("Later event")).toBeInTheDocument();
+  });
+
+  it("restarts loaded pages when the selected session revision changes", async () => {
+    vi.useFakeTimers();
+    let detailCalls = 0;
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("afterOrdinal=2")) {
+        return Promise.resolve(json({
+          ...firstPage,
+          items: [{
+            kind: "message",
+            id: "message-3",
+            ordinal: 3,
+            timestamp: null,
+            role: "assistant",
+            phase: "final",
+            markdown: "Old later event",
+          }],
+          nextAfterOrdinal: null,
+          hasMore: false,
+        }));
+      }
+      if (url.includes(`sessionRevision=${NEXT_SESSION_REVISION}`)) {
+        return Promise.resolve(json({
+          ...firstPage,
+          sessionRevision: NEXT_SESSION_REVISION,
+          items: [{
+            kind: "message",
+            id: "message-1",
+            ordinal: 1,
+            timestamp: null,
+            role: "user",
+            phase: null,
+            markdown: "Fresh session start",
+          }],
+          nextAfterOrdinal: null,
+          hasMore: false,
+        }));
+      }
+      if (url.includes("/items")) return Promise.resolve(json(firstPage));
+      if (url.endsWith(SESSION_ID)) {
+        detailCalls += 1;
+        return Promise.resolve(json({
+          ...detailBody,
+          sessionRevision: detailCalls > 1 ? NEXT_SESSION_REVISION : SESSION_REVISION,
+        }));
+      }
+      return Promise.resolve(json(listBody));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<App />);
+    await act(async () => vi.advanceTimersByTimeAsync(0));
+    fireEvent.click(screen.getByRole("button", { name: /Reader work/ }));
+    await act(async () => vi.advanceTimersByTimeAsync(0));
+    fireEvent.click(screen.getByRole("button", { name: "Load more events" }));
+    await act(async () => vi.advanceTimersByTimeAsync(0));
+    expect(screen.getByText("Old later event")).toBeInTheDocument();
+
+    await act(async () => vi.advanceTimersByTimeAsync(8_000));
+    expect(screen.getByText("Fresh session start")).toBeInTheDocument();
+    expect(screen.queryByText("Old later event")).toBeNull();
   });
 
   it("blocks pagination while a poll is pending and re-enables it after cleanup", async () => {
@@ -195,7 +259,7 @@ describe("session polling and failures", () => {
         hasMore: false,
       }));
       if (url.endsWith(OTHER_ID)) return Promise.resolve(json({
-        generation: 1,
+        sessionRevision: SESSION_REVISION,
         session: { ...other, diagnostics: [], itemCount: 1 },
       }));
       if (url.includes(SESSION_ID) && url.includes("/items")) {

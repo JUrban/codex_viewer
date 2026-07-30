@@ -4,7 +4,7 @@ import type {
   SessionListResponse,
 } from "../../shared/api-contract";
 import { api } from "../api/client";
-import { isStaleGeneration, messageFor } from "./request-errors";
+import { isStaleCatalogGeneration, messageFor } from "./request-errors";
 import type { BrowserFilters } from "./use-session-filters";
 
 const LIST_PAGE_SIZE = 200;
@@ -101,10 +101,10 @@ export function useSessionList(filters: BrowserFilters) {
         next = await api.sessions({
           ...listQuery(filtersRef.current),
           offset: current.nextOffset,
-          generation: current.generation,
+          catalogGeneration: current.catalogGeneration,
         }, request.controller.signal);
       } catch (reason) {
-        if (!isCurrent(request) || !isStaleGeneration(reason)) throw reason;
+        if (!isCurrent(request) || !isStaleCatalogGeneration(reason)) throw reason;
         next = await api.sessions(
           listQuery(filtersRef.current),
           request.controller.signal,
@@ -234,7 +234,7 @@ function mergePage(
   current: SessionListResponse,
   next: SessionListResponse,
 ): SessionListResponse {
-  if (current.generation !== next.generation) return next;
+  if (current.catalogGeneration !== next.catalogGeneration) return next;
   const seen = new Set(current.sessions.map((entry) => entry.session.id));
   return {
     ...next,

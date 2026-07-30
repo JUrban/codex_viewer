@@ -5,7 +5,7 @@ import type {
 } from "../../shared/api-contract";
 import type { TimelineItem } from "../../shared/domain";
 import { api, ApiClientError } from "../api/client";
-import { isAbort, isStaleGeneration, messageFor } from "./request-errors";
+import { isAbort, isStaleSessionRevision, messageFor } from "./request-errors";
 import { useSessionPolling } from "./use-session-polling";
 
 const TIMELINE_PAGE_SIZE = 512;
@@ -33,7 +33,7 @@ type ReaderAction =
     type: "load-success";
     detail: SessionDetailResponse;
     page: ItemPageResponse;
-    preserveSameGeneration: boolean;
+    preserveSameRevision: boolean;
   }
   | { type: "load-failure"; error: string }
   | { type: "page-start" }
@@ -102,15 +102,15 @@ export function useSessionReader(
       let page: ItemPageResponse;
       try {
         page = await api.items(id, {
-          generation: detail.generation,
+          sessionRevision: detail.sessionRevision,
           limit: TIMELINE_PAGE_SIZE,
         }, request.controller.signal);
       } catch (reason) {
-        if (!isCurrent(request) || !isStaleGeneration(reason)) throw reason;
+        if (!isCurrent(request) || !isStaleSessionRevision(reason)) throw reason;
         detail = await api.session(id, request.controller.signal);
         if (!isCurrent(request)) return "failed";
         page = await api.items(id, {
-          generation: detail.generation,
+          sessionRevision: detail.sessionRevision,
           limit: TIMELINE_PAGE_SIZE,
         }, request.controller.signal);
       }
@@ -119,7 +119,7 @@ export function useSessionReader(
         type: "load-success",
         detail,
         page,
-        preserveSameGeneration: quiet,
+        preserveSameRevision: quiet,
       });
       return "loaded";
     } catch (reason) {
@@ -170,13 +170,13 @@ export function useSessionReader(
     try {
       const next = await api.items(id, {
         afterOrdinal: current.nextAfterOrdinal,
-        generation: current.generation,
+        sessionRevision: current.sessionRevision,
         limit: TIMELINE_PAGE_SIZE,
       }, request.controller.signal);
       if (isCurrent(request)) dispatch({ type: "page-success", page: next });
     } catch (reason) {
       if (!isCurrent(request)) return;
-      if (isStaleGeneration(reason)) await loadSession(id);
+      if (isStaleSessionRevision(reason)) await loadSession(id);
       else dispatch({ type: "page-failure", error: messageFor(reason) });
     } finally {
       if (active.current === request) active.current = null;
@@ -184,17 +184,20 @@ export function useSessionReader(
   }, [isCurrent, loadSession]);
 
   const restartSession = useCallback(
-    () => selectedIdRef.current === null
-      ? Promise.resolve<SessionLoadResult>("failed")
-      : loadSession(selectedIdRef.current, true),
+    () => {
+      const id = selectedIdRef.current;
+      if (id === null) return Promise.resolve<SessionLoadResult>("failed");
+      return loadSession(id, true);
+    },
     [loadSession],
   );
 
-  const pollSession = useCallback(() => (
-    active.current === null
-      ? restartSession()
-      : Promise.resolve<SessionLoadResult>("failed")
-  ), [restartSession]);
+  const pollSession = useCallback(() => {
+    if (active.current !== null) {
+      return Promise.resolve<SessionLoadResult>("failed");
+    }
+    return restartSession();
+  }, [restartSession]);
 
   useSessionPolling(
     selectedId !== null &&
@@ -208,9 +211,10 @@ export function useSessionReader(
 
   const selectionChanging = state.detail !== null &&
     state.detail.session.id !== selectedId;
-  const operation = selectionChanging
-    ? (selectedId === null ? null : "open")
-    : state.operation;
+  let operation = state.operation;
+  if (selectionChanging) {
+    operation = selectedId === null ? null : "open";
+  }
   return {
     detail: selectionChanging ? null : state.detail,
     page: selectionChanging ? null : state.page,
@@ -235,8 +239,8 @@ function reducer(state: ReaderState, action: ReaderAction): ReaderState {
         ? { ...state, operation: action.operation, error: null }
         : { ...initialState, operation: action.operation };
     case "load-success": {
-      const preserve = action.preserveSameGeneration &&
-        state.page?.generation === action.page.generation;
+      const preserve = action.preserveSameRevision &&
+        state.page?.sessionRevision === action.page.sessionRevision;
       return {
         operation: null,
         detail: action.detail,

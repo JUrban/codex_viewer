@@ -9,6 +9,8 @@ import type {
 export const SESSION_ID = "abcdefghijklmnopqrstuvwx";
 export const CHILD_ID = "zyxwvutsrqponmlkjihgfedc";
 export const OTHER_ID = "otherabcdefghijklmnopqrs";
+export const SESSION_REVISION = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+export const NEXT_SESSION_REVISION = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 
 export const baseSession: SessionSummary = {
   id: SESSION_ID, title: "Reader work", preview: "preview", cwd: "/project/reader",
@@ -26,7 +28,7 @@ export const baseSession: SessionSummary = {
 };
 
 export const listBody = {
-  generation: 1,
+  catalogGeneration: 1,
   sessions: [{ session: baseSession, matches: [] }],
   projects: [{ project: "/project/reader", count: 1 }],
   total: 1, nextOffset: null, hasMore: false,
@@ -34,7 +36,7 @@ export const listBody = {
 };
 
 export const detailBody = {
-  generation: 1,
+  sessionRevision: SESSION_REVISION,
   session: { ...baseSession, sourceId: "original-session-id", diagnostics: [], itemCount: 3 },
 };
 
@@ -55,7 +57,7 @@ export const directiveItem: Directive = {
 };
 
 export const firstPage: ItemPageResponse = {
-  generation: 1, diagnostics: [],
+  sessionRevision: SESSION_REVISION, diagnostics: [],
   items: [
     { kind: "message", id: "message-1", ordinal: 1, timestamp: null, role: "user", phase: null, markdown: "Hello" },
     toolItem,

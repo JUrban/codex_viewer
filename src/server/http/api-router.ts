@@ -10,6 +10,7 @@ import {
   RepositoryQueryError,
   type SessionRepository,
 } from "../repository/session-repository.js";
+import { isSessionRevision } from "../repository/session-revision-registry.js";
 import { sendJson, type ApiRouter } from "./router.js";
 
 const API_ROOT = "/api/v1";
@@ -107,7 +108,10 @@ export function createApiRouter(
       return notFound(response, headOnly);
     } catch (error) {
       if (error instanceof RepositoryQueryError) {
-        const status = error.code === "stale_generation" ? 409 : 400;
+        const status = error.code === "stale_catalog_generation" ||
+            error.code === "stale_session_revision"
+          ? 409
+          : 400;
         sendJson(response, status, { error: { code: error.code, message: error.message } }, headOnly);
         return true;
       }
@@ -138,7 +142,7 @@ function parseListQuery(params: URLSearchParams): SessionListQuery {
   const archiveScope = optional(params, "archiveScope");
   const offset = optional(params, "offset");
   const limit = optional(params, "limit");
-  const generation = optional(params, "generation");
+  const catalogGeneration = optional(params, "catalogGeneration");
   if (q !== undefined) query.q = q;
   if (project !== undefined) query.project = project;
   if (from !== undefined) query.from = from;
@@ -155,33 +159,43 @@ function parseListQuery(params: URLSearchParams): SessionListQuery {
   }
   if (offset !== undefined) query.offset = integer(offset, "offset");
   if (limit !== undefined) query.limit = integer(limit, "limit");
-  if (generation !== undefined) query.generation = integer(generation, "generation");
+  if (catalogGeneration !== undefined) {
+    query.catalogGeneration = integer(catalogGeneration, "catalogGeneration");
+  }
   return query;
 }
 
 function parseItemQuery(params: URLSearchParams): ItemPageQuery {
-  const query: ItemPageQuery = {};
+  const query: ItemPageQuery = {
+    sessionRevision: requiredSessionRevision(params, "items"),
+  };
   const afterOrdinal = optional(params, "afterOrdinal");
   const limit = optional(params, "limit");
-  const generation = optional(params, "generation");
   if (afterOrdinal !== undefined) query.afterOrdinal = integer(afterOrdinal, "afterOrdinal");
   if (limit !== undefined) query.limit = integer(limit, "limit");
-  if (generation !== undefined) query.generation = integer(generation, "generation");
   return query;
 }
 
 function parseToolQuery(params: URLSearchParams): ToolDetailQuery {
-  return { generation: requiredGeneration(params, "tool detail") };
+  return { sessionRevision: requiredSessionRevision(params, "tool detail") };
 }
 
 function parseDirectiveQuery(params: URLSearchParams): DirectiveDetailQuery {
-  return { generation: requiredGeneration(params, "directive detail") };
+  return { sessionRevision: requiredSessionRevision(params, "directive detail") };
 }
 
-function requiredGeneration(params: URLSearchParams, resource: string): number {
-  const generation = optional(params, "generation");
-  if (generation === undefined) invalid(`generation is required for ${resource}`);
-  return integer(generation, "generation");
+function requiredSessionRevision(
+  params: URLSearchParams,
+  resource: string,
+): string {
+  const revision = optional(params, "sessionRevision");
+  if (revision === undefined) {
+    invalid(`sessionRevision is required for ${resource}`);
+  }
+  if (!isSessionRevision(revision)) {
+    invalid("sessionRevision is invalid");
+  }
+  return revision;
 }
 
 function optional(params: URLSearchParams, name: string): string | undefined {

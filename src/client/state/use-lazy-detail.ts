@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
+import type { SessionRevision } from "../../shared/domain";
 import { ApiClientError } from "../api/client";
 
 interface LazyDetailOptions<T> {
   enabled: boolean;
-  generation: number;
+  sessionRevision: SessionRevision;
   load: (signal: AbortSignal) => Promise<T>;
   unavailableMessage: string;
   onStale: () => void;
@@ -11,23 +12,23 @@ interface LazyDetailOptions<T> {
 
 export function useLazyDetail<T>({
   enabled,
-  generation,
+  sessionRevision,
   load,
   unavailableMessage,
   onStale,
 }: LazyDetailOptions<T>) {
   const [detail, setDetail] = useState<T | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [staleGeneration, setStaleGeneration] = useState<number | null>(null);
+  const [staleRevision, setStaleRevision] = useState<SessionRevision | null>(null);
 
   useEffect(() => {
     setDetail(null);
     setError(null);
-    setStaleGeneration(null);
-  }, [generation]);
+    setStaleRevision(null);
+  }, [sessionRevision]);
 
   useEffect(() => {
-    if (!enabled || detail !== null || staleGeneration === generation) return;
+    if (!enabled || detail !== null || staleRevision === sessionRevision) return;
 
     const controller = new AbortController();
     void load(controller.signal)
@@ -35,9 +36,9 @@ export function useLazyDetail<T>({
       .catch((reason: unknown) => {
         if (controller.signal.aborted) return;
 
-        if (reason instanceof ApiClientError && reason.code === "stale_generation") {
+        if (reason instanceof ApiClientError && reason.code === "stale_session_revision") {
           setError(null);
-          setStaleGeneration(generation);
+          setStaleRevision(sessionRevision);
           onStale();
           return;
         }
@@ -49,10 +50,10 @@ export function useLazyDetail<T>({
   }, [
     detail,
     enabled,
-    generation,
+    sessionRevision,
     load,
     onStale,
-    staleGeneration,
+    staleRevision,
     unavailableMessage,
   ]);
 

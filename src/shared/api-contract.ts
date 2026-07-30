@@ -4,6 +4,7 @@ import type {
   ItemId,
   SessionDetail,
   SessionId,
+  SessionRevision,
   SessionSummary,
   TimelineItem,
 } from "./domain.js";
@@ -23,7 +24,7 @@ export interface ApiError {
 
 export interface StatusResponse {
   available: boolean;
-  generation: CatalogGeneration;
+  catalogGeneration: CatalogGeneration;
   sessionCount: number;
   warningCount: number;
 }
@@ -38,7 +39,7 @@ export interface SessionListQuery {
   archiveScope?: ArchiveScope;
   offset?: number;
   limit?: number;
-  generation?: CatalogGeneration;
+  catalogGeneration?: CatalogGeneration;
 }
 
 export interface SearchMatch {
@@ -57,7 +58,7 @@ export interface ProjectFacet {
 }
 
 export interface SessionListResponse {
-  generation: CatalogGeneration;
+  catalogGeneration: CatalogGeneration;
   sessions: SessionListEntry[];
   projects: ProjectFacet[];
   total: number;
@@ -68,18 +69,18 @@ export interface SessionListResponse {
 }
 
 export interface SessionDetailResponse {
-  generation: CatalogGeneration;
+  sessionRevision: SessionRevision;
   session: SessionDetail;
 }
 
 export interface ItemPageQuery {
   afterOrdinal?: number;
   limit?: number;
-  generation?: CatalogGeneration;
+  sessionRevision: SessionRevision;
 }
 
 export interface ItemPageResponse {
-  generation: CatalogGeneration;
+  sessionRevision: SessionRevision;
   items: TimelineItem[];
   nextAfterOrdinal: number | null;
   hasMore: boolean;
@@ -87,7 +88,7 @@ export interface ItemPageResponse {
 }
 
 export interface ToolDetailResponse {
-  generation: CatalogGeneration;
+  sessionRevision: SessionRevision;
   sessionId: SessionId;
   itemId: ItemId;
   input: string | null;
@@ -96,11 +97,11 @@ export interface ToolDetailResponse {
 }
 
 export interface ToolDetailQuery {
-  generation: CatalogGeneration;
+  sessionRevision: SessionRevision;
 }
 
 export interface DirectiveDetailResponse {
-  generation: CatalogGeneration;
+  sessionRevision: SessionRevision;
   sessionId: SessionId;
   itemId: ItemId;
   text: string;
@@ -108,5 +109,5 @@ export interface DirectiveDetailResponse {
 }
 
 export interface DirectiveDetailQuery {
-  generation: CatalogGeneration;
+  sessionRevision: SessionRevision;
 }

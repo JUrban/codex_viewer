@@ -8,6 +8,7 @@ import type {
   SessionListResponse,
   ToolDetailResponse,
 } from "../../shared/api-contract";
+import type { SessionRevision } from "../../shared/domain";
 
 export class ApiClientError extends Error {
   constructor(
@@ -61,7 +62,7 @@ export const api = {
         archiveScope: query.archiveScope,
         offset: query.offset,
         limit: query.limit,
-        generation: query.generation,
+        catalogGeneration: query.catalogGeneration,
       })}`,
       signal,
     ),
@@ -72,18 +73,28 @@ export const api = {
       `/api/v1/sessions/${encodeURIComponent(id)}/items${queryString({
         afterOrdinal: query.afterOrdinal,
         limit: query.limit,
-        generation: query.generation,
+        sessionRevision: query.sessionRevision,
       })}`,
       signal,
     ),
-  tool: (sessionId: string, itemId: string, generation: number, signal?: AbortSignal) =>
+  tool: (
+    sessionId: string,
+    itemId: string,
+    sessionRevision: SessionRevision,
+    signal?: AbortSignal,
+  ) =>
     request<ToolDetailResponse>(
-      `/api/v1/sessions/${encodeURIComponent(sessionId)}/items/${encodeURIComponent(itemId)}/tool${queryString({ generation })}`,
+      `/api/v1/sessions/${encodeURIComponent(sessionId)}/items/${encodeURIComponent(itemId)}/tool${queryString({ sessionRevision })}`,
       signal,
     ),
-  directive: (sessionId: string, itemId: string, generation: number, signal?: AbortSignal) =>
+  directive: (
+    sessionId: string,
+    itemId: string,
+    sessionRevision: SessionRevision,
+    signal?: AbortSignal,
+  ) =>
     request<DirectiveDetailResponse>(
-      `/api/v1/sessions/${encodeURIComponent(sessionId)}/items/${encodeURIComponent(itemId)}/directive${queryString({ generation })}`,
+      `/api/v1/sessions/${encodeURIComponent(sessionId)}/items/${encodeURIComponent(itemId)}/directive${queryString({ sessionRevision })}`,
       signal,
     ),
 };

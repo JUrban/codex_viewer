@@ -105,7 +105,7 @@ describe("server architecture boundaries", () => {
 
   it("maps domain values exactly without leaking private summary fields or mutable references", () => {
     const mapper = new SessionApiMapper();
-    const detail = mapper.detail(7, session);
+    const detail = mapper.detail("r".repeat(32), session);
     const summary = mapper.summary(session);
     const item = mapper.timelineItem(timeline[0]!);
 
@@ -133,7 +133,7 @@ describe("server architecture boundaries", () => {
     });
     expect(summary).not.toHaveProperty("sourceId");
     expect(detail).toEqual({
-      generation: 7,
+      sessionRevision: "r".repeat(32),
       session: {
         ...summary,
         sourceId: "private-source-id",
@@ -161,22 +161,26 @@ describe("server architecture boundaries", () => {
     ).toBe(10);
   });
 
-  it("keeps query validation, filtering, facets, paging, and generation checks pure", () => {
+  it("keeps query validation, filtering, facets, paging, and version checks pure", () => {
     const queries = new SessionQueryService();
     const snapshot = snapshotOf(normalized);
     const first = queries.list(snapshot, { project: "/project", limit: 1 });
     expect(first).toMatchObject({
-      generation: 3,
+      catalogGeneration: 3,
       total: 1,
       hasMore: false,
       projects: [{ project: "/project", count: 1 }],
     });
-    expect(queries.items(snapshot, "session-one", {})?.items).toEqual(timeline);
+    expect(queries.items(snapshot, "session-one", {
+      sessionRevision: "r".repeat(32),
+    })?.items).toEqual(timeline);
     expect(() => queries.list(snapshot, { offset: 1 })).toThrowError(
       expect.objectContaining<Partial<RepositoryQueryError>>({ code: "invalid_query" }),
     );
-    expect(() => queries.list(snapshot, { generation: 2 })).toThrowError(
-      expect.objectContaining<Partial<RepositoryQueryError>>({ code: "stale_generation" }),
+    expect(() => queries.list(snapshot, { catalogGeneration: 2 })).toThrowError(
+      expect.objectContaining<Partial<RepositoryQueryError>>({
+        code: "stale_catalog_generation",
+      }),
     );
   });
 
@@ -203,7 +207,13 @@ describe("server architecture boundaries", () => {
   it("namespaces source identities, links parents locally, and ignores source order", async () => {
     const sourceA = testSource("source-a", [
       sourceEntry("parent", null, "Source A parent"),
-      sourceEntry("child", "parent", "Source A child"),
+      sourceEntry("child-z", "parent", "Source A child Z"),
+      sourceEntry("child-a", "parent", "Source A child A"),
+    ]);
+    const sourceAWithReorderedEntries = testSource("source-a", [
+      sourceEntry("parent", null, "Source A parent"),
+      sourceEntry("child-a", "parent", "Source A child A"),
+      sourceEntry("child-z", "parent", "Source A child Z"),
     ]);
     const sourceB = testSource("source-b", [
       sourceEntry("parent", null, "Source B parent"),
@@ -211,19 +221,36 @@ describe("server architecture boundaries", () => {
     ]);
     const first = await new CatalogSnapshotStore([sourceA, sourceB]).current();
     const reordered = await new CatalogSnapshotStore([sourceB, sourceA]).current();
+    const reorderedEntries = await new CatalogSnapshotStore([
+      sourceAWithReorderedEntries,
+      sourceB,
+    ]).current();
 
     expect(first.signature).toBe(reordered.signature);
+    expect(first.signature).toBe(reorderedEntries.signature);
     expect([...first.sessions.keys()].sort()).toEqual(
       [...reordered.sessions.keys()].sort(),
     );
     const byTitle = new Map(
-      [...first.sessions.values()].map((value) => [value.session.title, value.session]),
+      [...first.sessions.values()].map(({ normalized: value }) => [
+        value.session.title,
+        value.session,
+      ]),
     );
     expect(byTitle.get("Source A parent")?.id)
       .not.toBe(byTitle.get("Source B parent")?.id);
-    expect(byTitle.get("Source A child")?.parentId)
+    expect(byTitle.get("Source A child A")?.parentId)
+      .toBe(byTitle.get("Source A parent")?.id);
+    expect(byTitle.get("Source A child Z")?.parentId)
       .toBe(byTitle.get("Source A parent")?.id);
     expect(byTitle.get("Source B child")?.parentId).toBeNull();
+    const parent = byTitle.get("Source A parent")!;
+    expect(parent.childIds).toEqual([...parent.childIds].sort());
+    expect(parent.childIds).toEqual(
+      [...reorderedEntries.sessions.values()]
+        .find(({ normalized: value }) => value.session.title === "Source A parent")!
+        .normalized.session.childIds,
+    );
   });
 });
 
@@ -241,10 +268,13 @@ async function typescriptFiles(directory: string): Promise<string[]> {
 
 function snapshotOf(value: NormalizedSession): CatalogSnapshot {
   return {
-    generation: 3,
+    catalogGeneration: 3,
     signature: "snapshot",
     diagnostics: [],
-    sessions: new Map([[value.session.id, value]]),
+    sessions: new Map([[
+      value.session.id,
+      { revision: "r".repeat(32), normalized: value },
+    ]]),
     documents: [{
       sessionId: value.session.id,
       title: value.session.title,

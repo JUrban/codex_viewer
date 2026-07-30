@@ -1,4 +1,4 @@
-import type { TimelineItem } from "../../shared/domain";
+import type { SessionRevision, TimelineItem } from "../../shared/domain";
 import { DirectiveItem } from "./DirectiveItem";
 import { InternalEventItem } from "./InternalEventItem";
 import { MessageItem } from "./MessageItem";
@@ -9,7 +9,7 @@ import { TraceGutter } from "./TraceGutter";
 interface TimelineProps {
   items: TimelineItem[];
   sessionId: string;
-  generation: number;
+  sessionRevision: SessionRevision;
   hasMore: boolean;
   loading: boolean;
   busy?: boolean;
@@ -20,7 +20,7 @@ interface TimelineProps {
 export function Timeline({
   items,
   sessionId,
-  generation,
+  sessionRevision,
   hasMore,
   loading,
   busy = loading,
@@ -39,7 +39,7 @@ export function Timeline({
             <TimelineContent
               item={item}
               sessionId={sessionId}
-              generation={generation}
+              sessionRevision={sessionRevision}
               onStale={onStale}
             />
           </li>
@@ -59,9 +59,11 @@ export function Timeline({
 function TimelineContent({
   item,
   sessionId,
-  generation,
+  sessionRevision,
   onStale,
-}: Pick<TimelineProps, "sessionId" | "generation" | "onStale"> & { item: TimelineItem }) {
+}: Pick<TimelineProps, "sessionId" | "sessionRevision" | "onStale"> & {
+  item: TimelineItem;
+}) {
   switch (item.kind) {
     case "message":
       return <MessageItem item={item} />;
@@ -70,7 +72,7 @@ function TimelineContent({
         <DirectiveItem
           item={item}
           sessionId={sessionId}
-          generation={generation}
+          sessionRevision={sessionRevision}
           onStale={onStale}
         />
       );
@@ -79,7 +81,7 @@ function TimelineContent({
         <ToolItem
           item={item}
           sessionId={sessionId}
-          generation={generation}
+          sessionRevision={sessionRevision}
           onStale={onStale}
         />
       );

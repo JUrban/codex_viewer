@@ -1,6 +1,7 @@
 export type SessionId = string;
 export type ItemId = string;
 export type CatalogGeneration = number;
+export type SessionRevision = string;
 
 export type DiagnosticSeverity = "info" | "warning" | "error";
 

@@ -9,6 +9,7 @@ import type {
 import type {
   Diagnostic,
   SessionDetail,
+  SessionRevision,
   SessionSummary,
   TimelineItem,
 } from "../../shared/domain.js";
@@ -29,7 +30,7 @@ export class SessionApiMapper {
   status(snapshot: CatalogSnapshot): StatusResponse {
     return {
       available: snapshot.sessions.size > 0,
-      generation: snapshot.generation,
+      catalogGeneration: snapshot.catalogGeneration,
       sessionCount: snapshot.sessions.size,
       warningCount: snapshot.warningCount,
     };
@@ -37,7 +38,7 @@ export class SessionApiMapper {
 
   list(result: SessionListResult): SessionListResponse {
     return {
-      generation: result.generation,
+      catalogGeneration: result.catalogGeneration,
       sessions: result.sessions.map((entry) => ({
         session: this.summary(entry.session),
         matches: entry.matches.map((match) => ({ ...match })),
@@ -51,13 +52,16 @@ export class SessionApiMapper {
     };
   }
 
-  detail(generation: number, session: DomainSession): SessionDetailResponse {
-    return { generation, session: this.sessionDetail(session) };
+  detail(
+    sessionRevision: SessionRevision,
+    session: DomainSession,
+  ): SessionDetailResponse {
+    return { sessionRevision, session: this.sessionDetail(session) };
   }
 
   itemPage(result: ItemPageResult): ItemPageResponse {
     return {
-      generation: result.generation,
+      sessionRevision: result.sessionRevision,
       items: result.items.map((item) => this.timelineItem(item)),
       nextAfterOrdinal: result.nextAfterOrdinal,
       hasMore: result.hasMore,
@@ -66,13 +70,13 @@ export class SessionApiMapper {
   }
 
   toolDetail(
-    generation: number,
+    sessionRevision: SessionRevision,
     sessionId: string,
     itemId: string,
     detail: DomainToolDetail,
   ): ToolDetailResponse {
     return {
-      generation,
+      sessionRevision,
       sessionId,
       itemId,
       input: detail.input,
@@ -82,13 +86,13 @@ export class SessionApiMapper {
   }
 
   directiveDetail(
-    generation: number,
+    sessionRevision: SessionRevision,
     sessionId: string,
     itemId: string,
     detail: DomainDirectiveDetail,
   ): DirectiveDetailResponse {
     return {
-      generation,
+      sessionRevision,
       sessionId,
       itemId,
       text: detail.text,

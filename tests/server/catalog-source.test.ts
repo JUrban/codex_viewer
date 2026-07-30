@@ -96,7 +96,9 @@ describe("catalog discovery", () => {
     });
 
     const recoveredGeneration = await repository.refresh();
-    expect(recoveredGeneration).toBeGreaterThan(unavailableStatus.generation);
+    expect(recoveredGeneration).toBeGreaterThan(
+      unavailableStatus.catalogGeneration,
+    );
     await expect(repository.getStatus()).resolves.toMatchObject({
       available: true,
       sessionCount: 1,

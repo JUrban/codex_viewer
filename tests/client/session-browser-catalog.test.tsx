@@ -12,7 +12,9 @@ import {
   firstPage,
   json,
   listBody,
+  NEXT_SESSION_REVISION,
   SESSION_ID,
+  SESSION_REVISION,
 } from "./session-browser.fixtures";
 
 afterEach(() => {
@@ -119,7 +121,7 @@ describe("session catalog interactions", () => {
       const url = String(input);
       if (url.includes("offset=1")) return Promise.resolve(json({
         ...listBody,
-        generation: 1,
+        catalogGeneration: 1,
         sessions: [later],
         total: 2,
         nextOffset: null,
@@ -138,7 +140,9 @@ describe("session catalog interactions", () => {
     await user.click(await screen.findByRole("button", { name: "Load more sessions (1 of 2)" }));
     expect(await screen.findByRole("button", { name: /Later session/ })).toBeInTheDocument();
     expect(fetchMock.mock.calls.some(([url]) =>
-      String(url).includes("offset=1") && String(url).includes("generation=1"))).toBe(true);
+      String(url).includes("offset=1") &&
+      String(url).includes("catalogGeneration=1")
+    )).toBe(true);
   });
 
   it("refreshes the catalog and selected timeline without clearing the current UI", async () => {
@@ -149,14 +153,23 @@ describe("session catalog interactions", () => {
       const url = String(input);
       if (url.includes("/items")) {
         itemCalls += 1;
-        return Promise.resolve(json({ ...firstPage, generation: detailCalls || 1 }));
+        return Promise.resolve(json({
+          ...firstPage,
+          sessionRevision: detailCalls > 1 ? NEXT_SESSION_REVISION : SESSION_REVISION,
+        }));
       }
       if (url.endsWith(SESSION_ID)) {
         detailCalls += 1;
-        return Promise.resolve(json({ ...detailBody, generation: detailCalls }));
+        return Promise.resolve(json({
+          ...detailBody,
+          sessionRevision: detailCalls > 1 ? NEXT_SESSION_REVISION : SESSION_REVISION,
+        }));
       }
       listCalls += 1;
-      return Promise.resolve(json({ ...listBody, generation: listCalls > 1 ? 2 : 1 }));
+      return Promise.resolve(json({
+        ...listBody,
+        catalogGeneration: listCalls > 1 ? 2 : 1,
+      }));
     });
     vi.stubGlobal("fetch", fetchMock);
     const user = userEvent.setup();
@@ -170,6 +183,90 @@ describe("session catalog interactions", () => {
     expect(listCalls).toBe(2);
     expect(itemCalls).toBe(2);
     expect(window.location.search).toContain(`session=${SESSION_ID}`);
+  });
+
+  it("preserves later pages and lazy detail across an unrelated catalog change", async () => {
+    let listCalls = 0;
+    let toolCalls = 0;
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/items/tool-2/tool")) {
+        toolCalls += 1;
+        return Promise.resolve(json({
+          sessionRevision: SESSION_REVISION,
+          sessionId: SESSION_ID,
+          itemId: "tool-2",
+          input: null,
+          output: "Preserved tool detail",
+          truncated: false,
+        }));
+      }
+      if (url.includes("afterOrdinal=3")) {
+        return Promise.resolve(json({
+          ...firstPage,
+          items: [{
+            kind: "message",
+            id: "message-4",
+            ordinal: 4,
+            timestamp: null,
+            role: "assistant",
+            phase: "final",
+            markdown: "Still pageable",
+          }],
+          nextAfterOrdinal: null,
+          hasMore: false,
+        }));
+      }
+      if (url.includes("afterOrdinal=2")) {
+        return Promise.resolve(json({
+          ...firstPage,
+          items: [{
+            kind: "message",
+            id: "message-3",
+            ordinal: 3,
+            timestamp: null,
+            role: "assistant",
+            phase: "commentary",
+            markdown: "Loaded before catalog refresh",
+          }],
+          nextAfterOrdinal: 3,
+          hasMore: true,
+        }));
+      }
+      if (url.includes("/items")) return Promise.resolve(json(firstPage));
+      if (url.endsWith(SESSION_ID)) return Promise.resolve(json(detailBody));
+      listCalls += 1;
+      return Promise.resolve(json({
+        ...listBody,
+        catalogGeneration: listCalls,
+      }));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: /Reader work/ }));
+    await user.click(screen.getByRole("checkbox", { name: "tool" }));
+    await user.click(screen.getByRole("button", { name: "Load more events" }));
+    expect(await screen.findByText("Loaded before catalog refresh")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Show tool detail" }));
+    expect(await screen.findByText("Preserved tool detail")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Refresh sessions" }));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Refresh sessions" })).toBeEnabled()
+    );
+    expect(listCalls).toBe(2);
+    expect(screen.getByText("Loaded before catalog refresh")).toBeInTheDocument();
+    expect(screen.getByText("Preserved tool detail")).toBeInTheDocument();
+    expect(toolCalls).toBe(1);
+
+    await user.click(screen.getByRole("button", { name: "Load more events" }));
+    expect(await screen.findByText("Still pageable")).toBeInTheDocument();
+    expect(fetchMock.mock.calls.some(([url]) =>
+      String(url).includes("afterOrdinal=3") &&
+      String(url).includes(`sessionRevision=${SESSION_REVISION}`)
+    )).toBe(true);
   });
 
   it("keeps client visibility when a refresh finishes after a filter change", async () => {
@@ -220,7 +317,7 @@ describe("session catalog interactions", () => {
     await user.click(toggle);
     expect(await screen.findByText(/Internal view/)).toBeInTheDocument();
   
-    resolveRefresh(json({ ...listBody, generation: 2 }));
+    resolveRefresh(json({ ...listBody, catalogGeneration: 2 }));
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "Refresh sessions" })).toBeEnabled()
     );
@@ -319,7 +416,7 @@ describe("session catalog interactions", () => {
     await user.keyboard("{Enter}");
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "Refresh sessions" })).toBeEnabled());
-    resolveRefresh(json({ ...listBody, generation: 2 }));
+    resolveRefresh(json({ ...listBody, catalogGeneration: 2 }));
   });
 
   it("does not merge an obsolete catalog page after filters change", async () => {

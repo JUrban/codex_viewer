@@ -14,7 +14,7 @@ afterEach(() => {
 describe("application shell", () => {
   it("provides labelled browse landmarks and an actionable empty state", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(json({
-      generation: 1, sessions: [], projects: [], partial: false, warnings: [],
+      catalogGeneration: 1, sessions: [], projects: [], partial: false, warnings: [],
     })));
     render(<App />);
     expect(screen.getByRole("navigation", { name: "Sessions" })).toBeInTheDocument();

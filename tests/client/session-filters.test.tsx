@@ -201,7 +201,7 @@ describe("session filters", () => {
     expect(screen.getByRole("radio", { name: "Active" })).toBeChecked();
   });
 
-  it("removes legacy filter parameters while retaining timeline visibility", () => {
+  it("removes unsupported URL parameters while retaining timeline visibility", () => {
     window.history.replaceState(
       null,
       "",

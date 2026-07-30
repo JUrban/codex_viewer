@@ -90,9 +90,18 @@ normalized sessions are held only in process memory and disappear when the
 server stops.
 
 The session index is paged. Use **Load more sessions** to browse past the first
-200 summaries. Catalog and timeline cursors are tied to one generation; if a
-rollout changes between pages, the browser restarts safely rather than mixing
-old and new data.
+200 summaries. Its offset cursor is tied to the numeric `catalogGeneration`
+returned with the first page. Any catalog change can affect membership, order,
+search results, or facets, so a later page with an old generation receives HTTP
+409 `stale_catalog_generation` and the browser restarts the catalog query.
+
+Session reading uses a separate consistency domain. Session detail returns an
+opaque `sessionRevision`, and every timeline page, including the first, must send
+that revision. Tool and directive detail requests use the same token. If that
+session's published view changes, an old token receives HTTP 409
+`stale_session_revision` and the browser restarts the detail-to-first-page
+handshake. Changes to other sessions can still advance `catalogGeneration`, but
+do not change this session's revision or discard its loaded pages.
 
 ## Architecture
 
@@ -101,7 +110,7 @@ The server separates stable session behavior from agent-specific storage:
 ```text
 SessionSource adapters
   -> source-local normalized sessions
-  -> generation-based aggregate catalog
+  -> aggregate catalog with catalog and per-session versions
   -> query and search services
   -> API DTOs
 ```
@@ -113,7 +122,10 @@ modules do not import the adapter directly, and the root composition factory
 connects it to the session repository.
 The aggregate catalog knows only source descriptors and normalized sessions.
 It namespaces session identity by source instance, so future adapters can
-publish overlapping native session IDs safely.
+publish overlapping native session IDs safely. Each successful refresh
+atomically publishes the catalog generation, final linked session views, and
+their opaque revisions. The internal content digests used to decide revision
+reuse are never returned by the API.
 
 ## Compatibility and limits
 
@@ -133,10 +145,13 @@ capped at 256,000 characters each. Session previews, item summaries, tool
 previews, and search excerpts use a shared 240-character limit.
 Timeline pages stop at 512 entries or approximately 4 MiB of serialized item
 content, whichever comes first; a single valid item is always returned so its
-cursor can advance. The first release uses whole-file rereads after a fingerprint
-change; it has no watcher, incremental tail state, or persistent full-text index.
-Successful catalog discovery is reused for three seconds so a detail request and its
-immediately following item or lazy-detail request do not rescan the same catalog.
+cursor can advance. Session-scoped revisions change only the HTTP consistency
+boundary: a changed fingerprint still causes that rollout to be decoded and
+normalized again from the beginning. The reader has no watcher, incremental
+tail state, historical snapshot store, or persistent full-text index.
+Successful catalog discovery is reused for three seconds so a detail request
+and its immediately following item or lazy-detail request do not rescan the
+same catalog.
 
 ## Verification
 
@@ -148,9 +163,12 @@ npm run benchmark:scale
 ```
 
 The scale command creates roughly 3,000 synthetic rollouts and more than
-100 MiB only below `/private/tmp`, measures catalog/search/detail behavior, and
-removes the temporary corpus afterward. It never reads or copies real session
-content.
+100 MiB only below `/private/tmp`. It measures cold catalog construction,
+no-change refresh, single-session append and replacement refresh, search,
+detail loading, and peak RSS. It also asserts that catalog generations advance,
+only the changed session receives a new revision, and an unrelated session's
+old token remains readable. The temporary corpus is removed afterward; the
+benchmark never reads or copies real session content.
 
 To confirm the production listener on macOS:
 

@@ -77,7 +77,7 @@ export function SessionReader({
             <Timeline
               items={visibleItems}
               sessionId={detail.session.id}
-              generation={page?.generation ?? detail.generation}
+              sessionRevision={page?.sessionRevision ?? detail.sessionRevision}
               hasMore={hasMore}
               loading={loading}
               busy={busy}
