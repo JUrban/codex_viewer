@@ -1,4 +1,3 @@
-import type { CatalogMetadata } from "../codex/catalog-source.js";
 import { DECODER_VERSION } from "../codex/limits.js";
 import type { NormalizedSession } from "../domain/session-domain.js";
 import type { RolloutDescriptor } from "../security/path-policy.js";
@@ -14,7 +13,6 @@ export interface FileFingerprint {
 
 export interface SessionCacheEntry {
   fingerprint: FileFingerprint;
-  metadataKey: string;
   normalized: NormalizedSession;
   threadId: string | null;
 }
@@ -37,8 +35,4 @@ export function sameFingerprint(left: FileFingerprint, right: FileFingerprint): 
     left.size === right.size &&
     left.mtimeMs === right.mtimeMs &&
     left.decoderVersion === right.decoderVersion;
-}
-
-export function metadataKey(metadata: CatalogMetadata | null): string {
-  return JSON.stringify(metadata);
 }

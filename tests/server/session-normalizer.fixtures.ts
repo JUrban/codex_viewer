@@ -17,7 +17,7 @@ export async function normalizeFixture(fileName: string) {
   );
   if (descriptor === null) throw new Error(`Fixture is outside the path policy: ${fileName}`);
   const decoded = await new WholeFileRolloutDecoder().decode(descriptor);
-  const metadata = new IdentityResolver().resolve(decoded, null);
+  const metadata = new IdentityResolver().resolve(decoded);
   return new DefaultSessionNormalizer().normalize(decoded, metadata);
 }
 

@@ -2,7 +2,6 @@ import type { CatalogDiscovery, CatalogEntry, CodexCatalogSource } from "../code
 import type { IdentityResolver } from "../codex/identity-resolver.js";
 import type { RolloutDecoder } from "../codex/rollout-decoder.js";
 import type { SessionNormalizer } from "../codex/session-normalizer.js";
-import { normalizeSessionTitle } from "../codex/limits.js";
 import type {
   DomainDiagnostic,
   DomainSession,
@@ -16,7 +15,6 @@ import {
 import { RefreshCoordinator } from "./refresh-coordinator.js";
 import {
   fingerprintOf,
-  metadataKey,
   sameFingerprint,
   type SessionCacheEntry,
 } from "./session-cache.js";
@@ -33,7 +31,6 @@ const EXPECTED_ROLLOUT_IO_ERRORS = new Set([
 export interface CatalogSnapshot {
   readonly generation: number;
   readonly signature: string;
-  readonly mode: CatalogDiscovery["mode"];
   readonly diagnostics: readonly DomainDiagnostic[];
   readonly sessions: ReadonlyMap<DomainSessionId, NormalizedSession>;
   readonly cache: ReadonlyMap<string, SessionCacheEntry>;
@@ -84,18 +81,16 @@ export class CatalogSnapshotStore {
     for (const entry of discovery.entries) {
       const fingerprint = fingerprintOf(entry.descriptor);
       const old = previous?.cache.get(entry.descriptor.canonicalPath);
-      const catalogMetadataKey = metadataKey(entry.metadata);
       if (
         old !== undefined &&
-        sameFingerprint(old.fingerprint, fingerprint) &&
-        old.metadataKey === catalogMetadataKey
+        sameFingerprint(old.fingerprint, fingerprint)
       ) {
         cache.set(entry.descriptor.canonicalPath, old);
         continue;
       }
       cache.set(
         entry.descriptor.canonicalPath,
-        await this.#normalizeEntry(entry, fingerprint, catalogMetadataKey),
+        await this.#normalizeEntry(entry, fingerprint),
       );
     }
 
@@ -112,7 +107,6 @@ export class CatalogSnapshotStore {
     const snapshot: CatalogSnapshot = {
       generation: (previous?.generation ?? 0) + 1,
       signature,
-      mode: discovery.mode,
       diagnostics,
       sessions,
       cache,
@@ -127,14 +121,12 @@ export class CatalogSnapshotStore {
   async #normalizeEntry(
     entry: CatalogEntry,
     fingerprint: ReturnType<typeof fingerprintOf>,
-    catalogMetadataKey: string,
   ): Promise<SessionCacheEntry> {
     try {
       const decoded = await this.decoder.decode(entry.descriptor);
-      const metadata = this.identity.resolve(decoded, entry.metadata);
+      const metadata = this.identity.resolve(decoded);
       return {
         fingerprint,
-        metadataKey: catalogMetadataKey,
         normalized: this.normalizer.normalize(decoded, metadata),
         threadId: metadata.threadId,
       };
@@ -142,9 +134,8 @@ export class CatalogSnapshotStore {
       if (!isExpectedRolloutIoError(error)) throw error;
       return {
         fingerprint,
-        metadataKey: catalogMetadataKey,
         normalized: unavailableSession(entry),
-        threadId: entry.metadata?.threadId ?? null,
+        threadId: null,
       };
     }
   }
@@ -162,20 +153,19 @@ function warningCount(
 }
 
 function unavailableSession(entry: CatalogEntry): NormalizedSession {
-  const metadata = entry.metadata;
   return {
     session: {
       id: entry.descriptor.id,
-      sourceId: metadata?.threadId ?? null,
-      title: normalizeSessionTitle(metadata?.title ?? null) ?? "Unavailable session",
+      sourceId: null,
+      title: "Unavailable session",
       preview: null,
-      cwd: metadata?.cwd ?? null,
-      createdAt: metadata?.createdAt ?? null,
-      updatedAt: metadata?.updatedAt ?? null,
-      archived: metadata?.archived ?? entry.descriptor.archived,
+      cwd: null,
+      createdAt: null,
+      updatedAt: null,
+      archived: entry.descriptor.archived,
       parentId: null,
       childIds: [],
-      agent: metadata?.agent ?? null,
+      agent: null,
       sourceState: "unavailable",
       messageCount: 0,
       toolCount: 0,
@@ -203,11 +193,9 @@ function isExpectedRolloutIoError(error: unknown): boolean {
 
 function discoverySignature(discovery: CatalogDiscovery): string {
   return JSON.stringify({
-    mode: discovery.mode,
     diagnostics: discovery.diagnostics,
     entries: discovery.entries.map((entry) => ({
       descriptor: fingerprintOf(entry.descriptor),
-      metadata: entry.metadata,
     })),
   });
 }

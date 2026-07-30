@@ -28,8 +28,7 @@ import type { CatalogSnapshot } from "../repository/catalog-snapshot-store.js";
 export class SessionApiMapper {
   status(snapshot: CatalogSnapshot): StatusResponse {
     return {
-      available: snapshot.mode !== "unavailable",
-      catalogMode: snapshot.mode,
+      available: snapshot.sessions.size > 0,
       generation: snapshot.generation,
       sessionCount: snapshot.sessions.size,
       warningCount: snapshot.warningCount,

@@ -1,17 +1,15 @@
 # Codex Sessions Reader
 
 A private, read-only Web reader for local Codex session history. It discovers
-rollout JSONL files below a configured Codex home, optionally enriches the
-catalog from Codex's SQLite state, and serves a responsive browser interface
-from the same Node process, bound to loopback by default.
+rollout JSONL files below a configured Codex home and serves a responsive
+browser interface from the same Node process, bound to loopback by default.
 
 The reader does not edit, archive, delete, resume, export, or upload sessions.
 It creates no persistent index or application cache.
 
 ## Prerequisites
 
-- Node.js 22.13 or newer. The optional SQLite adapter uses the built-in
-  `node:sqlite` module.
+- Node.js 22.13 or newer.
 - npm, with permission to install the packages pinned by `package-lock.json`.
 - A local Codex home. By default this is `~/.codex`.
 
@@ -45,7 +43,6 @@ Configuration is accepted only from the process environment at startup:
 | `CODEX_HOME` | `~/.codex` | Codex home whose `sessions/` and `archived_sessions/` roots may be read. |
 | `CODEX_VIEWER_HOST` | `127.0.0.1` | Address or hostname on which the server listens. |
 | `CODEX_VIEWER_PORT` | `4173` | TCP port, from `0` through `65535`. Port `0` asks the operating system to choose one. |
-| `CODEX_VIEWER_DISABLE_SQLITE` | unset | Set to `1` to skip SQLite metadata and use JSONL discovery only. |
 
 Example:
 
@@ -106,10 +103,8 @@ as a pending live-write fragment until its newline arrives.
 The complete decode, normalization, deduplication, and visibility policy is
 documented in [Session JSONL filtering rules](docs/session-jsonl-filtering.md).
 
-SQLite is optional metadata, not the correctness boundary. The reader opens
-compatible `state_<number>.sqlite` files read-only, feature-detects the
-`threads` schema, and falls back to JSONL when the database is absent, locked,
-corrupt, or from an unknown schema generation.
+Rollout JSONL is the only session discovery and identity source. The reader
+does not inspect Codex state databases or create a derived index.
 
 Individual JSONL lines over 8 MiB are skipped. Normalized message text is capped
 at 1,000,000 characters; directive detail and tool input/output are
@@ -154,10 +149,6 @@ curl --fail --silent http://127.0.0.1:4173/api/v1/status
 **The page shows no sessions.** Confirm `CODEX_HOME` points to the directory
 containing `sessions/`, not to `sessions/` itself. Check that rollout files are
 regular files named `rollout-*.jsonl`.
-
-**SQLite warnings appear.** Restart with
-`CODEX_VIEWER_DISABLE_SQLITE=1`. JSONL remains the complete-event fallback;
-titles or relationship metadata may be less rich.
 
 **A session is partial or unavailable.** Codex may still be writing its final
 line, a record may exceed a safety limit, or the source permissions may have

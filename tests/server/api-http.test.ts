@@ -1,7 +1,6 @@
 import { cp, readFile, writeFile } from "node:fs/promises";
 import type { AddressInfo } from "node:net";
 import { join, resolve } from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it } from "vitest";
 import { LOOPBACK_HOST, type ServerConfig } from "../../src/server/config.js";
 import { createApiRouter } from "../../src/server/http/api-router.js";
@@ -16,36 +15,13 @@ afterEach(async () => {
     new Promise<void>((resolveClose) => server.close(() => resolveClose()))));
 });
 
-async function startApi(maxScannedBytes?: number, sqlite = false) {
+async function startApi(maxScannedBytes?: number) {
   const home = await createTempDirectory("codex-api-home-");
   await cp(resolve("tests/fixtures/codex-home"), home, { recursive: true });
-  if (sqlite) {
-    const database = new DatabaseSync(join(home, "state_50.sqlite"));
-    database.exec(`
-      CREATE TABLE threads (
-        id TEXT PRIMARY KEY,
-        rollout_path TEXT NOT NULL,
-        title TEXT,
-        cwd TEXT,
-        archived INTEGER
-      )
-    `);
-    database.prepare(
-      "INSERT INTO threads (id, rollout_path, title, cwd, archived) VALUES (?, ?, ?, ?, ?)",
-    ).run(
-      "basic-session",
-      join(home, "sessions/2026/07/28/rollout-2026-07-28T10-00-00-basic-session.jsonl"),
-      "SQLite API title",
-      "/synthetic/sqlite-api",
-      0,
-    );
-    database.close();
-  }
   const clientDirectory = await createTempDirectory("codex-api-client-");
   await writeFile(join(clientDirectory, "index.html"), "<h1>trace notebook</h1>");
   const repository = await createSessionRepository(
     home,
-    !sqlite,
     maxScannedBytes === undefined
       ? undefined
       : { maxScannedBytes, maxResults: 200, maxExcerptChars: 240, maxDurationMs: 1_000 },
@@ -69,12 +45,13 @@ describe("versioned session API", () => {
     const status = await fetch(`${base}/api/v1/status`);
     expect(status.status).toBe(200);
     expect(status.headers.get("cache-control")).toBe("no-store");
-    expect(await status.json()).toEqual(expect.objectContaining({
+    const statusBody = await status.json();
+    expect(statusBody).toEqual(expect.objectContaining({
       available: true,
-      catalogMode: "jsonl",
       generation: 1,
       sessionCount: 4,
     }));
+    expect(statusBody).not.toHaveProperty("catalogMode");
 
     const listResponse = await fetch(`${base}/api/v1/sessions?q=synthetic&limit=10`);
     const list = await listResponse.json();
@@ -237,16 +214,4 @@ describe("versioned session API", () => {
     expect(JSON.stringify(body)).not.toContain(home);
   });
 
-  it("publishes feature-detected SQLite metadata through the same safe API", async () => {
-    const { base } = await startApi(undefined, true);
-    const status = await fetch(`${base}/api/v1/status`).then((response) => response.json());
-    expect(status.catalogMode).toBe("sqlite+jsonl");
-    const list = await fetch(`${base}/api/v1/sessions?q=SQLite%20API%20title`)
-      .then((response) => response.json());
-    expect(list.sessions).toHaveLength(1);
-    expect(list.sessions[0].session).toEqual(expect.objectContaining({
-      title: "SQLite API title",
-      cwd: "/synthetic/sqlite-api",
-    }));
-  });
 });

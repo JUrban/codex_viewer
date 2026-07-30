@@ -18,7 +18,7 @@ import { createTempDirectory } from "../helpers/temp-directories.js";
 async function fixtureRepository() {
   const home = await createTempDirectory("codex-repository-");
   await cp(resolve("tests/fixtures/codex-home"), home, { recursive: true });
-  return { home, repository: await createSessionRepository(home, true) };
+  return { home, repository: await createSessionRepository(home) };
 }
 
 describe("DefaultSessionRepository", () => {
@@ -33,7 +33,7 @@ describe("DefaultSessionRepository", () => {
       async discover() {
         discoveries += 1;
         await gate;
-        return { mode: "unavailable", entries: [], diagnostics: [] };
+        return { entries: [], diagnostics: [] };
       },
     };
     const repository = new DefaultSessionRepository(
@@ -49,7 +49,11 @@ describe("DefaultSessionRepository", () => {
     const status = repository.getStatus();
     const list = repository.list({});
     release();
-    expect((await status).generation).toBe(1);
+    expect(await status).toEqual(expect.objectContaining({
+      available: false,
+      generation: 1,
+      sessionCount: 0,
+    }));
     expect((await list).generation).toBe(1);
     expect(discoveries).toBe(1);
     expect((await repository.getStatus()).generation).toBe(1);
@@ -211,7 +215,7 @@ describe("DefaultSessionRepository", () => {
       archivedRollout,
       `${archivedSource}{"timestamp":"2026-07-20T08:00:01.000Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"${"x".repeat(2_000)}"}]}}\n`,
     );
-    const repository = await createSessionRepository(home, true, {
+    const repository = await createSessionRepository(home, {
       maxScannedBytes: 1_000,
       maxResults: 200,
       maxExcerptChars: 240,
@@ -233,7 +237,7 @@ describe("DefaultSessionRepository", () => {
       join(home, "sessions/rollout-active.jsonl"),
       '{"timestamp":"2026-07-28T10:00:00.000Z","type":"session_meta","payload":{"id":"active-session","title":"Active trace"}}\n',
     );
-    const repository = await createSessionRepository(home, true);
+    const repository = await createSessionRepository(home);
     expect((await repository.list({ archiveScope: "all" })).sessions).toHaveLength(1);
 
     await mkdir(join(home, "archived_sessions"), { recursive: true });
@@ -275,22 +279,31 @@ describe("DefaultSessionRepository", () => {
         device: 1,
         inode: index,
       },
-      metadata: {
-        threadId: `thread-${index}`,
-        title: `Session ${String(index).padStart(3, "0")}`,
-        cwd: "/synthetic/large-catalog",
-        createdAt: null,
-        updatedAt: new Date(Date.UTC(2026, 0, 1, 0, 0, index)).toISOString(),
-        parentThreadId: null,
-        archived: false,
-      },
     }));
     const repository = new DefaultSessionRepository(
-      { discover: async () => ({ mode: "jsonl" as const, entries, diagnostics: [] }) },
+      { discover: async () => ({ entries, diagnostics: [] }) },
       {
         decode: async (descriptor) => ({
           descriptor,
-          records: [],
+          records: [{
+            ordinal: 1,
+            value: {
+              type: "session_meta",
+              payload: {
+                id: `thread-${descriptor.id.slice("session-".length)}`,
+                title: `Session ${descriptor.id.slice("session-".length).padStart(3, "0")}`,
+                cwd: "/synthetic/large-catalog",
+                timestamp: new Date(Date.UTC(
+                  2026,
+                  0,
+                  1,
+                  0,
+                  0,
+                  Number(descriptor.id.slice("session-".length)),
+                )).toISOString(),
+              },
+            },
+          }],
           diagnostics: [],
           incompleteTail: false,
         }),
@@ -328,8 +341,7 @@ describe("DefaultSessionRepository", () => {
     const repository = new DefaultSessionRepository(
       {
         discover: async () => ({
-          mode: "jsonl" as const,
-          entries: [{ descriptor, metadata: null }],
+          entries: [{ descriptor }],
           diagnostics: [],
         }),
       },

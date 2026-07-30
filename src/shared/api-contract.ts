@@ -24,7 +24,6 @@ export interface ApiError {
 
 export interface StatusResponse {
   available: boolean;
-  catalogMode: "sqlite+jsonl" | "jsonl" | "unavailable";
   generation: CatalogGeneration;
   sessionCount: number;
   warningCount: number;

@@ -4,10 +4,7 @@ import { createServer } from "./http/create-server.js";
 import { createSessionRepository } from "./repository/create-session-repository.js";
 
 const config = loadConfig();
-const repository = await createSessionRepository(
-  config.codexHome,
-  process.env.CODEX_VIEWER_DISABLE_SQLITE === "1",
-);
+const repository = await createSessionRepository(config.codexHome);
 const server = createServer(config, createApiRouter(repository));
 
 server.listen(config.port, config.host, () => {

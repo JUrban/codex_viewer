@@ -24,10 +24,6 @@ try {
     throw new Error(`Synthetic corpus was only ${totalBytes} bytes`);
   }
 
-  // A corrupt newest state file proves that catalog construction keeps JSONL as
-  // the correctness fallback when SQLite is unavailable.
-  await writeFile(join(root, "state_99.sqlite"), "not a sqlite database");
-
   const repository = await createSessionRepository(root);
   const coldCatalog = await measure(() => repository.list({ limit: 200 }));
   const firstList = coldCatalog.value;
@@ -81,7 +77,6 @@ try {
       directory: "/private/tmp/codex-viewer-scale-<random>",
       sessionCount: SESSION_COUNT,
       bytes: totalBytes,
-      sqliteMode: (await repository.getStatus()).catalogMode,
     },
     timingMs: {
       coldCatalog: round(coldCatalog.measurement.milliseconds),

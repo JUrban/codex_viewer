@@ -18,9 +18,8 @@ export class JsonlCatalogSource implements CodexCatalogSource {
     }
     const entries: CatalogEntry[] = [...descriptors.values()]
       .sort((left, right) => left.canonicalPath.localeCompare(right.canonicalPath))
-      .map((descriptor) => ({ descriptor, metadata: null }));
+      .map((descriptor) => ({ descriptor }));
     return {
-      mode: entries.length === 0 ? "unavailable" : "jsonl",
       entries,
       diagnostics,
     };

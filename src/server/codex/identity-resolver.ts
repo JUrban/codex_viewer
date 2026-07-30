@@ -1,7 +1,6 @@
 import { basename } from "node:path";
 import type { AgentIdentity } from "../../shared/domain.js";
 import { nonEmptyAgentIdentity, taskNameFromAgentPath } from "./agent-identity.js";
-import type { CatalogMetadata } from "./catalog-source.js";
 import type { DecodedRollout } from "./rollout-decoder.js";
 import { isObject } from "./rollout-decoder.js";
 
@@ -26,7 +25,7 @@ interface RawMetadata {
 }
 
 export class IdentityResolver {
-  resolve(decoded: DecodedRollout, catalog: CatalogMetadata | null): SessionMetadata {
+  resolve(decoded: DecodedRollout): SessionMetadata {
     const candidates = decoded.records
       .filter((record) => record.value.type === "session_meta")
       .map((record) => rawMetadata(record.value.payload))
@@ -36,14 +35,14 @@ export class IdentityResolver {
     const raw = matching ?? candidates[0] ?? null;
 
     return {
-      threadId: catalog?.threadId ?? raw?.id ?? null,
-      title: catalog?.title ?? raw?.title ?? null,
-      cwd: catalog?.cwd ?? raw?.cwd ?? null,
-      createdAt: catalog?.createdAt ?? raw?.timestamp ?? timestampOf(decoded.records[0]?.value),
-      updatedAt: catalog?.updatedAt ?? lastTimestamp(decoded),
-      parentThreadId: catalog?.parentThreadId ?? raw?.parentThreadId ?? null,
-      archived: catalog?.archived ?? decoded.descriptor.archived,
-      agent: mergeAgent(catalog?.agent, raw?.agent),
+      threadId: raw?.id ?? null,
+      title: raw?.title ?? null,
+      cwd: raw?.cwd ?? null,
+      createdAt: raw?.timestamp ?? timestampOf(decoded.records[0]?.value),
+      updatedAt: lastTimestamp(decoded),
+      parentThreadId: raw?.parentThreadId ?? null,
+      archived: decoded.descriptor.archived,
+      agent: raw?.agent ?? null,
     };
   }
 }
@@ -71,17 +70,6 @@ function rawAgent(value: Record<string, unknown>): AgentIdentity | null {
     nickname: string(value.agent_nickname) ?? string(spawn?.agent_nickname),
     role: string(value.agent_role) ?? string(spawn?.agent_role) ??
       (typeof subagent === "string" ? subagent : null),
-  });
-}
-
-function mergeAgent(
-  catalog: AgentIdentity | null | undefined,
-  raw: AgentIdentity | null | undefined,
-): AgentIdentity | null {
-  return nonEmptyAgentIdentity({
-    taskName: catalog?.taskName ?? raw?.taskName ?? null,
-    nickname: catalog?.nickname ?? raw?.nickname ?? null,
-    role: catalog?.role ?? raw?.role ?? null,
   });
 }
 

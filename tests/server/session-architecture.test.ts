@@ -150,18 +150,8 @@ describe("server architecture boundaries", () => {
     };
     const source = {
       discover: vi.fn(async () => ({
-        mode: "jsonl" as const,
         entries: [{
           descriptor,
-          metadata: {
-            threadId: "session-one",
-            title: `${"Unavailable title ".repeat(10)}\nignored`,
-            cwd: null,
-            createdAt: null,
-            updatedAt: null,
-            parentThreadId: null,
-            archived: false,
-          },
         }],
         diagnostics: [],
       })),
@@ -178,9 +168,13 @@ describe("server architecture boundaries", () => {
     );
     const unavailableSession = (await unavailable.current()).sessions.get("session-one")?.session;
     expect(unavailableSession)
-      .toMatchObject({ sourceState: "unavailable", warningCount: 1 });
-    expect(unavailableSession?.title).toHaveLength(80);
-    expect(unavailableSession?.title).not.toContain("\n");
+      .toMatchObject({
+        sourceId: null,
+        title: "Unavailable session",
+        cwd: null,
+        sourceState: "unavailable",
+        warningCount: 1,
+      });
 
     const broken = new CatalogSnapshotStore(
       source,
@@ -196,7 +190,6 @@ function snapshotOf(value: NormalizedSession): CatalogSnapshot {
   return {
     generation: 3,
     signature: "snapshot",
-    mode: "jsonl",
     diagnostics: [],
     sessions: new Map([[value.session.id, value]]),
     cache: new Map(),
