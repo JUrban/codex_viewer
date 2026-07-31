@@ -55,28 +55,25 @@ describe("DefaultSessionRepository", () => {
       () => now,
     );
 
-    const status = repository.getStatus();
-    const list = repository.list({});
+    const firstList = repository.list({});
+    const secondList = repository.list({});
     release();
-    expect(await status).toEqual(expect.objectContaining({
-      available: false,
-      sessionCount: 0,
-    }));
-    expect((await list).listRevision).toMatch(/^[A-Za-z0-9_-]{32}$/);
+    expect((await firstList).listRevision).toMatch(/^[A-Za-z0-9_-]{32}$/);
+    expect((await secondList).sessions).toEqual([]);
     expect(discoveries).toBe(1);
-    await repository.getStatus();
+    await repository.list({});
     expect(discoveries).toBe(1);
     now = DEFAULT_CATALOG_FRESHNESS_MS - 1;
-    await repository.getStatus();
+    await repository.list({});
     expect(discoveries).toBe(1);
     now = DEFAULT_CATALOG_FRESHNESS_MS;
-    await repository.getStatus();
+    await repository.list({});
     expect(discoveries).toBe(2);
     await expect(repository.refresh()).resolves.toBeUndefined();
     expect(discoveries).toBe(3);
   });
 
-  it("updates status diagnostics without changing an unaffected list revision", async () => {
+  it("keeps the list revision stable when only source diagnostics change", async () => {
     let signature = "warning";
     let diagnostics = [{
       code: "temporary_source_warning",
@@ -99,13 +96,11 @@ describe("DefaultSessionRepository", () => {
     };
     const repository = new DefaultSessionRepository([source]);
     const first = await repository.list({});
-    expect(await repository.getStatus()).toMatchObject({ warningCount: 1 });
 
     signature = "recovered";
     diagnostics = [];
     await repository.refresh();
 
-    expect(await repository.getStatus()).toMatchObject({ warningCount: 0 });
     expect((await repository.list({})).listRevision).toBe(first.listRevision);
   });
 

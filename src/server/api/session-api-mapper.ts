@@ -3,7 +3,6 @@ import type {
   ItemPageResponse,
   SessionDetailResponse,
   SessionListResponse,
-  StatusResponse,
   ToolDetailResponse,
 } from "../../shared/api-contract.js";
 import type {
@@ -24,17 +23,8 @@ import type {
   ItemPageResult,
   SessionListResult,
 } from "../repository/session-query-service.js";
-import type { CatalogSnapshot } from "../repository/catalog-snapshot-store.js";
 
 export class SessionApiMapper {
-  status(snapshot: CatalogSnapshot): StatusResponse {
-    return {
-      available: snapshot.sessions.size > 0,
-      sessionCount: snapshot.sessions.size,
-      warningCount: snapshot.warningCount,
-    };
-  }
-
   list(result: SessionListResult): SessionListResponse {
     return {
       listRevision: result.listRevision,

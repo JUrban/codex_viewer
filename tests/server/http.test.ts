@@ -112,7 +112,7 @@ describe("secure HTTP foundation", () => {
 
   it("does not let the SPA fallback shadow API routes", async () => {
     const base = await start();
-    const response = await fetch(`${base}/api/v1/status`);
+    const response = await fetch(`${base}/api/v1/unknown`);
     expect(response.status).toBe(404);
     expect(response.headers.get("cache-control")).toBe("no-store");
     expect((await response.json()).error.code).toBe("not_found");
@@ -124,7 +124,6 @@ describe("secure HTTP foundation", () => {
       throw failure;
     };
     const repository: SessionRepository = {
-      getStatus: fail,
       list: fail,
       getSession: fail,
       getItems: fail,
@@ -135,7 +134,7 @@ describe("secure HTTP foundation", () => {
     const logger = { error: vi.fn() };
     const base = await startWithRepository(repository, logger);
 
-    const response = await fetch(`${base}/api/v1/status`);
+    const response = await fetch(`${base}/api/v1/sessions`);
     const body = await response.json();
 
     expect(response.status).toBe(500);

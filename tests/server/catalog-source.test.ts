@@ -121,7 +121,7 @@ describe("catalog discovery", () => {
     expect(second.sessions).toHaveLength(2);
   });
 
-  it("hides unreadable rollouts, reports them internally, and retries them", async () => {
+  it("hides unreadable rollouts and retries them", async () => {
     const home = await createTempDirectory("codex-adapter-errors-");
     await mkdir(join(home, "sessions"));
     await writeFile(
@@ -150,12 +150,6 @@ describe("catalog discovery", () => {
     expect(JSON.stringify(unavailable.diagnostics)).not.toContain(home);
 
     const repository = new DefaultSessionRepository([recovering]);
-    const unavailableStatus = await repository.getStatus();
-    expect(unavailableStatus).toMatchObject({
-      available: false,
-      sessionCount: 0,
-      warningCount: 1,
-    });
     await expect(repository.list({})).resolves.toMatchObject({
       sessions: [],
       total: 0,
@@ -163,10 +157,8 @@ describe("catalog discovery", () => {
     });
 
     await repository.refresh();
-    await expect(repository.getStatus()).resolves.toMatchObject({
-      available: true,
-      sessionCount: 1,
-      warningCount: 0,
+    await expect(repository.list({})).resolves.toMatchObject({
+      total: 1,
     });
     const recovered = await recovering.refresh();
     expect(attempts).toBe(3);

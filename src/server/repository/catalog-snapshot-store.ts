@@ -33,7 +33,6 @@ export interface CatalogSnapshot {
   readonly sessions: ReadonlyMap<DomainSessionId, VersionedSession>;
   readonly documents: readonly SearchDocument[];
   readonly orderedIds: readonly DomainSessionId[];
-  readonly warningCount: number;
 }
 
 export class CatalogSnapshotStore {
@@ -102,7 +101,6 @@ export class CatalogSnapshotStore {
       sessions: preparedRevisions.sessions,
       documents,
       orderedIds,
-      warningCount: warningCount(diagnostics, normalizedSessions),
     };
     preparedRevisions.commit();
     this.#snapshot = snapshot;
@@ -153,19 +151,6 @@ function aggregateSignature(sources: readonly LoadedSource[]): string {
         source: descriptor.instanceKey,
         signature: snapshot.signature,
       })),
-  );
-}
-
-function warningCount(
-  diagnostics: readonly DomainDiagnostic[],
-  sessions: ReadonlyMap<DomainSessionId, NormalizedSession>,
-): number {
-  const sourceWarnings = diagnostics.filter(
-    (diagnostic) => diagnostic.severity !== "info",
-  ).length;
-  return sourceWarnings + [...sessions.values()].reduce(
-    (count, session) => count + session.session.warningCount,
-    0,
   );
 }
 

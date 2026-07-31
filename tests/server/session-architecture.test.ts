@@ -310,7 +310,6 @@ function snapshotOf(value: NormalizedSession): CatalogSnapshot {
       messages: [],
     }],
     orderedIds: [value.session.id],
-    warningCount: 1,
   };
 }
 

@@ -40,18 +40,19 @@ async function startApi(maxScannedBytes?: number) {
 }
 
 describe("versioned session API", () => {
-  it("serves status, list, detail, paged items, and lazy tool detail", async () => {
+  it("does not expose a status endpoint", async () => {
     const { base } = await startApi();
-    const status = await fetch(`${base}/api/v1/status`);
-    expect(status.status).toBe(200);
-    expect(status.headers.get("cache-control")).toBe("no-store");
-    const statusBody = await status.json();
-    expect(statusBody).toEqual(expect.objectContaining({
-      available: true,
-      sessionCount: 4,
-    }));
-    expect(statusBody).not.toHaveProperty("listRevision");
+    const response = await fetch(`${base}/api/v1/status`);
 
+    expect(response.status).toBe(404);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    await expect(response.json()).resolves.toEqual(expect.objectContaining({
+      error: expect.objectContaining({ code: "not_found" }),
+    }));
+  });
+
+  it("serves list, detail, paged items, and lazy tool detail", async () => {
+    const { base } = await startApi();
     const listResponse = await fetch(`${base}/api/v1/sessions?q=synthetic&limit=10`);
     const list = await listResponse.json();
     expect(list).toEqual(expect.objectContaining({

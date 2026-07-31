@@ -22,12 +22,6 @@ export interface ApiError {
   };
 }
 
-export interface StatusResponse {
-  available: boolean;
-  sessionCount: number;
-  warningCount: number;
-}
-
 export type ArchiveScope = "active" | "archived" | "all";
 
 export interface SessionListQuery {

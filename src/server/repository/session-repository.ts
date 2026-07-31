@@ -6,7 +6,6 @@ import type {
   SessionDetailResponse,
   SessionListQuery,
   SessionListResponse,
-  StatusResponse,
   ToolDetailQuery,
   ToolDetailResponse,
 } from "../../shared/api-contract.js";
@@ -34,7 +33,6 @@ export {
 };
 
 export interface SessionRepository {
-  getStatus(): Promise<StatusResponse>;
   list(query: SessionListQuery): Promise<SessionListResponse>;
   getSession(id: SessionId): Promise<SessionDetailResponse | null>;
   getItems(id: SessionId, query: ItemPageQuery): Promise<ItemPageResponse | null>;
@@ -72,10 +70,6 @@ export class DefaultSessionRepository implements SessionRepository {
 
   async refresh(): Promise<void> {
     await this.#store.refresh();
-  }
-
-  async getStatus(): Promise<StatusResponse> {
-    return this.#mapper.status(await this.#store.current());
   }
 
   async list(query: SessionListQuery): Promise<SessionListResponse> {

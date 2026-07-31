@@ -209,6 +209,5 @@ function snapshotOf(
     ])),
     documents: sessions.map(buildSearchDocument),
     orderedIds,
-    warningCount: diagnostic === undefined ? 0 : 1,
   };
 }

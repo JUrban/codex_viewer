@@ -48,10 +48,6 @@ export function createApiRouter(
     const headOnly = request.method === "HEAD";
 
     try {
-      if (url.pathname === `${API_ROOT}/status`) {
-        sendJson(response, 200, await repository.getStatus(), headOnly);
-        return true;
-      }
       if (url.pathname === SESSION_ROOT) {
         sendJson(response, 200, await repository.list(parseListQuery(url.searchParams)), headOnly);
         return true;
