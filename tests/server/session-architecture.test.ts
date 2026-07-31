@@ -15,6 +15,7 @@ import {
   RepositoryQueryError,
   SessionQueryService,
 } from "../../src/server/repository/session-query-service.js";
+import { deriveSessionView } from "../../src/server/repository/session-view-digest.js";
 import type {
   SessionSource,
   SourceSessionEntry,
@@ -105,7 +106,9 @@ describe("server architecture boundaries", () => {
 
   it("maps domain values exactly without leaking private summary fields or mutable references", () => {
     const mapper = new SessionApiMapper();
-    const detail = mapper.detail("r".repeat(32), session);
+    const queries = new SessionQueryService();
+    const read = queries.session(snapshotOf(normalized), "session-one")!;
+    const detail = mapper.detail(read);
     const summary = mapper.summary(session);
     const item = mapper.timelineItem(timeline[0]!);
 
@@ -133,22 +136,29 @@ describe("server architecture boundaries", () => {
     });
     expect(summary).not.toHaveProperty("sourceId");
     expect(detail).toEqual({
-      sessionRevision: "r".repeat(32),
-      session: {
-        ...summary,
-        sourceId: "private-source-id",
-        diagnostics: [{
-          code: "partial",
-          severity: "warning",
-          message: "Partial",
-          ordinal: 2,
-        }],
-        itemCount: 1,
+      context: {
+        cursor: {
+          sessionRevision: "r".repeat(32),
+          throughOrdinal: 0,
+          timelinePrefixRevision: expect.stringMatching(/^[A-Za-z0-9_-]{32}$/),
+        },
+        hasMore: true,
+        session: {
+          ...summary,
+          sourceId: "private-source-id",
+          diagnostics: [{
+            code: "partial",
+            severity: "warning",
+            message: "Partial",
+            ordinal: 2,
+          }],
+          itemCount: 1,
+        },
       },
     });
 
     summary.childIds.push("mutated");
-    detail.session.diagnostics[0]!.message = "mutated";
+    detail.context.session.diagnostics[0]!.message = "mutated";
     if (item.kind === "token" && item.tokenUsage.total) {
       item.tokenUsage.total.totalTokens = 99;
     }
@@ -171,8 +181,13 @@ describe("server architecture boundaries", () => {
       hasMore: false,
       projects: [{ project: "/project", count: 1 }],
     });
+    const read = queries.session(snapshot, "session-one")!;
     expect(queries.items(snapshot, "session-one", {
-      sessionRevision: "r".repeat(32),
+      cursor: {
+        sessionRevision: read.sessionRevision,
+        throughOrdinal: read.throughOrdinal,
+        timelinePrefixRevision: read.timelinePrefixRevision,
+      },
     })?.items).toEqual(timeline);
     expect(() => queries.list(snapshot, { offset: 1 })).toThrowError(
       expect.objectContaining<Partial<RepositoryQueryError>>({ code: "invalid_query" }),
@@ -184,6 +199,29 @@ describe("server architecture boundaries", () => {
         code: "stale_list_revision",
       }),
     );
+  });
+
+  it("rejects cursors whose through ordinal is not an actual timeline boundary", () => {
+    const gapped: NormalizedSession = {
+      ...normalized,
+      timeline: [{ ...timeline[0]!, ordinal: 5 }],
+    };
+    const snapshot = snapshotOf(gapped);
+    const versioned = snapshot.sessions.get(session.id)!;
+    const boundary = versioned.timelinePrefixIndex.boundaryAt(
+      gapped.timeline,
+      5,
+    )!;
+
+    expect(() => new SessionQueryService().session(snapshot, session.id, {
+      cursor: {
+        sessionRevision: versioned.revision,
+        throughOrdinal: 8,
+        timelinePrefixRevision: boundary.timelinePrefixRevision,
+      },
+    })).toThrowError(expect.objectContaining<Partial<RepositoryQueryError>>({
+      code: "stale_timeline_prefix",
+    }));
   });
 
   it("rejects duplicate source instances and propagates source invariant failures", async () => {
@@ -295,12 +333,20 @@ async function typescriptFiles(directory: string): Promise<string[]> {
 }
 
 function snapshotOf(value: NormalizedSession): CatalogSnapshot {
+  const { timelinePrefixIndex } = deriveSessionView(
+    value,
+    Buffer.alloc(32, 7),
+  );
   return {
     signature: "snapshot",
     diagnostics: [],
     sessions: new Map([[
       value.session.id,
-      { revision: "r".repeat(32), normalized: value },
+      {
+        revision: "r".repeat(32),
+        normalized: value,
+        timelinePrefixIndex,
+      },
     ]]),
     documents: [{
       sessionId: value.session.id,

@@ -12,8 +12,8 @@ import {
   baseSession,
   CHILD_ID,
   entry,
+  firstPage,
   SESSION_ID,
-  SESSION_REVISION,
 } from "./session-browser.fixtures";
 
 afterEach(() => {
@@ -37,11 +37,12 @@ describe("session browser components", () => {
         summary: "Visible reasoning summary",
       }]}
       sessionId={SESSION_ID}
-      sessionRevision={SESSION_REVISION}
+      cursor={firstPage.context.cursor}
       hasMore={false}
       loading={false}
       onLoadMore={vi.fn()}
-      onStale={vi.fn()}
+      onContext={vi.fn()}
+      onConflict={vi.fn()}
     />);
   
     expect(screen.getByText("Internal · 3")).toBeInTheDocument();
@@ -76,11 +77,12 @@ describe("session browser components", () => {
         },
       }]}
       sessionId={SESSION_ID}
-      sessionRevision={SESSION_REVISION}
+      cursor={firstPage.context.cursor}
       hasMore={false}
       loading={false}
       onLoadMore={vi.fn()}
-      onStale={vi.fn()}
+      onContext={vi.fn()}
+      onConflict={vi.fn()}
     />);
   
     const total = screen.getByRole("region", { name: "Total token usage" });
@@ -114,11 +116,12 @@ describe("session browser components", () => {
         },
       ]}
       sessionId={SESSION_ID}
-      sessionRevision={SESSION_REVISION}
+      cursor={firstPage.context.cursor}
       hasMore={false}
       loading={false}
       onLoadMore={vi.fn()}
-      onStale={vi.fn()}
+      onContext={vi.fn()}
+      onConflict={vi.fn()}
     />);
   
     expect(screen.getAllByText("Unavailable")).toHaveLength(2);

@@ -21,11 +21,11 @@ export function useSessionBrowser() {
   const refreshSessions = useCallback(async () => {
     const refreshed = await catalog.refresh();
     if (refreshed === null || location.selectedId === null) return;
-    await reader.restartSession();
+    await reader.refreshSession();
   }, [
     catalog.refresh,
     location.selectedId,
-    reader.restartSession,
+    reader.refreshSession,
   ]);
 
   return {

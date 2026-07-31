@@ -15,7 +15,7 @@ import {
   DEFAULT_CATALOG_FRESHNESS_MS,
   DefaultSessionRepository,
 } from "../src/server/repository/session-repository.js";
-import { digestSessionView } from "../src/server/repository/session-view-digest.js";
+import { deriveSessionView } from "../src/server/repository/session-view-digest.js";
 import { buildSearchDocument } from "../src/server/search/search-document.js";
 
 const SESSION_COUNT = 3_000;
@@ -39,16 +39,37 @@ try {
     throw new Error(`Synthetic corpus was only ${totalBytes} bytes`);
   }
 
-  const derivationCalls = { digest: 0, searchDocument: 0 };
+  const derivationCalls = { sessionView: 0, searchDocument: 0 };
+  let sessionViewAndPrefixIndexBuildMs = 0;
+  const prefixIndexBytesBySession = new Map<string, number>();
+  const timelineItemsBySession = new Map<string, number>();
   const repository = new DefaultSessionRepository(
     [await createCodexSessionSource(root)],
     undefined,
     DEFAULT_CATALOG_FRESHNESS_MS,
     performance.now.bind(performance),
     {
-      sessionDigester(normalized) {
-        derivationCalls.digest += 1;
-        return digestSessionView(normalized);
+      sessionDeriver(normalized, prefixKey) {
+        derivationCalls.sessionView += 1;
+        const startedAt = performance.now();
+        const result = deriveSessionView(normalized, prefixKey);
+        sessionViewAndPrefixIndexBuildMs += performance.now() - startedAt;
+        const expectedPrefixBytes = (normalized.timeline.length + 1) * 24;
+        if (result.timelinePrefixIndex.byteLength !== expectedPrefixBytes) {
+          throw new Error(
+            `Prefix index used ${result.timelinePrefixIndex.byteLength} bytes; ` +
+              `expected ${expectedPrefixBytes}`,
+          );
+        }
+        prefixIndexBytesBySession.set(
+          normalized.session.id,
+          result.timelinePrefixIndex.byteLength,
+        );
+        timelineItemsBySession.set(
+          normalized.session.id,
+          normalized.timeline.length,
+        );
+        return result;
       },
       searchDocumentBuilder(normalized) {
         derivationCalls.searchDocument += 1;
@@ -59,7 +80,7 @@ try {
   const coldCatalog = await measure(() => repository.list({ limit: 200 }));
   assertDerivationDelta(
     "cold catalog",
-    { digest: 0, searchDocument: 0 },
+    { sessionView: 0, searchDocument: 0 },
     derivationCalls,
     SESSION_COUNT,
   );
@@ -103,7 +124,7 @@ try {
     const detail = await repository.getSession(selected.session.id);
     if (detail === null) throw new Error("Scale session detail disappeared");
     const items = await repository.getItems(selected.session.id, {
-      sessionRevision: detail.sessionRevision,
+      cursor: detail.context.cursor,
       limit: 50,
     });
     if (items === null) throw new Error("Scale session item page disappeared");
@@ -116,7 +137,7 @@ try {
   const toolDetail = await repository.getToolDetail(
     selected.session.id,
     tool.id,
-    { sessionRevision: detailFirstPage.value.items.sessionRevision },
+    { cursor: detailFirstPage.value.items.context.cursor },
   );
   if (!toolDetail?.truncated) throw new Error("Large tool detail was not truncated");
   const message = detailFirstPage.value.items.items.find((item) => item.kind === "message");
@@ -126,8 +147,10 @@ try {
 
   const specialPath = paths[0]!;
   const beforeMutationListRevision = firstList.listRevision;
-  const beforeMutatedRevision = detailFirstPage.value.detail.sessionRevision;
-  const unrelatedRevision = unrelatedDetail.sessionRevision;
+  const beforeMutatedRevision =
+    detailFirstPage.value.detail.context.cursor.sessionRevision;
+  const unrelatedCursor = unrelatedDetail.context.cursor;
+  const unrelatedRevision = unrelatedCursor.sessionRevision;
   await appendFile(
     specialPath,
     `${JSON.stringify({
@@ -158,14 +181,14 @@ try {
     currentListRevision: afterAppendList.listRevision,
     expectListRevisionChange: false,
     previousMutatedRevision: beforeMutatedRevision,
-    currentMutatedRevision: afterAppendDetail.sessionRevision,
+    currentMutatedRevision: afterAppendDetail.context.cursor.sessionRevision,
     unrelatedRevision,
-    currentUnrelatedRevision: afterAppendUnrelated.sessionRevision,
+    currentUnrelatedRevision: afterAppendUnrelated.context.cursor.sessionRevision,
   });
-  await assertOldRevisionReadable(
+  await assertCursorReadable(
     repository,
     unrelated.session.id,
-    unrelatedRevision,
+    unrelatedCursor,
   );
 
   const replacement = `${specialPath}.replacement`;
@@ -187,15 +210,15 @@ try {
     previousListRevision: afterAppendList.listRevision,
     currentListRevision: afterReplaceList.listRevision,
     expectListRevisionChange: true,
-    previousMutatedRevision: afterAppendDetail.sessionRevision,
-    currentMutatedRevision: afterReplaceDetail.sessionRevision,
+    previousMutatedRevision: afterAppendDetail.context.cursor.sessionRevision,
+    currentMutatedRevision: afterReplaceDetail.context.cursor.sessionRevision,
     unrelatedRevision,
-    currentUnrelatedRevision: afterReplaceUnrelated.sessionRevision,
+    currentUnrelatedRevision: afterReplaceUnrelated.context.cursor.sessionRevision,
   });
-  await assertOldRevisionReadable(
+  await assertCursorReadable(
     repository,
     unrelated.session.id,
-    unrelatedRevision,
+    unrelatedCursor,
   );
 
   let permissionProbe: "hidden" | "portable-skip" = "portable-skip";
@@ -222,6 +245,8 @@ try {
       search: round(search.measurement.milliseconds),
       boundedAbsentSearch: round(absentSearch.measurement.milliseconds),
       detailFirstPage: round(detailFirstPage.measurement.milliseconds),
+      sessionViewAndPrefixIndexBuild:
+        round(sessionViewAndPrefixIndexBuildMs),
     },
     baselineComparison: {
       priorSingleSessionAppendMs: PRIOR_SINGLE_APPEND_BASELINE_MS,
@@ -244,6 +269,28 @@ try {
       replaceRefreshRssAfterBytes: replaceRefresh.measurement.rssAfterBytes,
       searchRssAfterBytes: search.measurement.rssAfterBytes,
       detailFirstPageRssAfterBytes: detailFirstPage.measurement.rssAfterBytes,
+      timelinePrefixIndexes: {
+        bytes: sum(prefixIndexBytesBySession.values()),
+        sessions: prefixIndexBytesBySession.size,
+        timelineItems: sum(timelineItemsBySession.values()),
+        storedBoundaries:
+          sum(timelineItemsBySession.values()) + prefixIndexBytesBySession.size,
+        bytesPerStoredBoundary: round(
+          sum(prefixIndexBytesBySession.values()) /
+            Math.max(
+              1,
+              sum(timelineItemsBySession.values()) +
+                prefixIndexBytesBySession.size,
+            ),
+        ),
+        amortizedBytesPerTimelineItem: round(
+          sum(prefixIndexBytesBySession.values()) /
+            Math.max(1, sum(timelineItemsBySession.values())),
+        ),
+        baseBytesPerSession: 24,
+        incrementalBytesPerTimelineItem: 24,
+        slotBytes: 24,
+      },
     },
     responseBytes: {
       firstList: jsonBytes(firstList),
@@ -269,13 +316,19 @@ try {
           afterAppendList.listRevision !== afterReplaceList.listRevision,
       },
       mutatedSessionRevisionChanged: {
-        afterAppend: beforeMutatedRevision !== afterAppendDetail.sessionRevision,
-        afterReplace: afterAppendDetail.sessionRevision !== afterReplaceDetail.sessionRevision,
+        afterAppend:
+          beforeMutatedRevision !==
+          afterAppendDetail.context.cursor.sessionRevision,
+        afterReplace:
+          afterAppendDetail.context.cursor.sessionRevision !==
+          afterReplaceDetail.context.cursor.sessionRevision,
       },
       unrelatedSessionRevisionStable:
-        unrelatedRevision === afterAppendUnrelated.sessionRevision &&
-        unrelatedRevision === afterReplaceUnrelated.sessionRevision,
-      unrelatedOldRevisionReadable: true,
+        unrelatedRevision ===
+          afterAppendUnrelated.context.cursor.sessionRevision &&
+        unrelatedRevision ===
+          afterReplaceUnrelated.context.cursor.sessionRevision,
+      unrelatedCursorReadable: true,
     },
     derivationCalls: {
       total: derivationCalls,
@@ -294,18 +347,24 @@ try {
 
 function assertDerivationDelta(
   label: string,
-  before: Readonly<{ digest: number; searchDocument: number }>,
-  after: Readonly<{ digest: number; searchDocument: number }>,
+  before: Readonly<{ sessionView: number; searchDocument: number }>,
+  after: Readonly<{ sessionView: number; searchDocument: number }>,
   expected: number,
 ): void {
-  const digest = after.digest - before.digest;
+  const sessionView = after.sessionView - before.sessionView;
   const searchDocument = after.searchDocument - before.searchDocument;
-  if (digest !== expected || searchDocument !== expected) {
+  if (sessionView !== expected || searchDocument !== expected) {
     throw new Error(
       `${label} derivation calls: expected ${expected}, got ` +
-        `digest=${digest}, searchDocument=${searchDocument}`,
+        `sessionView=${sessionView}, searchDocument=${searchDocument}`,
     );
   }
+}
+
+function sum(values: Iterable<number>): number {
+  let total = 0;
+  for (const value of values) total += value;
+  return total;
 }
 
 async function generateCorpus(directory: string): Promise<string[]> {
@@ -446,16 +505,23 @@ function assertMutationIsolation(input: {
   }
 }
 
-async function assertOldRevisionReadable(
+async function assertCursorReadable(
   repository: Repository,
   sessionId: string,
-  sessionRevision: string,
+  cursor: {
+    sessionRevision: string;
+    throughOrdinal: number;
+    timelinePrefixRevision: string;
+  },
 ): Promise<void> {
   const page = await repository.getItems(sessionId, {
-    sessionRevision,
+    cursor,
     limit: 1,
   });
-  if (page === null || page.sessionRevision !== sessionRevision) {
-    throw new Error("An unrelated session's old revision was not readable");
+  if (
+    page === null ||
+    page.context.cursor.sessionRevision !== cursor.sessionRevision
+  ) {
+    throw new Error("An unrelated session cursor was not readable");
   }
 }

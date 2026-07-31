@@ -21,7 +21,7 @@ import { RefreshCoordinator } from "./refresh-coordinator.js";
 import {
   SessionRevisionRegistry,
   type SessionRevisionFactory,
-  type SessionViewDigester,
+  type SessionViewDeriver,
   type VersionedSession,
 } from "./session-revision-registry.js";
 
@@ -41,7 +41,7 @@ export type SearchDocumentBuilder = (
 
 export interface CatalogSnapshotStoreDependencies {
   readonly revisionFactory?: SessionRevisionFactory;
-  readonly sessionDigester?: SessionViewDigester;
+  readonly sessionDeriver?: SessionViewDeriver;
   readonly searchDocumentBuilder?: SearchDocumentBuilder;
 }
 
@@ -69,7 +69,7 @@ export class CatalogSnapshotStore {
       : revisionFactoryOrDependencies ?? {};
     this.#revisions = new SessionRevisionRegistry(
       dependencies.revisionFactory,
-      dependencies.sessionDigester,
+      dependencies.sessionDeriver,
     );
     this.#buildSearchDocument =
       dependencies.searchDocumentBuilder ?? buildSearchDocument;

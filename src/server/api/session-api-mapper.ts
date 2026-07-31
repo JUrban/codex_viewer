@@ -1,6 +1,7 @@
 import type {
   DirectiveDetailResponse,
   ItemPageResponse,
+  SessionReadContext,
   SessionDetailResponse,
   SessionListResponse,
   ToolDetailResponse,
@@ -8,20 +9,20 @@ import type {
 import type {
   Diagnostic,
   SessionDetail,
-  SessionRevision,
   SessionSummary,
   TimelineItem,
 } from "../../shared/domain.js";
 import type {
   DomainDiagnostic,
-  DomainDirectiveDetail,
   DomainSession,
   DomainTimelineRecord,
-  DomainToolDetail,
 } from "../domain/session-domain.js";
 import type {
+  DirectiveDetailResult,
   ItemPageResult,
+  SessionReadContextResult,
   SessionListResult,
+  ToolDetailResult,
 } from "../repository/session-query-service.js";
 
 export class SessionApiMapper {
@@ -41,51 +42,55 @@ export class SessionApiMapper {
     };
   }
 
-  detail(
-    sessionRevision: SessionRevision,
-    session: DomainSession,
-  ): SessionDetailResponse {
-    return { sessionRevision, session: this.sessionDetail(session) };
+  detail(result: SessionReadContextResult): SessionDetailResponse {
+    return { context: this.readContext(result) };
   }
 
   itemPage(result: ItemPageResult): ItemPageResponse {
     return {
-      sessionRevision: result.sessionRevision,
+      context: this.readContext(result.context),
       items: result.items.map((item) => this.timelineItem(item)),
-      nextAfterOrdinal: result.nextAfterOrdinal,
+    };
+  }
+
+  readContext(result: SessionReadContextResult): SessionReadContext {
+    return {
+      cursor: {
+        sessionRevision: result.sessionRevision,
+        throughOrdinal: result.throughOrdinal,
+        timelinePrefixRevision: result.timelinePrefixRevision,
+      },
+      session: this.sessionDetail(result.session),
       hasMore: result.hasMore,
-      diagnostics: result.diagnostics.map((item) => this.diagnostic(item)),
     };
   }
 
   toolDetail(
-    sessionRevision: SessionRevision,
     sessionId: string,
     itemId: string,
-    detail: DomainToolDetail,
+    result: ToolDetailResult,
   ): ToolDetailResponse {
     return {
-      sessionRevision,
+      context: this.readContext(result.context),
       sessionId,
       itemId,
-      input: detail.input,
-      output: detail.output,
-      truncated: detail.truncated,
+      input: result.detail.input,
+      output: result.detail.output,
+      truncated: result.detail.truncated,
     };
   }
 
   directiveDetail(
-    sessionRevision: SessionRevision,
     sessionId: string,
     itemId: string,
-    detail: DomainDirectiveDetail,
+    result: DirectiveDetailResult,
   ): DirectiveDetailResponse {
     return {
-      sessionRevision,
+      context: this.readContext(result.context),
       sessionId,
       itemId,
-      text: detail.text,
-      truncated: detail.truncated,
+      text: result.detail.text,
+      truncated: result.detail.truncated,
     };
   }
 

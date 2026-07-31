@@ -170,7 +170,7 @@ function Reader({
   onClearSelection: () => void;
   reader: SessionBrowser["reader"];
 }) {
-  if (reader.readerError && !reader.detail) {
+  if (reader.readerError && !reader.context) {
     return (
       <section className="reader">
         <ErrorState
@@ -185,11 +185,10 @@ function Reader({
     );
   }
 
-  if (reader.detail) {
+  if (reader.context) {
     return (
       <SessionReader
-        detail={reader.detail}
-        page={reader.page}
+        context={reader.context}
         items={reader.items}
         visibility={visibility}
         onVisibilityChange={onVisibilityChange}
@@ -200,7 +199,11 @@ function Reader({
         refreshIntervalSeconds={reader.refreshIntervalSeconds}
         onRefreshIntervalChange={reader.setRefreshIntervalSeconds}
         onLoadMore={reader.loadMore}
-        onStale={reader.restartSession}
+        onContext={reader.adoptContext}
+        onConflict={reader.markPrefixChanged}
+        prefixChanged={reader.prefixChanged}
+        timelineGeneration={reader.timelineGeneration}
+        onRefreshLatest={reader.refreshLatest}
         error={reader.readerError}
         onDismissError={reader.clearReaderError}
       />

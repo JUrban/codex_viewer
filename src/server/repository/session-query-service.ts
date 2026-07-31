@@ -1,10 +1,17 @@
 import type {
+  DirectiveDetailQuery,
   ItemPageQuery,
+  SessionDetailQuery,
   SessionListQuery,
+  SessionReadCursor,
+  ToolDetailQuery,
 } from "../../shared/api-contract.js";
-import type { ListRevision, SessionRevision } from "../../shared/domain.js";
 import type {
-  DomainDiagnostic,
+  ListRevision,
+  SessionRevision,
+  TimelinePrefixRevision,
+} from "../../shared/domain.js";
+import type {
   DomainDirectiveDetail,
   DomainSession,
   DomainTimelineRecord,
@@ -20,7 +27,10 @@ import {
   type SearchWarning,
 } from "../search/search-document.js";
 import type { CatalogSnapshot } from "./catalog-snapshot-store.js";
-import type { VersionedSession } from "./session-revision-registry.js";
+import {
+  isSessionRevision,
+  type VersionedSession,
+} from "./session-revision-registry.js";
 import {
   canonicalListQuery,
   createProcessListRevisionFactory,
@@ -39,7 +49,7 @@ export class RepositoryQueryError extends Error {
     readonly code:
       | "invalid_query"
       | "stale_list_revision"
-      | "stale_session_revision",
+      | "stale_timeline_prefix",
     message: string,
   ) {
     super(message);
@@ -65,12 +75,27 @@ export interface ProjectFacet {
   readonly count: number;
 }
 
-export interface ItemPageResult {
+export interface SessionReadContextResult {
   readonly sessionRevision: SessionRevision;
-  readonly items: readonly DomainTimelineRecord[];
-  readonly nextAfterOrdinal: number | null;
+  readonly session: DomainSession;
+  readonly throughOrdinal: number;
+  readonly timelinePrefixRevision: TimelinePrefixRevision;
   readonly hasMore: boolean;
-  readonly diagnostics: readonly DomainDiagnostic[];
+}
+
+export interface ItemPageResult {
+  readonly context: SessionReadContextResult;
+  readonly items: readonly DomainTimelineRecord[];
+}
+
+export interface ToolDetailResult {
+  readonly context: SessionReadContextResult;
+  readonly detail: DomainToolDetail;
+}
+
+export interface DirectiveDetailResult {
+  readonly context: SessionReadContextResult;
+  readonly detail: DomainDirectiveDetail;
 }
 
 export class SessionQueryService {
@@ -134,8 +159,15 @@ export class SessionQueryService {
     };
   }
 
-  session(snapshot: CatalogSnapshot, id: string): VersionedSession | null {
-    return snapshot.sessions.get(id) ?? null;
+  session(
+    snapshot: CatalogSnapshot,
+    id: string,
+    query: SessionDetailQuery = {},
+  ): SessionReadContextResult | null {
+    const versioned = snapshot.sessions.get(id);
+    if (versioned === undefined) return null;
+    const boundary = resolveReadBoundary(versioned, query.cursor);
+    return readContext(versioned, boundary);
   }
 
   items(
@@ -146,9 +178,9 @@ export class SessionQueryService {
     validateItemQuery(query);
     const versioned = snapshot.sessions.get(id);
     if (versioned === undefined) return null;
-    assertSessionRevision(versioned.revision, query.sessionRevision);
+    const requestedBoundary = resolveReadBoundary(versioned, query.cursor);
     const { normalized } = versioned;
-    const after = query.afterOrdinal ?? 0;
+    const after = requestedBoundary.throughOrdinal;
     const visible = normalized.timeline.filter((item) => item.ordinal > after);
     const limit = query.limit ?? DEFAULT_ITEM_LIMIT;
     const items: DomainTimelineRecord[] = [];
@@ -160,13 +192,15 @@ export class SessionQueryService {
       items.push(item);
       itemBytes += bytes;
     }
-    const hasMore = visible.length > items.length;
+    const boundary = items.length === 0
+      ? requestedBoundary
+      : versioned.timelinePrefixIndex.boundaryAt(
+        normalized.timeline,
+        items.at(-1)!.ordinal,
+      )!;
     return {
-      sessionRevision: versioned.revision,
+      context: readContext(versioned, boundary),
       items,
-      nextAfterOrdinal: hasMore ? items.at(-1)?.ordinal ?? null : null,
-      hasMore,
-      diagnostics: normalized.session.diagnostics,
     };
   }
 
@@ -174,35 +208,89 @@ export class SessionQueryService {
     snapshot: CatalogSnapshot,
     id: string,
     itemId: string,
-    sessionRevision: SessionRevision,
-  ): DomainToolDetail | null {
+    query: ToolDetailQuery,
+  ): ToolDetailResult | null {
     const versioned = snapshot.sessions.get(id);
     if (versioned === undefined) return null;
-    assertSessionRevision(versioned.revision, sessionRevision);
-    return itemDetail(
+    const boundary = resolveReadBoundary(versioned, query.cursor);
+    const detail = itemDetail(
       versioned.normalized,
       itemId,
       "tool",
       versioned.normalized.toolDetails,
     );
+    return detail === null
+      ? null
+      : { context: readContext(versioned, boundary), detail };
   }
 
   directiveDetail(
     snapshot: CatalogSnapshot,
     id: string,
     itemId: string,
-    sessionRevision: SessionRevision,
-  ): DomainDirectiveDetail | null {
+    query: DirectiveDetailQuery,
+  ): DirectiveDetailResult | null {
     const versioned = snapshot.sessions.get(id);
     if (versioned === undefined) return null;
-    assertSessionRevision(versioned.revision, sessionRevision);
-    return itemDetail(
+    const boundary = resolveReadBoundary(versioned, query.cursor);
+    const detail = itemDetail(
       versioned.normalized,
       itemId,
       "directive",
       versioned.normalized.directiveDetails,
     );
+    return detail === null
+      ? null
+      : { context: readContext(versioned, boundary), detail };
   }
+}
+
+function resolveReadBoundary(
+  versioned: VersionedSession,
+  cursor: SessionReadCursor | undefined,
+) {
+  const { normalized, timelinePrefixIndex } = versioned;
+  if (cursor === undefined) {
+    return timelinePrefixIndex.boundaryAt(normalized.timeline, 0)!;
+  }
+  validateReadCursor(cursor);
+  const boundary = timelinePrefixIndex.boundaryAt(
+    normalized.timeline,
+    cursor.throughOrdinal,
+  );
+  if (
+    boundary === null ||
+    boundary.throughOrdinal !== cursor.throughOrdinal ||
+    !timelinePrefixIndex.matches(
+      normalized.timeline,
+      boundary,
+      cursor.timelinePrefixRevision,
+    )
+  ) {
+    throw new RepositoryQueryError(
+      "stale_timeline_prefix",
+      "The loaded timeline is no longer a prefix of this session",
+    );
+  }
+  return boundary;
+}
+
+function readContext(
+  versioned: VersionedSession,
+  boundary: {
+    throughOrdinal: number;
+    timelinePrefixRevision: TimelinePrefixRevision;
+  },
+): SessionReadContextResult {
+  return {
+    sessionRevision: versioned.revision,
+    session: versioned.normalized.session,
+    throughOrdinal: boundary.throughOrdinal,
+    timelinePrefixRevision: boundary.timelinePrefixRevision,
+    hasMore:
+      boundary.throughOrdinal <
+      (versioned.normalized.timeline.at(-1)?.ordinal ?? 0),
+  };
 }
 
 function itemDetail<T>(
@@ -267,13 +355,33 @@ function validateListQuery(query: SessionListQuery): void {
 }
 
 function validateItemQuery(query: ItemPageQuery): void {
-  if (query.afterOrdinal !== undefined &&
-    (!Number.isInteger(query.afterOrdinal) || query.afterOrdinal < 0)) {
-    throw new RepositoryQueryError("invalid_query", "afterOrdinal must be a non-negative integer");
-  }
   if (query.limit !== undefined &&
     (!Number.isInteger(query.limit) || query.limit < 1 || query.limit > MAX_ITEM_LIMIT)) {
     throw new RepositoryQueryError("invalid_query", `limit must be between 1 and ${MAX_ITEM_LIMIT}`);
+  }
+}
+
+function validateReadCursor(cursor: SessionReadCursor): void {
+  if (!isSessionRevision(cursor.sessionRevision)) {
+    throw new RepositoryQueryError(
+      "invalid_query",
+      "sessionRevision is invalid",
+    );
+  }
+  if (
+    !Number.isSafeInteger(cursor.throughOrdinal) ||
+    cursor.throughOrdinal < 0
+  ) {
+    throw new RepositoryQueryError(
+      "invalid_query",
+      "throughOrdinal must be a non-negative integer",
+    );
+  }
+  if (!/^[A-Za-z0-9_-]{32}$/.test(cursor.timelinePrefixRevision)) {
+    throw new RepositoryQueryError(
+      "invalid_query",
+      "timelinePrefixRevision is invalid",
+    );
   }
 }
 
@@ -295,18 +403,6 @@ function assertListRevision(
     throw new RepositoryQueryError(
       "stale_list_revision",
       "The session list changed; restart pagination",
-    );
-  }
-}
-
-function assertSessionRevision(
-  current: SessionRevision,
-  requested: SessionRevision,
-): void {
-  if (requested !== current) {
-    throw new RepositoryQueryError(
-      "stale_session_revision",
-      "The session revision changed; restart pagination",
     );
   }
 }

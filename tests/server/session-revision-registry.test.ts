@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { NormalizedSession } from "../../src/server/domain/session-domain.js";
 import { SessionRevisionRegistry } from "../../src/server/repository/session-revision-registry.js";
+import { deriveSessionView } from "../../src/server/repository/session-view-digest.js";
 
 describe("SessionRevisionRegistry", () => {
   it("reuses unchanged revisions and replaces changed revisions", () => {
@@ -39,9 +40,12 @@ describe("SessionRevisionRegistry", () => {
     const digested: string[] = [];
     const registry = new SessionRevisionRegistry(
       sequenceToken,
-      (normalized) => {
+      (normalized, prefixKey) => {
         digested.push(normalized.session.title);
-        return normalized.session.title;
+        return {
+          ...deriveSessionView(normalized, prefixKey),
+          viewDigest: normalized.session.title,
+        };
       },
     );
     const first = publish(registry, sessions("A"));
@@ -69,7 +73,10 @@ describe("SessionRevisionRegistry", () => {
   it("rejects a prepared result after another result commits", () => {
     const registry = new SessionRevisionRegistry(
       sequenceToken,
-      (normalized) => normalized.session.title,
+      (normalized, prefixKey) => ({
+        ...deriveSessionView(normalized, prefixKey),
+        viewDigest: normalized.session.title,
+      }),
     );
     const first = registry.prepare(sessions("A"));
     const stale = registry.prepare(sessions("B"));

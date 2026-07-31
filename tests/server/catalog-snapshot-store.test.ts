@@ -8,7 +8,7 @@ import {
   CatalogSnapshotStore,
   type CatalogSnapshot,
 } from "../../src/server/repository/catalog-snapshot-store.js";
-import { digestSessionView } from "../../src/server/repository/session-view-digest.js";
+import { deriveSessionView } from "../../src/server/repository/session-view-digest.js";
 import { buildSearchDocument } from "../../src/server/search/search-document.js";
 import type {
   SessionSource,
@@ -32,9 +32,9 @@ describe("CatalogSnapshotStore incremental derivation", () => {
       () => 0,
       {
         revisionFactory: sequenceToken,
-        sessionDigester(normalized) {
+        sessionDeriver(normalized, prefixKey) {
           digestCalls.push(normalized.session.sourceId!);
-          return digestSessionView(normalized);
+          return deriveSessionView(normalized, prefixKey);
         },
         searchDocumentBuilder(normalized) {
           searchCalls.push(normalized.session.sourceId!);
@@ -86,9 +86,9 @@ describe("CatalogSnapshotStore incremental derivation", () => {
       () => 0,
       {
         revisionFactory: sequenceToken,
-        sessionDigester(value) {
+        sessionDeriver(value, prefixKey) {
           counts.digest += 1;
-          return digestSessionView(value);
+          return deriveSessionView(value, prefixKey);
         },
         searchDocumentBuilder(value) {
           counts.search += 1;
@@ -258,11 +258,11 @@ describe("CatalogSnapshotStore incremental derivation", () => {
           allocated.push(sequence);
           return sequenceToken(sequence);
         },
-        sessionDigester(normalized) {
+        sessionDeriver(normalized, prefixKey) {
           if (failDigest && normalized.session.sourceId === "right") {
             throw new Error("digest failed");
           }
-          return digestSessionView(normalized);
+          return deriveSessionView(normalized, prefixKey);
         },
         searchDocumentBuilder(normalized) {
           searchCalls.push(normalized.session.sourceId!);
@@ -333,9 +333,9 @@ describe("CatalogSnapshotStore incremental derivation", () => {
       () => 0,
       {
         revisionFactory: sequenceToken,
-        sessionDigester(value) {
+        sessionDeriver(value, prefixKey) {
           calls.digest += 1;
-          return digestSessionView(value);
+          return deriveSessionView(value, prefixKey);
         },
         searchDocumentBuilder(value) {
           calls.search += 1;

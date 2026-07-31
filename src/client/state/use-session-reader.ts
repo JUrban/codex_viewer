@@ -1,11 +1,16 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import type {
   ItemPageResponse,
-  SessionDetailResponse,
+  SessionReadContext,
+  SessionReadCursor,
 } from "../../shared/api-contract";
 import type { TimelineItem } from "../../shared/domain";
 import { api, ApiClientError } from "../api/client";
-import { isAbort, isStaleSessionRevision, messageFor } from "./request-errors";
+import {
+  isAbort,
+  isStaleTimelinePrefix,
+  messageFor,
+} from "./request-errors";
 import { useSessionPolling } from "./use-session-polling";
 
 const TIMELINE_PAGE_SIZE = 512;
@@ -19,30 +24,42 @@ export type ReaderOperation = "open" | "page" | "refresh" | null;
 
 interface ReaderState {
   operation: ReaderOperation;
-  detail: SessionDetailResponse | null;
-  page: ItemPageResponse | null;
+  context: SessionReadContext | null;
   items: TimelineItem[];
   error: string | null;
+  prefixChanged: boolean;
+  timelineGeneration: number;
+  tailFollowing: boolean;
 }
 
 type ReaderAction =
   | { type: "clear" }
-  | { type: "reset-timeline" }
   | {
     type: "open-start";
-    operation: Exclude<ReaderOperation, null | "page">;
+    operation: "open" | "refresh";
     preserve: boolean;
   }
   | {
-    type: "load-success";
-    detail: SessionDetailResponse;
-    page: ItemPageResponse;
-    preserveSameRevision: boolean;
+    type: "open-success";
+    context: SessionReadContext;
+    items: TimelineItem[];
   }
+  | { type: "refresh-start" }
+  | {
+    type: "refresh-success";
+    context: SessionReadContext;
+    tailPage: ItemPageResponse | null;
+  }
+  | { type: "prefix-changed" }
   | { type: "load-failure"; error: string }
   | { type: "page-start" }
   | { type: "page-success"; page: ItemPageResponse }
   | { type: "page-failure"; error: string }
+  | {
+    type: "adopt-context";
+    expected: SessionReadCursor;
+    context: SessionReadContext;
+  }
   | { type: "clear-error" };
 
 interface ActiveRequest {
@@ -53,10 +70,12 @@ interface ActiveRequest {
 
 const initialState: ReaderState = {
   operation: null,
-  detail: null,
-  page: null,
+  context: null,
   items: [],
   error: null,
+  prefixChanged: false,
+  timelineGeneration: 0,
+  tailFollowing: false,
 };
 
 type SessionLoadResult = "loaded" | "missing" | "failed";
@@ -87,66 +106,123 @@ export function useSessionReader(
     selectedIdRef.current === request.id
   ), []);
 
-  const loadSession = useCallback(async (
+  const handleMissing = useCallback((request: ActiveRequest, reason: unknown) => {
+    if (
+      isCurrent(request) &&
+      reason instanceof ApiClientError &&
+      reason.status === 404 &&
+      reason.code === "session_not_found"
+    ) {
+      dispatch({ type: "clear" });
+      clearMissingSession();
+      return true;
+    }
+    return false;
+  }, [clearMissingSession, isCurrent]);
+
+  const openSession = useCallback(async (
     id: string,
-    quiet = false,
+    preserve = false,
   ): Promise<SessionLoadResult> => {
     abortActive();
-    const operation: "open" | "refresh" = quiet ? "refresh" : "open";
+    const operation: "open" | "refresh" = preserve ? "refresh" : "open";
     const request: ActiveRequest = {
       operation,
       controller: new AbortController(),
       id,
     };
     active.current = request;
-    dispatch({
-      type: "open-start",
-      operation,
-      preserve: quiet || stateRef.current.detail?.session.id === id,
-    });
+    dispatch({ type: "open-start", operation, preserve });
     try {
-      let detail = await api.session(id, request.controller.signal);
+      const detail = await api.session(id, {}, request.controller.signal);
       if (!isCurrent(request)) return "failed";
-      let page: ItemPageResponse;
-      try {
-        page = await api.items(id, {
-          sessionRevision: detail.sessionRevision,
-          limit: TIMELINE_PAGE_SIZE,
-        }, request.controller.signal);
-      } catch (reason) {
-        if (!isCurrent(request) || !isStaleSessionRevision(reason)) throw reason;
-        detail = await api.session(id, request.controller.signal);
-        if (!isCurrent(request)) return "failed";
-        page = await api.items(id, {
-          sessionRevision: detail.sessionRevision,
-          limit: TIMELINE_PAGE_SIZE,
-        }, request.controller.signal);
-      }
+      const page = await api.items(id, {
+        cursor: detail.context.cursor,
+        limit: TIMELINE_PAGE_SIZE,
+      }, request.controller.signal);
       if (!isCurrent(request)) return "failed";
       dispatch({
-        type: "load-success",
-        detail,
-        page,
-        preserveSameRevision: quiet,
+        type: "open-success",
+        context: page.context,
+        items: page.items,
       });
       return "loaded";
     } catch (reason) {
       if (!isCurrent(request) || isAbort(reason)) return "failed";
-      if (
-        reason instanceof ApiClientError &&
-        reason.status === 404 &&
-        reason.code === "session_not_found"
-      ) {
-        dispatch({ type: "clear" });
-        clearMissingSession();
-        return "missing";
+      if (handleMissing(request, reason)) return "missing";
+      dispatch({ type: "load-failure", error: messageFor(reason) });
+      return "failed";
+    } finally {
+      if (active.current === request) active.current = null;
+    }
+  }, [abortActive, handleMissing, isCurrent]);
+
+  const refreshSession = useCallback(async (
+    replaceActive: boolean,
+  ): Promise<SessionLoadResult> => {
+    if (active.current !== null) {
+      if (!replaceActive) return "failed";
+      abortActive();
+    }
+    const id = selectedIdRef.current;
+    const current = stateRef.current;
+    if (
+      id === null ||
+      current.context === null ||
+      current.prefixChanged
+    ) {
+      return "failed";
+    }
+    const request: ActiveRequest = {
+      operation: "refresh",
+      controller: new AbortController(),
+      id,
+    };
+    active.current = request;
+    dispatch({ type: "refresh-start" });
+    try {
+      const detail = await api.session(
+        id,
+        { cursor: current.context.cursor },
+        request.controller.signal,
+      );
+      if (!isCurrent(request)) return "failed";
+      const tailPage = current.tailFollowing && detail.context.hasMore
+        ? await api.items(id, {
+            cursor: detail.context.cursor,
+            limit: TIMELINE_PAGE_SIZE,
+          }, request.controller.signal)
+        : null;
+      if (!isCurrent(request)) return "failed";
+      dispatch({
+        type: "refresh-success",
+        context: tailPage?.context ?? detail.context,
+        tailPage,
+      });
+      return "loaded";
+    } catch (reason) {
+      if (!isCurrent(request) || isAbort(reason)) return "failed";
+      if (handleMissing(request, reason)) return "missing";
+      if (isStaleTimelinePrefix(reason)) {
+        dispatch({ type: "prefix-changed" });
+        return "failed";
       }
       dispatch({ type: "load-failure", error: messageFor(reason) });
       return "failed";
     } finally {
       if (active.current === request) active.current = null;
     }
-  }, [abortActive, clearMissingSession, isCurrent]);
+  }, [abortActive, handleMissing, isCurrent]);
+
+  const pollSession = useCallback(
+    () => refreshSession(false),
+    [refreshSession],
+  );
+
+  const refreshSelectedSession = useCallback(
+    () => refreshSession(true),
+    [refreshSession],
+  );
 
   const previousSelection = useRef<string | null>(null);
   useEffect(() => {
@@ -159,16 +235,22 @@ export function useSessionReader(
       return;
     }
     if (switched) dispatch({ type: "clear" });
-    else dispatch({ type: "reset-timeline" });
-    void loadSession(selectedId);
+    void openSession(selectedId);
     return abortActive;
-  }, [abortActive, loadSession, selectedId]);
+  }, [abortActive, openSession, selectedId]);
 
   const loadMore = useCallback(async () => {
     if (active.current !== null) return;
     const id = selectedIdRef.current;
-    const current = stateRef.current.page;
-    if (id === null || !current?.hasMore || current.nextAfterOrdinal === null) return;
+    const current = stateRef.current;
+    if (
+      id === null ||
+      current.context === null ||
+      current.prefixChanged ||
+      !current.context.hasMore
+    ) {
+      return;
+    }
     const request: ActiveRequest = {
       operation: "page",
       controller: new AbortController(),
@@ -177,36 +259,40 @@ export function useSessionReader(
     active.current = request;
     dispatch({ type: "page-start" });
     try {
-      const next = await api.items(id, {
-        afterOrdinal: current.nextAfterOrdinal,
-        sessionRevision: current.sessionRevision,
+      const page = await api.items(id, {
+        cursor: current.context.cursor,
         limit: TIMELINE_PAGE_SIZE,
       }, request.controller.signal);
-      if (isCurrent(request)) dispatch({ type: "page-success", page: next });
+      if (isCurrent(request)) dispatch({ type: "page-success", page });
     } catch (reason) {
-      if (!isCurrent(request)) return;
-      if (isStaleSessionRevision(reason)) await loadSession(id);
-      else dispatch({ type: "page-failure", error: messageFor(reason) });
+      if (!isCurrent(request) || isAbort(reason)) return;
+      if (isStaleTimelinePrefix(reason)) {
+        dispatch({ type: "prefix-changed" });
+      } else {
+        dispatch({ type: "page-failure", error: messageFor(reason) });
+      }
     } finally {
       if (active.current === request) active.current = null;
     }
-  }, [isCurrent, loadSession]);
+  }, [isCurrent]);
 
-  const restartSession = useCallback(
-    () => {
-      const id = selectedIdRef.current;
-      if (id === null) return Promise.resolve<SessionLoadResult>("failed");
-      return loadSession(id, true);
-    },
-    [loadSession],
-  );
+  const refreshLatest = useCallback(() => {
+    const id = selectedIdRef.current;
+    if (id === null) return Promise.resolve<SessionLoadResult>("failed");
+    return openSession(id, true);
+  }, [openSession]);
 
-  const pollSession = useCallback(() => {
-    if (active.current !== null) {
-      return Promise.resolve<SessionLoadResult>("failed");
-    }
-    return restartSession();
-  }, [restartSession]);
+  const markPrefixChanged = useCallback(() => {
+    abortActive();
+    dispatch({ type: "prefix-changed" });
+  }, [abortActive]);
+
+  const adoptContext = useCallback((
+    expected: SessionReadCursor,
+    context: SessionReadContext,
+  ) => {
+    dispatch({ type: "adopt-context", expected, context });
+  }, []);
 
   const setRefreshIntervalSeconds = useCallback((seconds: number) => {
     if (!isValidRefreshInterval(seconds)) return;
@@ -221,35 +307,39 @@ export function useSessionReader(
   useSessionPolling(
     autoRefreshEnabled &&
       selectedId !== null &&
-      state.detail !== null &&
-      state.detail.session.id === selectedId &&
-      !state.detail.session.archived,
+      state.context !== null &&
+      state.context.session.id === selectedId &&
+      !state.context.session.archived,
     pollSession,
     refreshIntervalSeconds * 1_000,
   );
 
   useEffect(() => abortActive, [abortActive]);
 
-  const selectionChanging = state.detail !== null &&
-    state.detail.session.id !== selectedId;
+  const selectionChanging = state.context !== null &&
+    state.context.session.id !== selectedId;
   let operation = state.operation;
   if (selectionChanging) {
     operation = selectedId === null ? null : "open";
   }
   return {
-    detail: selectionChanging ? null : state.detail,
-    page: selectionChanging ? null : state.page,
+    context: selectionChanging ? null : state.context,
     items: selectionChanging ? [] : state.items,
     operation,
     readerLoading: operation === "open" || operation === "page",
     readerError: state.error,
+    prefixChanged: state.prefixChanged,
+    timelineGeneration: state.timelineGeneration,
     clearReaderError: () => dispatch({ type: "clear-error" }),
     autoRefreshEnabled,
     setAutoRefreshEnabled,
     refreshIntervalSeconds,
     setRefreshIntervalSeconds,
     loadMore,
-    restartSession,
+    refreshSession: refreshSelectedSession,
+    markPrefixChanged,
+    adoptContext,
+    refreshLatest,
   };
 }
 
@@ -274,43 +364,71 @@ function reducer(state: ReaderState, action: ReaderAction): ReaderState {
   switch (action.type) {
     case "clear":
       return initialState;
-    case "reset-timeline":
-      return { ...state, operation: null, page: null, items: [], error: null };
     case "open-start":
       return action.preserve
         ? { ...state, operation: action.operation, error: null }
         : { ...initialState, operation: action.operation };
-    case "load-success": {
-      const preserve = action.preserveSameRevision &&
-        state.page?.sessionRevision === action.page.sessionRevision;
+    case "open-success":
       return {
-        operation: null,
-        detail: action.detail,
-        page: preserve ? state.page : action.page,
-        items: preserve ? state.items : action.page.items,
-        error: null,
+        ...initialState,
+        context: action.context,
+        items: action.items,
+        timelineGeneration: state.prefixChanged
+          ? state.timelineGeneration + 1
+          : state.timelineGeneration,
+        tailFollowing: !action.context.hasMore,
       };
-    }
+    case "refresh-start":
+      return { ...state, operation: "refresh", error: null };
+    case "refresh-success":
+      return {
+        ...state,
+        operation: null,
+        context: action.context,
+        items: action.tailPage
+          ? appendUnique(state.items, action.tailPage.items)
+          : state.items,
+        error: null,
+        prefixChanged: false,
+      };
+    case "prefix-changed":
+      return { ...state, operation: null, error: null, prefixChanged: true };
     case "load-failure":
       return { ...state, operation: null, error: action.error };
     case "page-start":
       return { ...state, operation: "page", error: null };
-    case "page-success": {
-      const seen = new Set(state.items.map((item) => item.id));
+    case "page-success":
       return {
         ...state,
         operation: null,
-        page: action.page,
-        items: [
-          ...state.items,
-          ...action.page.items.filter((item) => !seen.has(item.id)),
-        ],
+        context: action.page.context,
+        items: appendUnique(state.items, action.page.items),
         error: null,
+        tailFollowing: !action.page.context.hasMore,
       };
-    }
     case "page-failure":
       return { ...state, operation: null, error: action.error };
+    case "adopt-context":
+      return !state.prefixChanged &&
+          state.context !== null &&
+          sameCursor(state.context.cursor, action.expected) &&
+          action.context.cursor.throughOrdinal ===
+            state.context.cursor.throughOrdinal
+        ? { ...state, context: action.context }
+        : state;
     case "clear-error":
       return { ...state, error: null };
   }
+}
+
+function sameCursor(left: SessionReadCursor, right: SessionReadCursor): boolean {
+  return left.sessionRevision === right.sessionRevision &&
+    left.throughOrdinal === right.throughOrdinal &&
+    left.timelinePrefixRevision === right.timelinePrefixRevision;
+}
+
+function appendUnique(existing: TimelineItem[], incoming: TimelineItem[]): TimelineItem[] {
+  const seen = new Set(existing.map((item) => item.id));
+  const additions = incoming.filter((item) => !seen.has(item.id));
+  return additions.length === 0 ? existing : [...existing, ...additions];
 }

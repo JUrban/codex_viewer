@@ -295,6 +295,16 @@
 .diagnostics, .error-state {
   margin: 1.25rem 0; padding: .9rem 1rem; color: #653e2d; background: #fff4e9; border-left: 3px solid var(--signal);
 }
+.continuity-notice {
+  display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+  margin: 1.25rem 0; padding: .9rem 1rem; color: #74392e;
+  background: #fff0ed; border-left: 3px solid var(--human);
+}
+.continuity-notice p { margin: .25rem 0 0; font-size: .8rem; }
+.continuity-notice button {
+  flex: 0 0 auto; padding: .48rem .72rem; color: currentColor;
+  background: transparent; border: 1px solid currentColor; cursor: pointer;
+}
 .diagnostics ul { margin-bottom: 0; padding-left: 1.2rem; }
 .error-state {
   position: relative; padding-right: 3rem;

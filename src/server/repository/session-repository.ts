@@ -3,6 +3,7 @@ import type {
   DirectiveDetailResponse,
   ItemPageQuery,
   ItemPageResponse,
+  SessionDetailQuery,
   SessionDetailResponse,
   SessionListQuery,
   SessionListResponse,
@@ -35,7 +36,10 @@ export {
 
 export interface SessionRepository {
   list(query: SessionListQuery): Promise<SessionListResponse>;
-  getSession(id: SessionId): Promise<SessionDetailResponse | null>;
+  getSession(
+    id: SessionId,
+    query?: SessionDetailQuery,
+  ): Promise<SessionDetailResponse | null>;
   getItems(id: SessionId, query: ItemPageQuery): Promise<ItemPageResponse | null>;
   getToolDetail(
     id: SessionId,
@@ -80,12 +84,15 @@ export class DefaultSessionRepository implements SessionRepository {
     return this.#mapper.list(this.#queries.list(snapshot, query));
   }
 
-  async getSession(id: SessionId): Promise<SessionDetailResponse | null> {
+  async getSession(
+    id: SessionId,
+    query: SessionDetailQuery = {},
+  ): Promise<SessionDetailResponse | null> {
     const snapshot = await this.#store.current();
-    const session = this.#queries.session(snapshot, id);
-    return session === null
+    const result = this.#queries.session(snapshot, id, query);
+    return result === null
       ? null
-      : this.#mapper.detail(session.revision, session.normalized.session);
+      : this.#mapper.detail(result);
   }
 
   async getItems(id: SessionId, query: ItemPageQuery): Promise<ItemPageResponse | null> {
@@ -100,15 +107,15 @@ export class DefaultSessionRepository implements SessionRepository {
     query: ToolDetailQuery,
   ): Promise<ToolDetailResponse | null> {
     const snapshot = await this.#store.current();
-    const detail = this.#queries.toolDetail(
+    const result = this.#queries.toolDetail(
       snapshot,
       id,
       itemId,
-      query.sessionRevision,
+      query,
     );
-    return detail === null
+    return result === null
       ? null
-      : this.#mapper.toolDetail(query.sessionRevision, id, itemId, detail);
+      : this.#mapper.toolDetail(id, itemId, result);
   }
 
   async getDirectiveDetail(
@@ -117,14 +124,14 @@ export class DefaultSessionRepository implements SessionRepository {
     query: DirectiveDetailQuery,
   ): Promise<DirectiveDetailResponse | null> {
     const snapshot = await this.#store.current();
-    const detail = this.#queries.directiveDetail(
+    const result = this.#queries.directiveDetail(
       snapshot,
       id,
       itemId,
-      query.sessionRevision,
+      query,
     );
-    return detail === null
+    return result === null
       ? null
-      : this.#mapper.directiveDetail(query.sessionRevision, id, itemId, detail);
+      : this.#mapper.directiveDetail(id, itemId, result);
   }
 }

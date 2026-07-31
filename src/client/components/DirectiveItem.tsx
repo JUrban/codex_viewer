@@ -1,37 +1,41 @@
 import { useCallback, useState } from "react";
-import type { DirectiveDetailResponse } from "../../shared/api-contract";
 import type {
-  DirectiveItem as Directive,
-  SessionRevision,
-} from "../../shared/domain";
+  DirectiveDetailResponse,
+  SessionReadContext,
+  SessionReadCursor,
+} from "../../shared/api-contract";
+import type { DirectiveItem as Directive } from "../../shared/domain";
 import { api } from "../api/client";
 import { useLazyDetail } from "../state/use-lazy-detail";
 
 interface DirectiveItemProps {
   item: Directive;
   sessionId: string;
-  sessionRevision: SessionRevision;
-  onStale: () => void;
+  cursor: SessionReadCursor;
+  onContext: (expected: SessionReadCursor, context: SessionReadContext) => void;
+  onConflict: () => void;
 }
 
 export function DirectiveItem({
   item,
   sessionId,
-  sessionRevision,
-  onStale,
+  cursor,
+  onContext,
+  onConflict,
 }: DirectiveItemProps) {
   const [open, setOpen] = useState(false);
   const loadDetail = useCallback(
     (signal: AbortSignal): Promise<DirectiveDetailResponse> =>
-      api.directive(sessionId, item.id, sessionRevision, signal),
-    [item.id, sessionId, sessionRevision],
+      api.directive(sessionId, item.id, { cursor }, signal),
+    [cursor, item.id, sessionId],
   );
   const { detail, error } = useLazyDetail({
     enabled: open,
-    sessionRevision,
+    cursor,
     load: loadDetail,
     unavailableMessage: "Directive unavailable",
-    onStale,
+    onContext,
+    onConflict,
   });
 
   return (

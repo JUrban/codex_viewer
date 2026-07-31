@@ -13,6 +13,7 @@ import {
   json,
   listBody,
   NEXT_SESSION_REVISION,
+  readContext,
   SESSION_ID,
   SESSION_REVISION,
 } from "./session-browser.fixtures";
@@ -31,7 +32,9 @@ describe("session catalog interactions", () => {
     vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => {
       const url = String(input);
       if (url.includes("/sessions?")) return Promise.resolve(json(listBody));
-      if (url.endsWith(SESSION_ID)) return Promise.resolve(json(detailBody));
+      if (url.includes(`/${SESSION_ID}`) && !url.includes("/items")) {
+        return Promise.resolve(json(detailBody));
+      }
       return Promise.resolve(json(firstPage));
     }));
     const user = userEvent.setup();
@@ -52,13 +55,27 @@ describe("session catalog interactions", () => {
     vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => {
       const url = String(input);
       if (url.includes("/api/v1/sessions?")) listUrls.push(url);
-      if (url.endsWith(SESSION_ID)) {
+      if (url.includes(`/${SESSION_ID}`) && !url.includes("/items")) {
         return Promise.resolve(json({
           ...detailBody,
-          session: { ...detailBody.session, ...archivedSession },
+          context: {
+            ...detailBody.context,
+            session: { ...detailBody.context.session, ...archivedSession },
+          },
         }));
       }
-      if (url.includes("/items")) return Promise.resolve(json(firstPage));
+      if (url.includes("/items")) {
+        return Promise.resolve(json({
+          ...firstPage,
+          context: {
+            ...firstPage.context,
+            session: {
+              ...firstPage.context.session,
+              ...archivedSession,
+            },
+          },
+        }));
+      }
       return Promise.resolve(json(
         url.includes("archiveScope=archived")
           ? {
@@ -233,16 +250,14 @@ describe("session catalog interactions", () => {
       const url = String(input);
       if (url.includes("/items")) {
         itemCalls += 1;
-        return Promise.resolve(json({
-          ...firstPage,
-          sessionRevision: detailCalls > 1 ? NEXT_SESSION_REVISION : SESSION_REVISION,
-        }));
+        return Promise.resolve(json(firstPage));
       }
-      if (url.endsWith(SESSION_ID)) {
+      if (url.includes(`/${SESSION_ID}`) && !url.includes("/items")) {
         detailCalls += 1;
         return Promise.resolve(json({
-          ...detailBody,
-          sessionRevision: detailCalls > 1 ? NEXT_SESSION_REVISION : SESSION_REVISION,
+          context: detailCalls > 1
+            ? readContext(NEXT_SESSION_REVISION, 2, true)
+            : detailBody.context,
         }));
       }
       listCalls += 1;
@@ -263,8 +278,54 @@ describe("session catalog interactions", () => {
     await waitFor(() => expect(detailCalls).toBe(2));
     expect(screen.queryByText(/Sessions refreshed/)).not.toBeInTheDocument();
     expect(listCalls).toBe(2);
-    expect(itemCalls).toBe(2);
+    expect(itemCalls).toBe(1);
     expect(window.location.search).toContain(`session=${SESSION_ID}`);
+  });
+
+  it("replaces an in-flight page request when manually refreshing", async () => {
+    let detailCalls = 0;
+    let pageSignal: AbortSignal | undefined;
+    const updatedTitle = "Reader work after refresh";
+    vi.stubGlobal("fetch", vi.fn((
+      input: RequestInfo | URL,
+      init?: RequestInit,
+    ) => {
+      const url = String(input);
+      if (url.includes("/items") && url.includes("throughOrdinal=2")) {
+        pageSignal = init?.signal ?? undefined;
+        return new Promise<Response>((_resolve, reject) => {
+          pageSignal?.addEventListener("abort", () => {
+            reject(new DOMException("Aborted", "AbortError"));
+          });
+        });
+      }
+      if (url.includes("/items")) return Promise.resolve(json(firstPage));
+      if (url.includes(`/${SESSION_ID}`) && !url.includes("/items")) {
+        detailCalls += 1;
+        const context = detailCalls === 1
+          ? detailBody.context
+          : {
+              ...readContext(NEXT_SESSION_REVISION, 2, true),
+              session: { ...readContext().session, title: updatedTitle },
+            };
+        return Promise.resolve(json({ context }));
+      }
+      return Promise.resolve(json(listBody));
+    }));
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: /Reader work/ }));
+    expect(await screen.findByText("Hello")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Load more events" }));
+    expect(pageSignal?.aborted).toBe(false);
+
+    await user.click(screen.getByRole("button", { name: "Refresh sessions" }));
+
+    expect(await screen.findByRole("heading", { name: updatedTitle }))
+      .toBeInTheDocument();
+    expect(pageSignal?.aborted).toBe(true);
+    expect(detailCalls).toBe(2);
   });
 
   it("preserves later pages and lazy detail across an unrelated catalog change", async () => {
@@ -275,7 +336,7 @@ describe("session catalog interactions", () => {
       if (url.includes("/items/tool-2/tool")) {
         toolCalls += 1;
         return Promise.resolve(json({
-          sessionRevision: SESSION_REVISION,
+          context: firstPage.context,
           sessionId: SESSION_ID,
           itemId: "tool-2",
           input: null,
@@ -283,7 +344,7 @@ describe("session catalog interactions", () => {
           truncated: false,
         }));
       }
-      if (url.includes("afterOrdinal=3")) {
+      if (url.includes("throughOrdinal=3")) {
         return Promise.resolve(json({
           ...firstPage,
           items: [{
@@ -295,11 +356,10 @@ describe("session catalog interactions", () => {
             phase: "final",
             markdown: "Still pageable",
           }],
-          nextAfterOrdinal: null,
-          hasMore: false,
+          context: readContext(SESSION_REVISION, 4, false),
         }));
       }
-      if (url.includes("afterOrdinal=2")) {
+      if (url.includes("throughOrdinal=2")) {
         return Promise.resolve(json({
           ...firstPage,
           items: [{
@@ -311,12 +371,19 @@ describe("session catalog interactions", () => {
             phase: "commentary",
             markdown: "Loaded before catalog refresh",
           }],
-          nextAfterOrdinal: 3,
-          hasMore: true,
+          context: readContext(SESSION_REVISION, 3, true),
         }));
       }
       if (url.includes("/items")) return Promise.resolve(json(firstPage));
-      if (url.endsWith(SESSION_ID)) return Promise.resolve(json(detailBody));
+      if (url.includes(`/${SESSION_ID}`) && !url.includes("/items")) {
+        return Promise.resolve(json({
+          context: readContext(
+            SESSION_REVISION,
+            url.includes("throughOrdinal=3") ? 3 : 0,
+            true,
+          ),
+        }));
+      }
       listCalls += 1;
       return Promise.resolve(json({
         ...listBody,
@@ -342,13 +409,6 @@ describe("session catalog interactions", () => {
     expect(screen.getByText("Loaded before catalog refresh")).toBeInTheDocument();
     expect(screen.getByText("Preserved tool detail")).toBeInTheDocument();
     expect(toolCalls).toBe(1);
-
-    await user.click(screen.getByRole("button", { name: "Load more events" }));
-    expect(await screen.findByText("Still pageable")).toBeInTheDocument();
-    expect(fetchMock.mock.calls.some(([url]) =>
-      String(url).includes("afterOrdinal=3") &&
-      String(url).includes(`sessionRevision=${SESSION_REVISION}`)
-    )).toBe(true);
   });
 
   it("keeps client visibility when a refresh finishes after a filter change", async () => {
@@ -381,11 +441,12 @@ describe("session catalog interactions", () => {
               summary: "Internal view",
             },
           ],
-          nextAfterOrdinal: null,
-          hasMore: false,
+          context: { ...firstPage.context, hasMore: false },
         }));
       }
-      if (url.endsWith(SESSION_ID)) return Promise.resolve(json(detailBody));
+      if (url.includes(`/${SESSION_ID}`) && !url.includes("/items")) {
+        return Promise.resolve(json(detailBody));
+      }
       listCalls += 1;
       return listCalls === 2 ? pendingRefresh : Promise.resolve(json(listBody));
     }));

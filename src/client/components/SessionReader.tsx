@@ -1,5 +1,8 @@
 import { useMemo } from "react";
-import type { ItemPageResponse, SessionDetailResponse } from "../../shared/api-contract";
+import type {
+  SessionReadContext,
+  SessionReadCursor,
+} from "../../shared/api-contract";
 import type { TimelineItem } from "../../shared/domain";
 import {
   isTimelineItemVisible,
@@ -13,8 +16,7 @@ import { SessionHeader } from "./SessionHeader";
 import { Timeline } from "./Timeline";
 
 interface SessionReaderProps {
-  detail: SessionDetailResponse;
-  page: ItemPageResponse | null;
+  context: SessionReadContext;
   items: TimelineItem[];
   visibility: TimelineVisibility;
   onVisibilityChange: (key: TimelineVisibilityKey, visible: boolean) => void;
@@ -25,14 +27,17 @@ interface SessionReaderProps {
   refreshIntervalSeconds: number;
   onRefreshIntervalChange: (seconds: number) => void;
   onLoadMore: () => void;
-  onStale: () => void;
+  onContext: (expected: SessionReadCursor, context: SessionReadContext) => void;
+  onConflict: () => void;
+  prefixChanged: boolean;
+  timelineGeneration: number;
+  onRefreshLatest: () => void;
   error?: string | null;
   onDismissError?: () => void;
 }
 
 export function SessionReader({
-  detail,
-  page,
+  context,
   items,
   visibility,
   onVisibilityChange,
@@ -43,7 +48,11 @@ export function SessionReader({
   refreshIntervalSeconds,
   onRefreshIntervalChange,
   onLoadMore,
-  onStale,
+  onContext,
+  onConflict,
+  prefixChanged,
+  timelineGeneration,
+  onRefreshLatest,
   error,
   onDismissError,
 }: SessionReaderProps) {
@@ -51,7 +60,7 @@ export function SessionReader({
     () => items.filter((item) => isTimelineItemVisible(item, visibility)),
     [items, visibility],
   );
-  const hasMore = page?.hasMore ?? false;
+  const hasMore = context.hasMore;
 
   return (
     <section className="reader" aria-labelledby="session-title">
@@ -65,7 +74,7 @@ export function SessionReader({
           )
         : null}
       <SessionHeader
-        session={detail.session}
+        session={context.session}
         visibility={visibility}
         onVisibilityChange={onVisibilityChange}
         autoRefreshEnabled={autoRefreshEnabled}
@@ -73,8 +82,21 @@ export function SessionReader({
         refreshIntervalSeconds={refreshIntervalSeconds}
         onRefreshIntervalChange={onRefreshIntervalChange}
       />
+      {prefixChanged
+        ? (
+            <aside className="continuity-notice" role="alert">
+              <div>
+                <strong>Session 内容已变化</strong>
+                <p>已保留当前阅读位置。刷新到最新版本会从第一页重新载入。</p>
+              </div>
+              <button type="button" disabled={busy} onClick={onRefreshLatest}>
+                刷新到最新版本
+              </button>
+            </aside>
+          )
+        : null}
       <DiagnosticNotice
-        diagnostics={page?.diagnostics ?? detail.session.diagnostics}
+        diagnostics={context.session.diagnostics}
         label="Session diagnostics"
       />
       {visibleItems.length === 0 && !loading
@@ -87,14 +109,17 @@ export function SessionReader({
       {visibleItems.length > 0 || hasMore
         ? (
             <Timeline
+              key={timelineGeneration}
               items={visibleItems}
-              sessionId={detail.session.id}
-              sessionRevision={page?.sessionRevision ?? detail.sessionRevision}
+              sessionId={context.session.id}
+              cursor={context.cursor}
               hasMore={hasMore}
               loading={loading}
               busy={busy}
+              paginationFrozen={prefixChanged}
               onLoadMore={onLoadMore}
-              onStale={onStale}
+              onContext={onContext}
+              onConflict={onConflict}
             />
           )
         : null}

@@ -4,16 +4,21 @@ import type {
   DomainSessionId,
   NormalizedSession,
 } from "../domain/session-domain.js";
-import { digestSessionView } from "./session-view-digest.js";
+import {
+  deriveSessionView,
+  type DerivedSessionView,
+  type TimelinePrefixIndex,
+} from "./session-view-digest.js";
 
 export interface VersionedSession {
   readonly revision: SessionRevision;
   readonly normalized: NormalizedSession;
+  readonly timelinePrefixIndex: TimelinePrefixIndex;
 }
 
 interface RevisionRecord {
   readonly digest: string;
-  readonly revision: SessionRevision;
+  readonly versioned: VersionedSession;
 }
 
 export interface PreparedSessionRevisions {
@@ -22,7 +27,10 @@ export interface PreparedSessionRevisions {
 }
 
 export type SessionRevisionFactory = (sequence: bigint) => SessionRevision;
-export type SessionViewDigester = (normalized: NormalizedSession) => string;
+export type SessionViewDeriver = (
+  normalized: NormalizedSession,
+  prefixKey: Uint8Array,
+) => DerivedSessionView;
 
 const MAX_REVISION_SEQUENCE = (1n << 64n) - 1n;
 
@@ -34,7 +42,8 @@ export class SessionRevisionRegistry {
   constructor(
     private readonly createRevision: SessionRevisionFactory =
       createProcessRevisionFactory(),
-    private readonly digest: SessionViewDigester = digestSessionView,
+    private readonly derive: SessionViewDeriver = deriveSessionView,
+    private readonly prefixKey: Uint8Array = randomBytes(32),
   ) {}
 
   prepare(
@@ -53,15 +62,21 @@ export class SessionRevisionRegistry {
         !dirtyIds.has(id)
       ) {
         next.set(id, previous);
-        versioned.set(id, { revision: previous.revision, normalized });
+        versioned.set(id, previous.versioned);
         continue;
       }
-      const digest = this.digest(normalized);
+      const derived = this.derive(normalized, this.prefixKey);
+      const digest = derived.viewDigest;
       const revision = previous?.digest === digest
-        ? previous.revision
+        ? previous.versioned.revision
         : this.#allocate(nextSequence++);
-      next.set(id, { digest, revision });
-      versioned.set(id, { revision, normalized });
+      const published = {
+        revision,
+        normalized,
+        timelinePrefixIndex: derived.timelinePrefixIndex,
+      };
+      next.set(id, { digest, versioned: published });
+      versioned.set(id, published);
     }
     let committed = false;
     return {

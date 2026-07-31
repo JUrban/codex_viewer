@@ -2,6 +2,10 @@ export type SessionId = string;
 export type ItemId = string;
 export type ListRevision = string;
 export type SessionRevision = string;
+declare const timelinePrefixRevisionBrand: unique symbol;
+export type TimelinePrefixRevision = string & {
+  readonly [timelinePrefixRevisionBrand]: true;
+};
 
 export type DiagnosticSeverity = "info" | "warning" | "error";
 

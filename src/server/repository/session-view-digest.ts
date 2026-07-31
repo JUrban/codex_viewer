@@ -1,4 +1,5 @@
-import { createHash, type Hash } from "node:crypto";
+import { createHash, createHmac, timingSafeEqual } from "node:crypto";
+import type { TimelinePrefixRevision } from "../../shared/domain.js";
 import type {
   DomainAgentIdentity,
   DomainDiagnostic,
@@ -9,19 +10,160 @@ import type {
 } from "../domain/session-domain.js";
 
 export function digestSessionView(normalized: NormalizedSession): string {
-  const writer = new DigestWriter();
+  return deriveSessionView(normalized, Buffer.alloc(32)).viewDigest;
+}
+
+export interface DerivedSessionView {
+  readonly viewDigest: string;
+  readonly timelinePrefixIndex: TimelinePrefixIndex;
+}
+
+const PREFIX_BYTES = 24;
+const PREFIX_PROTOCOL = "timeline-prefix-v1";
+
+export function deriveSessionView(
+  normalized: NormalizedSession,
+  prefixKey: Uint8Array,
+): DerivedSessionView {
+  const hash = createHash("sha256");
+  const writer = new DigestWriter((chunk) => hash.update(chunk));
+  const states = new Uint8Array((normalized.timeline.length + 1) * PREFIX_BYTES);
+  let previousOrdinal: number | undefined;
+  let itemIndex = 0;
+  let state = createHmac("sha256", prefixKey)
+    .update(PREFIX_PROTOCOL, "utf8")
+    .update("\0", "utf8")
+    .update(normalized.session.id, "utf8")
+    .digest()
+    .subarray(0, PREFIX_BYTES);
+  states.set(state, 0);
   writeSession(writer, normalized.session);
-  writer.array("timeline", normalized.timeline, writeTimelineItem);
-  writer.map("toolDetails", normalized.toolDetails, (entry, detail) => {
-    entry.nullableString("input", detail.input);
-    entry.nullableString("output", detail.output);
-    entry.boolean("truncated", detail.truncated);
-  });
-  writer.map("directiveDetails", normalized.directiveDetails, (entry, detail) => {
-    entry.string("text", detail.text);
-    entry.boolean("truncated", detail.truncated);
-  });
-  return writer.digest();
+  writer.arrayEncoded(
+    "timeline",
+    normalized.timeline,
+    (entry, item) => writeTimelineItem(entry, item, normalized),
+    (item, encoded) => {
+      if (
+        !Number.isSafeInteger(item.ordinal) ||
+        item.ordinal < 1 ||
+        (previousOrdinal !== undefined && item.ordinal <= previousOrdinal)
+      ) {
+        throw new Error("Timeline ordinals must be strictly increasing positive integers");
+      }
+      previousOrdinal = item.ordinal;
+      itemIndex += 1;
+      state = createHmac("sha256", prefixKey)
+        .update(state)
+        .update(encoded)
+        .digest()
+        .subarray(0, PREFIX_BYTES);
+      states.set(state, itemIndex * PREFIX_BYTES);
+    },
+  );
+  return {
+    viewDigest: hash.digest("hex"),
+    timelinePrefixIndex: new TimelinePrefixIndex(itemIndex, states),
+  };
+}
+
+export interface TimelinePrefixBoundary {
+  readonly throughOrdinal: number;
+  readonly timelinePrefixRevision: TimelinePrefixRevision;
+}
+
+export class TimelinePrefixIndex {
+  readonly #states: Uint8Array;
+
+  constructor(itemCount: number, states: Uint8Array) {
+    if (states.byteLength !== (itemCount + 1) * PREFIX_BYTES) {
+      throw new Error("Timeline prefix index has an invalid byte length");
+    }
+    this.#states = states.slice();
+  }
+
+  get byteLength(): number {
+    return this.#states.byteLength;
+  }
+
+  boundaryAt(
+    timeline: readonly DomainTimelineRecord[],
+    throughOrdinal: number,
+  ): TimelinePrefixBoundary | null {
+    const maximumOrdinal = timeline.at(-1)?.ordinal ?? 0;
+    if (timeline.length + 1 !== this.#states.byteLength / PREFIX_BYTES) {
+      throw new Error("Timeline prefix index does not match the timeline");
+    }
+    if (throughOrdinal > maximumOrdinal) return null;
+    let low = 0;
+    let high = timeline.length;
+    while (low < high) {
+      const middle = low + Math.floor((high - low) / 2);
+      if (timeline[middle]!.ordinal <= throughOrdinal) low = middle + 1;
+      else high = middle;
+    }
+    return this.#boundary(timeline, low);
+  }
+
+  boundaryAtOrBefore(
+    timeline: readonly DomainTimelineRecord[],
+    throughOrdinal: number,
+  ): TimelinePrefixBoundary {
+    const maximumOrdinal = timeline.at(-1)?.ordinal ?? 0;
+    return this.boundaryAt(timeline, Math.min(throughOrdinal, maximumOrdinal))!;
+  }
+
+  matches(
+    timeline: readonly DomainTimelineRecord[],
+    boundary: TimelinePrefixBoundary,
+    candidate: TimelinePrefixRevision,
+  ): boolean {
+    const encoded = Buffer.from(candidate, "base64url");
+    if (encoded.byteLength !== PREFIX_BYTES) return false;
+    const slotIndex = boundary.throughOrdinal === 0
+      ? 0
+      : upperBound(timeline, boundary.throughOrdinal);
+    const slot = slotIndex === 0 ||
+        timeline[slotIndex - 1]?.ordinal === boundary.throughOrdinal
+      ? this.#slot(slotIndex)
+      : null;
+    return slot !== null && timingSafeEqual(slot, encoded);
+  }
+
+  #boundary(
+    timeline: readonly DomainTimelineRecord[],
+    slot: number,
+  ): TimelinePrefixBoundary {
+    return {
+      throughOrdinal: slot === 0 ? 0 : timeline[slot - 1]!.ordinal,
+      timelinePrefixRevision: Buffer.from(this.#slot(slot))
+        .toString("base64url") as TimelinePrefixRevision,
+    };
+  }
+
+  #slot(index: number): Uint8Array {
+    const start = index * PREFIX_BYTES;
+    return this.#states.subarray(start, start + PREFIX_BYTES);
+  }
+}
+
+function upperBound(
+  timeline: readonly DomainTimelineRecord[],
+  ordinal: number,
+): number {
+  let low = 0;
+  let high = timeline.length;
+  while (low < high) {
+    const middle = low + Math.floor((high - low) / 2);
+    if (timeline[middle]!.ordinal <= ordinal) low = middle + 1;
+    else high = middle;
+  }
+  return low;
+}
+
+export function isTimelinePrefixRevision(
+  value: string,
+): value is TimelinePrefixRevision {
+  return /^[A-Za-z0-9_-]{32}$/.test(value);
 }
 
 function writeSession(writer: DigestWriter, session: DomainSession): void {
@@ -67,7 +209,11 @@ function writeDiagnostic(writer: DigestWriter, diagnostic: DomainDiagnostic): vo
   writer.nullableNumber("ordinal", diagnostic.ordinal);
 }
 
-function writeTimelineItem(writer: DigestWriter, item: DomainTimelineRecord): void {
+function writeTimelineItem(
+  writer: DigestWriter,
+  item: DomainTimelineRecord,
+  normalized: NormalizedSession,
+): void {
   writer.string("kind", item.kind);
   writer.string("id", item.id);
   writer.number("ordinal", item.ordinal);
@@ -83,6 +229,14 @@ function writeTimelineItem(writer: DigestWriter, item: DomainTimelineRecord): vo
       writer.number("charCount", item.charCount);
       writer.boolean("truncated", item.truncated);
       writer.boolean("hasDetail", item.hasDetail);
+      writer.nullableObject(
+        "detail",
+        normalized.directiveDetails.get(item.id) ?? null,
+        (entry, detail) => {
+          entry.string("text", detail.text);
+          entry.boolean("truncated", detail.truncated);
+        },
+      );
       return;
     case "tool":
       writer.string("toolName", item.toolName);
@@ -90,6 +244,15 @@ function writeTimelineItem(writer: DigestWriter, item: DomainTimelineRecord): vo
       writer.nullableString("preview", item.preview);
       writer.boolean("truncated", item.truncated);
       writer.boolean("hasDetail", item.hasDetail);
+      writer.nullableObject(
+        "detail",
+        normalized.toolDetails.get(item.id) ?? null,
+        (entry, detail) => {
+          entry.nullableString("input", detail.input);
+          entry.nullableString("output", detail.output);
+          entry.boolean("truncated", detail.truncated);
+        },
+      );
       return;
     case "token":
       writer.nullableObject("tokenUsage.total", item.tokenUsage.total, writeTokenCounters);
@@ -115,10 +278,9 @@ function writeTokenCounters(
 }
 
 class DigestWriter {
-  readonly #hash: Hash;
-
-  constructor(hash: Hash = createHash("sha256")) {
-    this.#hash = hash;
+  constructor(
+    private readonly update: (chunk: string | Uint8Array) => void,
+  ) {
   }
 
   string(name: string, value: string): void {
@@ -185,32 +347,33 @@ class DigestWriter {
     }
   }
 
-  map<T>(
+  arrayEncoded<T>(
     name: string,
-    values: ReadonlyMap<string, T>,
+    values: readonly T[],
     write: (writer: DigestWriter, value: T) => void,
+    observe: (value: T, encoded: Uint8Array) => void,
   ): void {
-    const entries = [...values.entries()].sort(([left], [right]) =>
-      left.localeCompare(right)
-    );
-    this.#field(name, "map");
-    this.#token(String(entries.length));
-    for (const [key, value] of entries) {
-      this.valueString(key);
-      write(this, value);
-      this.#token("entry-end");
+    this.#field(name, "array");
+    this.#token(String(values.length));
+    for (const value of values) {
+      const chunks: Buffer[] = [];
+      const itemWriter = new DigestWriter((chunk) => {
+        chunks.push(typeof chunk === "string" ? Buffer.from(chunk, "utf8") : Buffer.from(chunk));
+      });
+      write(itemWriter, value);
+      const encoded = Buffer.concat(chunks);
+      this.#token("item-start");
+      this.update(encoded);
+      this.#token("item-end");
+      observe(value, encoded);
     }
   }
 
   valueString(value: string): void {
     const bytes = Buffer.byteLength(value, "utf8");
-    this.#hash.update(`value:${bytes}:`, "utf8");
-    this.#hash.update(value, "utf8");
-    this.#hash.update(";", "utf8");
-  }
-
-  digest(): string {
-    return this.#hash.digest("hex");
+    this.update(`value:${bytes}:`);
+    this.update(value);
+    this.update(";");
   }
 
   #field(name: string, type: string): void {
@@ -219,6 +382,6 @@ class DigestWriter {
   }
 
   #token(value: string): void {
-    this.#hash.update(`${value.length}:${value};`, "utf8");
+    this.update(`${value.length}:${value};`);
   }
 }

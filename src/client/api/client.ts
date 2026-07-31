@@ -1,14 +1,17 @@
 import type {
   ApiError,
+  DirectiveDetailQuery,
   DirectiveDetailResponse,
   ItemPageQuery,
   ItemPageResponse,
+  SessionDetailQuery,
   SessionDetailResponse,
   SessionListQuery,
   SessionListResponse,
+  SessionReadCursor,
+  ToolDetailQuery,
   ToolDetailResponse,
 } from "../../shared/api-contract";
-import type { SessionRevision } from "../../shared/domain";
 
 export class ApiClientError extends Error {
   constructor(
@@ -61,6 +64,20 @@ function queryString(values: Record<string, string | number | boolean | undefine
   return query ? `?${query}` : "";
 }
 
+function cursorValues(cursor: SessionReadCursor | undefined) {
+  return cursor === undefined
+    ? {}
+    : {
+        sessionRevision: cursor.sessionRevision,
+        throughOrdinal: cursor.throughOrdinal,
+        timelinePrefixRevision: cursor.timelinePrefixRevision,
+      };
+}
+
+function cursorQuery(cursor: SessionReadCursor | undefined): string {
+  return queryString(cursorValues(cursor));
+}
+
 export const api = {
   sessions: (query: SessionListQuery, signal?: AbortSignal) =>
     request<SessionListResponse>(
@@ -76,35 +93,41 @@ export const api = {
       })}`,
       signal,
     ),
-  session: (id: string, signal?: AbortSignal) =>
-    request<SessionDetailResponse>(`/api/v1/sessions/${encodeURIComponent(id)}`, signal),
+  session: (
+    id: string,
+    query: SessionDetailQuery = {},
+    signal?: AbortSignal,
+  ) =>
+    request<SessionDetailResponse>(
+      `/api/v1/sessions/${encodeURIComponent(id)}${cursorQuery(query.cursor)}`,
+      signal,
+    ),
   items: (id: string, query: ItemPageQuery, signal?: AbortSignal) =>
     request<ItemPageResponse>(
       `/api/v1/sessions/${encodeURIComponent(id)}/items${queryString({
-        afterOrdinal: query.afterOrdinal,
         limit: query.limit,
-        sessionRevision: query.sessionRevision,
+        ...cursorValues(query.cursor),
       })}`,
       signal,
     ),
   tool: (
     sessionId: string,
     itemId: string,
-    sessionRevision: SessionRevision,
+    query: ToolDetailQuery,
     signal?: AbortSignal,
   ) =>
     request<ToolDetailResponse>(
-      `/api/v1/sessions/${encodeURIComponent(sessionId)}/items/${encodeURIComponent(itemId)}/tool${queryString({ sessionRevision })}`,
+      `/api/v1/sessions/${encodeURIComponent(sessionId)}/items/${encodeURIComponent(itemId)}/tool${cursorQuery(query.cursor)}`,
       signal,
     ),
   directive: (
     sessionId: string,
     itemId: string,
-    sessionRevision: SessionRevision,
+    query: DirectiveDetailQuery,
     signal?: AbortSignal,
   ) =>
     request<DirectiveDetailResponse>(
-      `/api/v1/sessions/${encodeURIComponent(sessionId)}/items/${encodeURIComponent(itemId)}/directive${queryString({ sessionRevision })}`,
+      `/api/v1/sessions/${encodeURIComponent(sessionId)}/items/${encodeURIComponent(itemId)}/directive${cursorQuery(query.cursor)}`,
       signal,
     ),
 };

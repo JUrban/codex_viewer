@@ -1,11 +1,11 @@
 import type {
-  Diagnostic,
   ItemId,
   ListRevision,
   SessionDetail,
   SessionId,
   SessionRevision,
   SessionSummary,
+  TimelinePrefixRevision,
   TimelineItem,
 } from "./domain.js";
 
@@ -61,27 +61,38 @@ export interface SessionListResponse {
   warnings: ApiWarning[];
 }
 
-export interface SessionDetailResponse {
+export interface SessionReadCursor {
   sessionRevision: SessionRevision;
+  throughOrdinal: number;
+  timelinePrefixRevision: TimelinePrefixRevision;
+}
+
+export interface SessionReadContext {
+  cursor: SessionReadCursor;
   session: SessionDetail;
+  hasMore: boolean;
+}
+
+export interface SessionDetailQuery {
+  cursor?: SessionReadCursor;
+}
+
+export interface SessionDetailResponse {
+  context: SessionReadContext;
 }
 
 export interface ItemPageQuery {
-  afterOrdinal?: number;
   limit?: number;
-  sessionRevision: SessionRevision;
+  cursor: SessionReadCursor;
 }
 
 export interface ItemPageResponse {
-  sessionRevision: SessionRevision;
+  context: SessionReadContext;
   items: TimelineItem[];
-  nextAfterOrdinal: number | null;
-  hasMore: boolean;
-  diagnostics: Diagnostic[];
 }
 
 export interface ToolDetailResponse {
-  sessionRevision: SessionRevision;
+  context: SessionReadContext;
   sessionId: SessionId;
   itemId: ItemId;
   input: string | null;
@@ -90,11 +101,11 @@ export interface ToolDetailResponse {
 }
 
 export interface ToolDetailQuery {
-  sessionRevision: SessionRevision;
+  cursor: SessionReadCursor;
 }
 
 export interface DirectiveDetailResponse {
-  sessionRevision: SessionRevision;
+  context: SessionReadContext;
   sessionId: SessionId;
   itemId: ItemId;
   text: string;
@@ -102,5 +113,5 @@ export interface DirectiveDetailResponse {
 }
 
 export interface DirectiveDetailQuery {
-  sessionRevision: SessionRevision;
+  cursor: SessionReadCursor;
 }

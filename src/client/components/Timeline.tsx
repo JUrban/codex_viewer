@@ -1,4 +1,8 @@
-import type { SessionRevision, TimelineItem } from "../../shared/domain";
+import type {
+  SessionReadContext,
+  SessionReadCursor,
+} from "../../shared/api-contract";
+import type { TimelineItem } from "../../shared/domain";
 import { DirectiveItem } from "./DirectiveItem";
 import { InternalEventItem } from "./InternalEventItem";
 import { MessageItem } from "./MessageItem";
@@ -9,23 +13,27 @@ import { TraceGutter } from "./TraceGutter";
 interface TimelineProps {
   items: TimelineItem[];
   sessionId: string;
-  sessionRevision: SessionRevision;
+  cursor: SessionReadCursor;
   hasMore: boolean;
   loading: boolean;
   busy?: boolean;
+  paginationFrozen?: boolean;
   onLoadMore: () => void;
-  onStale: () => void;
+  onContext: (expected: SessionReadCursor, context: SessionReadContext) => void;
+  onConflict: () => void;
 }
 
 export function Timeline({
   items,
   sessionId,
-  sessionRevision,
+  cursor,
   hasMore,
   loading,
   busy = loading,
+  paginationFrozen = false,
   onLoadMore,
-  onStale,
+  onContext,
+  onConflict,
 }: TimelineProps) {
   return (
     <>
@@ -39,15 +47,21 @@ export function Timeline({
             <TimelineContent
               item={item}
               sessionId={sessionId}
-              sessionRevision={sessionRevision}
-              onStale={onStale}
+              cursor={cursor}
+              onContext={onContext}
+              onConflict={onConflict}
             />
           </li>
         ))}
       </ol>
       {hasMore
         ? (
-            <button className="load-more" type="button" disabled={busy} onClick={onLoadMore}>
+            <button
+              className="load-more"
+              type="button"
+              disabled={busy || paginationFrozen}
+              onClick={onLoadMore}
+            >
               {loading ? "Loading…" : "Load more events"}
             </button>
           )
@@ -59,9 +73,10 @@ export function Timeline({
 function TimelineContent({
   item,
   sessionId,
-  sessionRevision,
-  onStale,
-}: Pick<TimelineProps, "sessionId" | "sessionRevision" | "onStale"> & {
+  cursor,
+  onContext,
+  onConflict,
+}: Pick<TimelineProps, "sessionId" | "cursor" | "onContext" | "onConflict"> & {
   item: TimelineItem;
 }) {
   switch (item.kind) {
@@ -72,8 +87,9 @@ function TimelineContent({
         <DirectiveItem
           item={item}
           sessionId={sessionId}
-          sessionRevision={sessionRevision}
-          onStale={onStale}
+          cursor={cursor}
+          onContext={onContext}
+          onConflict={onConflict}
         />
       );
     case "tool":
@@ -81,8 +97,9 @@ function TimelineContent({
         <ToolItem
           item={item}
           sessionId={sessionId}
-          sessionRevision={sessionRevision}
-          onStale={onStale}
+          cursor={cursor}
+          onContext={onContext}
+          onConflict={onConflict}
         />
       );
     case "token":

@@ -1,8 +1,13 @@
 import { vi } from "vitest";
-import type { ItemPageResponse, SessionListEntry } from "../../src/shared/api-contract";
+import type {
+  ItemPageResponse,
+  SessionListEntry,
+  SessionReadContext,
+} from "../../src/shared/api-contract";
 import type {
   DirectiveItem as Directive,
   SessionSummary,
+  TimelinePrefixRevision,
   ToolItem as Tool,
 } from "../../src/shared/domain";
 
@@ -13,6 +18,12 @@ export const SESSION_REVISION = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 export const NEXT_SESSION_REVISION = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 export const LIST_REVISION = "llllllllllllllllllllllllllllllll";
 export const NEXT_LIST_REVISION = "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm";
+export const TIMELINE_PREFIX_REVISION =
+  "pppppppppppppppppppppppppppppppp" as TimelinePrefixRevision;
+export const NEXT_TIMELINE_PREFIX_REVISION =
+  "qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq" as TimelinePrefixRevision;
+export const EMPTY_TIMELINE_PREFIX_REVISION =
+  "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee" as TimelinePrefixRevision;
 
 export const baseSession: SessionSummary = {
   id: SESSION_ID, title: "Reader work", preview: "preview", cwd: "/project/reader",
@@ -37,9 +48,33 @@ export const listBody = {
   partial: false, warnings: [],
 };
 
+export const sessionDetail = {
+  ...baseSession,
+  sourceId: "original-session-id",
+  diagnostics: [],
+  itemCount: 3,
+};
+
+export function readContext(
+  sessionRevision = SESSION_REVISION,
+  throughOrdinal = 2,
+  hasMore = true,
+): SessionReadContext {
+  return {
+    cursor: {
+      sessionRevision,
+      throughOrdinal,
+      timelinePrefixRevision: throughOrdinal === 0
+        ? EMPTY_TIMELINE_PREFIX_REVISION
+        : TIMELINE_PREFIX_REVISION,
+    },
+    session: sessionDetail,
+    hasMore,
+  };
+}
+
 export const detailBody = {
-  sessionRevision: SESSION_REVISION,
-  session: { ...baseSession, sourceId: "original-session-id", diagnostics: [], itemCount: 3 },
+  context: readContext(SESSION_REVISION, 0, true),
 };
 
 export const toolItem: Tool = {
@@ -59,18 +94,22 @@ export const directiveItem: Directive = {
 };
 
 export const firstPage: ItemPageResponse = {
-  sessionRevision: SESSION_REVISION, diagnostics: [],
+  context: readContext(),
   items: [
     { kind: "message", id: "message-1", ordinal: 1, timestamp: null, role: "user", phase: null, markdown: "Hello" },
     toolItem,
   ],
-  nextAfterOrdinal: 2, hasMore: true,
 };
 
 export function standardFetch(detail: unknown = detailBody) {
   return vi.fn((input: RequestInfo | URL) => {
     const url = String(input);
-    if (url.includes("/items")) return Promise.resolve(json({ ...firstPage, hasMore: false }));
+    if (url.includes("/items")) {
+      return Promise.resolve(json({
+        ...firstPage,
+        context: { ...firstPage.context, hasMore: false },
+      }));
+    }
     if (url.endsWith(SESSION_ID)) return Promise.resolve(json(detail));
     return Promise.resolve(json(listBody));
   });

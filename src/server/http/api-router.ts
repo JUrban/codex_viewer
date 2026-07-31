@@ -3,7 +3,9 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import type {
   DirectiveDetailQuery,
   ItemPageQuery,
+  SessionDetailQuery,
   SessionListQuery,
+  SessionReadCursor,
   ToolDetailQuery,
 } from "../../shared/api-contract.js";
 import {
@@ -11,6 +13,7 @@ import {
   type SessionRepository,
 } from "../repository/session-repository.js";
 import { isSessionRevision } from "../repository/session-revision-registry.js";
+import { isTimelinePrefixRevision } from "../repository/session-view-digest.js";
 import { isListRevision } from "../repository/list-revision.js";
 import { sendJson, type ApiRouter } from "./router.js";
 
@@ -61,7 +64,10 @@ export function createApiRouter(
 
       const itemId = segments[1] ?? "";
       if (segments.length === 0) {
-        const result = await repository.getSession(id);
+        const result = await repository.getSession(
+          id,
+          parseSessionQuery(url.searchParams),
+        );
         if (result === null) return notFound(response, headOnly, "session_not_found");
         sendJson(response, 200, result, headOnly);
         return true;
@@ -106,7 +112,7 @@ export function createApiRouter(
     } catch (error) {
       if (error instanceof RepositoryQueryError) {
         const status = error.code === "stale_list_revision" ||
-            error.code === "stale_session_revision"
+            error.code === "stale_timeline_prefix"
           ? 409
           : 400;
         sendJson(response, status, { error: { code: error.code, message: error.message } }, headOnly);
@@ -163,37 +169,60 @@ function parseListQuery(params: URLSearchParams): SessionListQuery {
   return query;
 }
 
+function parseSessionQuery(params: URLSearchParams): SessionDetailQuery {
+  const cursor = optionalReadCursor(params, "session");
+  return cursor === undefined ? {} : { cursor };
+}
+
 function parseItemQuery(params: URLSearchParams): ItemPageQuery {
   const query: ItemPageQuery = {
-    sessionRevision: requiredSessionRevision(params, "items"),
+    cursor: requiredReadCursor(params, "items"),
   };
-  const afterOrdinal = optional(params, "afterOrdinal");
   const limit = optional(params, "limit");
-  if (afterOrdinal !== undefined) query.afterOrdinal = integer(afterOrdinal, "afterOrdinal");
   if (limit !== undefined) query.limit = integer(limit, "limit");
   return query;
 }
 
 function parseToolQuery(params: URLSearchParams): ToolDetailQuery {
-  return { sessionRevision: requiredSessionRevision(params, "tool detail") };
+  return { cursor: requiredReadCursor(params, "tool detail") };
 }
 
 function parseDirectiveQuery(params: URLSearchParams): DirectiveDetailQuery {
-  return { sessionRevision: requiredSessionRevision(params, "directive detail") };
+  return { cursor: requiredReadCursor(params, "directive detail") };
 }
 
-function requiredSessionRevision(
+function requiredReadCursor(
   params: URLSearchParams,
   resource: string,
-): string {
+): SessionReadCursor {
+  const cursor = optionalReadCursor(params, resource);
+  if (cursor === undefined) invalid(`read cursor is required for ${resource}`);
+  return cursor;
+}
+
+function optionalReadCursor(
+  params: URLSearchParams,
+  resource: string,
+): SessionReadCursor | undefined {
   const revision = optional(params, "sessionRevision");
-  if (revision === undefined) {
-    invalid(`sessionRevision is required for ${resource}`);
+  const throughOrdinal = optional(params, "throughOrdinal");
+  const prefix = optional(params, "timelinePrefixRevision");
+  const provided = [revision, throughOrdinal, prefix].filter(
+    (value) => value !== undefined,
+  ).length;
+  if (provided === 0) return undefined;
+  if (provided !== 3) {
+    invalid(`sessionRevision, throughOrdinal, and timelinePrefixRevision must appear together for ${resource}`);
   }
-  if (!isSessionRevision(revision)) {
-    invalid("sessionRevision is invalid");
+  if (!isSessionRevision(revision!)) invalid("sessionRevision is invalid");
+  if (!isTimelinePrefixRevision(prefix!)) {
+    invalid("timelinePrefixRevision is invalid");
   }
-  return revision;
+  return {
+    sessionRevision: revision!,
+    throughOrdinal: integer(throughOrdinal!, "throughOrdinal"),
+    timelinePrefixRevision: prefix,
+  };
 }
 
 function optional(params: URLSearchParams, name: string): string | undefined {

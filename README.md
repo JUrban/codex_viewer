@@ -80,6 +80,7 @@ Accepted architecture decisions are recorded under [`docs/adr`](docs/adr):
 - [ADR-0003: Session source adapters](docs/adr/0003-use-session-source-adapters.md)
 - [ADR-0004: Session-scoped reader revisions](docs/adr/0004-use-session-scoped-reader-revisions.md)
 - [ADR-0005: Query-scoped revisions for session-list pagination](docs/adr/0005-use-query-scoped-revisions-for-session-list-pagination.md)
+- [ADR-0006: Conditional read cursors for session resources](docs/adr/0006-use-timeline-prefix-continuity.md)
 
 ## Development
 
