@@ -195,6 +195,10 @@ function Reader({
         onVisibilityChange={onVisibilityChange}
         loading={reader.readerLoading}
         busy={reader.operation !== null}
+        autoRefreshEnabled={reader.autoRefreshEnabled}
+        onAutoRefreshChange={reader.setAutoRefreshEnabled}
+        refreshIntervalSeconds={reader.refreshIntervalSeconds}
+        onRefreshIntervalChange={reader.setRefreshIntervalSeconds}
         onLoadMore={reader.loadMore}
         onStale={reader.restartSession}
         error={reader.readerError}

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useReducer, useRef } from "react";
+import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import type {
   ItemPageResponse,
   SessionDetailResponse,
@@ -9,7 +9,11 @@ import { isAbort, isStaleSessionRevision, messageFor } from "./request-errors";
 import { useSessionPolling } from "./use-session-polling";
 
 const TIMELINE_PAGE_SIZE = 512;
-const POLL_INTERVAL_MS = 8_000;
+const DEFAULT_REFRESH_INTERVAL_SECONDS = 8;
+const MIN_REFRESH_INTERVAL_SECONDS = 1;
+const MAX_REFRESH_INTERVAL_SECONDS = 3_600;
+const REFRESH_INTERVAL_STORAGE_KEY =
+  "codex-sessions-reader.refresh-interval-seconds.v1";
 
 export type ReaderOperation = "open" | "page" | "refresh" | null;
 
@@ -62,6 +66,10 @@ export function useSessionReader(
   clearMissingSession: () => void,
 ) {
   const [state, dispatch] = useReducer(reducer, initialState);
+  const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(false);
+  const [refreshIntervalSeconds, setRefreshIntervalSecondsState] = useState(
+    readRefreshIntervalSeconds,
+  );
   const active = useRef<ActiveRequest | null>(null);
   const selectedIdRef = useRef(selectedId);
   const stateRef = useRef(state);
@@ -145,6 +153,7 @@ export function useSessionReader(
     const switched = previousSelection.current !== selectedId;
     previousSelection.current = selectedId;
     abortActive();
+    if (switched) setAutoRefreshEnabled(false);
     if (selectedId === null) {
       dispatch({ type: "clear" });
       return;
@@ -199,12 +208,24 @@ export function useSessionReader(
     return restartSession();
   }, [restartSession]);
 
+  const setRefreshIntervalSeconds = useCallback((seconds: number) => {
+    if (!isValidRefreshInterval(seconds)) return;
+    setRefreshIntervalSecondsState(seconds);
+    try {
+      window.localStorage.setItem(REFRESH_INTERVAL_STORAGE_KEY, String(seconds));
+    } catch {
+      // Storage can be unavailable in privacy modes; the in-memory value still works.
+    }
+  }, []);
+
   useSessionPolling(
-    selectedId !== null &&
+    autoRefreshEnabled &&
+      selectedId !== null &&
       state.detail !== null &&
+      state.detail.session.id === selectedId &&
       !state.detail.session.archived,
     pollSession,
-    POLL_INTERVAL_MS,
+    refreshIntervalSeconds * 1_000,
   );
 
   useEffect(() => abortActive, [abortActive]);
@@ -223,9 +244,30 @@ export function useSessionReader(
     readerLoading: operation === "open" || operation === "page",
     readerError: state.error,
     clearReaderError: () => dispatch({ type: "clear-error" }),
+    autoRefreshEnabled,
+    setAutoRefreshEnabled,
+    refreshIntervalSeconds,
+    setRefreshIntervalSeconds,
     loadMore,
     restartSession,
   };
+}
+
+function readRefreshIntervalSeconds(): number {
+  try {
+    const stored = Number(window.localStorage.getItem(REFRESH_INTERVAL_STORAGE_KEY));
+    return isValidRefreshInterval(stored)
+      ? stored
+      : DEFAULT_REFRESH_INTERVAL_SECONDS;
+  } catch {
+    return DEFAULT_REFRESH_INTERVAL_SECONDS;
+  }
+}
+
+function isValidRefreshInterval(seconds: number): boolean {
+  return Number.isInteger(seconds) &&
+    seconds >= MIN_REFRESH_INTERVAL_SECONDS &&
+    seconds <= MAX_REFRESH_INTERVAL_SECONDS;
 }
 
 function reducer(state: ReaderState, action: ReaderAction): ReaderState {

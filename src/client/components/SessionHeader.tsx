@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import type { SessionDetail } from "../../shared/domain";
 import type {
   TimelineVisibility,
@@ -8,6 +9,10 @@ interface SessionHeaderProps {
   session: SessionDetail;
   visibility: TimelineVisibility;
   onVisibilityChange: (key: TimelineVisibilityKey, visible: boolean) => void;
+  autoRefreshEnabled: boolean;
+  onAutoRefreshChange: (enabled: boolean) => void;
+  refreshIntervalSeconds: number;
+  onRefreshIntervalChange: (seconds: number) => void;
 }
 
 const DATE_FORMAT = new Intl.DateTimeFormat(undefined, {
@@ -19,7 +24,16 @@ export function SessionHeader({
   session,
   visibility,
   onVisibilityChange,
+  autoRefreshEnabled,
+  onAutoRefreshChange,
+  refreshIntervalSeconds,
+  onRefreshIntervalChange,
 }: SessionHeaderProps) {
+  const [intervalDraft, setIntervalDraft] = useState(String(refreshIntervalSeconds));
+  useEffect(() => {
+    setIntervalDraft(String(refreshIntervalSeconds));
+  }, [refreshIntervalSeconds]);
+
   const updatedAt = session.updatedAt
     ? DATE_FORMAT.format(new Date(session.updatedAt))
     : "Time unavailable";
@@ -41,17 +55,56 @@ export function SessionHeader({
         <p className="session-source-id">
           Original session ID · <code>{session.sourceId ?? "Unavailable"}</code>
         </p>
-        <div className="event-toggles" role="group" aria-label="Timeline event visibility">
-          {VISIBILITY_TOGGLES.map(({ key, label }) => (
-            <label className="check-row event-toggle" key={key}>
-              <input
-                type="checkbox"
-                checked={visibility[key]}
-                onChange={(event) => onVisibilityChange(key, event.target.checked)}
-              />
-              {label}
-            </label>
-          ))}
+        <div className="reader-controls">
+          {!session.archived
+            ? (
+                <div className="auto-refresh-control">
+                  <span className="auto-refresh-label" id="live-updates-label">
+                    Live updates
+                  </span>
+                  <input
+                    className="auto-refresh-interval"
+                    type="number"
+                    min="1"
+                    max="3600"
+                    step="1"
+                    value={intervalDraft}
+                    aria-label="Refresh interval in seconds"
+                    onChange={(event) => {
+                      setIntervalDraft(event.target.value);
+                      const seconds = Number(event.target.value);
+                      if (Number.isInteger(seconds) && seconds >= 1 && seconds <= 3600) {
+                        onRefreshIntervalChange(seconds);
+                      }
+                    }}
+                    onBlur={() => setIntervalDraft(String(refreshIntervalSeconds))}
+                  />
+                  <span className="auto-refresh-unit" aria-hidden="true">s</span>
+                  <button
+                    type="button"
+                    className="auto-refresh-switch"
+                    role="switch"
+                    aria-checked={autoRefreshEnabled}
+                    aria-labelledby="live-updates-label"
+                    onClick={() => onAutoRefreshChange(!autoRefreshEnabled)}
+                  >
+                    <span className="auto-refresh-thumb" aria-hidden="true" />
+                  </button>
+                </div>
+              )
+            : null}
+          <div className="event-toggles" role="group" aria-label="Timeline event visibility">
+            {VISIBILITY_TOGGLES.map(({ key, label }) => (
+              <label className="check-row event-toggle" key={key}>
+                <input
+                  type="checkbox"
+                  checked={visibility[key]}
+                  onChange={(event) => onVisibilityChange(key, event.target.checked)}
+                />
+                {label}
+              </label>
+            ))}
+          </div>
         </div>
       </div>
     </header>

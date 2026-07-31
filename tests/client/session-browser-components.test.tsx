@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MessageItem, safeUrlTransform } from "../../src/client/components/MessageItem";
@@ -161,6 +161,7 @@ describe("session browser components", () => {
     expect(screen.getByText("Codex", { selector: ".source-label" })).toBeInTheDocument();
     unmount();
 
+    const onRefreshIntervalChange = vi.fn();
     render(
       <SessionHeader
         session={{
@@ -171,10 +172,25 @@ describe("session browser components", () => {
         }}
         visibility={DEFAULT_TIMELINE_VISIBILITY}
         onVisibilityChange={vi.fn()}
+        autoRefreshEnabled={false}
+        onAutoRefreshChange={vi.fn()}
+        refreshIntervalSeconds={8}
+        onRefreshIntervalChange={onRefreshIntervalChange}
       />,
     );
     expect(screen.getByText("Codex 1.2.3 · format rollout-v1")).toBeInTheDocument();
     expect(screen.getByText(/native-session/)).toBeInTheDocument();
+    expect(screen.getByRole("spinbutton", { name: "Refresh interval in seconds" }))
+      .toHaveValue(8);
+    const interval = screen.getByRole("spinbutton", {
+      name: "Refresh interval in seconds",
+    });
+    fireEvent.change(interval, { target: { value: "12" } });
+    expect(onRefreshIntervalChange).toHaveBeenCalledWith(12);
+    fireEvent.change(interval, { target: { value: "0" } });
+    expect(onRefreshIntervalChange).toHaveBeenCalledTimes(1);
+    fireEvent.blur(interval);
+    expect(interval).toHaveValue(8);
   });
 
   it("collapses child sessions and presents structured agent task identity", async () => {

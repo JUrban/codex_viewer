@@ -198,8 +198,50 @@
   margin-top: .45rem; color: var(--ink-soft); font-size: .72rem;
 }
 .session-source-id code { font-family: var(--mono-font); overflow-wrap: anywhere; }
+.reader-controls {
+  display: flex; flex-wrap: wrap; align-items: center; gap: .7rem 1.2rem;
+  max-width: 100%; margin-top: .85rem;
+}
+.auto-refresh-control {
+  display: inline-flex; flex: 0 0 auto; align-items: center; gap: .4rem;
+}
+.auto-refresh-label {
+  color: var(--current); font-family: var(--mono-font); font-size: .76rem;
+  font-weight: 650; letter-spacing: .03em;
+}
+.auto-refresh-interval {
+  width: 3.4rem; height: 1.7rem; padding: .1rem .25rem;
+  color: var(--ink); background: var(--paper); border: 1px solid #aebfc3;
+  font-family: var(--mono-font); font-size: .76rem; text-align: right;
+}
+.auto-refresh-interval:focus-visible {
+  outline: 2px solid var(--signal); outline-offset: 2px;
+}
+.auto-refresh-unit {
+  color: var(--ink-soft); font-family: var(--mono-font); font-size: .72rem;
+}
+.auto-refresh-switch {
+  position: relative; flex: 0 0 auto; width: 2.45rem; height: 1.35rem; padding: .15rem;
+  background: #c9d5d7; border: 1px solid #8fa6ab; border-radius: 999px; cursor: pointer;
+}
+.auto-refresh-switch:hover { border-color: var(--current); }
+.auto-refresh-switch:focus-visible {
+  outline: 2px solid var(--signal); outline-offset: 2px;
+}
+.auto-refresh-switch[aria-checked="true"] {
+  background: var(--current); border-color: var(--current);
+}
+.auto-refresh-thumb {
+  display: block; width: .9rem; height: .9rem; background: var(--paper);
+  border: 1px solid rgb(33 49 56 / 22%); border-radius: 50%;
+  box-shadow: 0 1px 2px rgb(33 49 56 / 20%);
+  transform: translateX(0);
+}
+.auto-refresh-switch[aria-checked="true"] .auto-refresh-thumb {
+  transform: translateX(1.05rem);
+}
 .event-toggles {
-  display: flex; flex-wrap: nowrap; gap: 1rem; max-width: 100%; margin-top: 1.1rem;
+  display: flex; flex-wrap: nowrap; gap: 1rem; max-width: 100%;
   overflow-x: auto;
 }
 .event-toggle { flex: 0 0 auto; margin-top: 0; }
@@ -286,6 +328,7 @@
 @media (prefers-reduced-motion: no-preference) {
   .trace-event::before { animation: trace-draw 240ms ease-out both; transform-origin: top; }
   .disclosure-mark { transition: transform 140ms ease-out; }
+  .auto-refresh-thumb { transition: transform 140ms ease; }
   .refresh-mark.active { animation: refresh-turn 800ms linear infinite; }
   @keyframes trace-draw { from { transform: scaleY(0); } to { transform: scaleY(1); } }
   @keyframes refresh-turn { to { transform: rotate(360deg); } }

@@ -20,6 +20,10 @@ interface SessionReaderProps {
   onVisibilityChange: (key: TimelineVisibilityKey, visible: boolean) => void;
   loading: boolean;
   busy: boolean;
+  autoRefreshEnabled: boolean;
+  onAutoRefreshChange: (enabled: boolean) => void;
+  refreshIntervalSeconds: number;
+  onRefreshIntervalChange: (seconds: number) => void;
   onLoadMore: () => void;
   onStale: () => void;
   error?: string | null;
@@ -34,6 +38,10 @@ export function SessionReader({
   onVisibilityChange,
   loading,
   busy,
+  autoRefreshEnabled,
+  onAutoRefreshChange,
+  refreshIntervalSeconds,
+  onRefreshIntervalChange,
   onLoadMore,
   onStale,
   error,
@@ -60,6 +68,10 @@ export function SessionReader({
         session={detail.session}
         visibility={visibility}
         onVisibilityChange={onVisibilityChange}
+        autoRefreshEnabled={autoRefreshEnabled}
+        onAutoRefreshChange={onAutoRefreshChange}
+        refreshIntervalSeconds={refreshIntervalSeconds}
+        onRefreshIntervalChange={onRefreshIntervalChange}
       />
       <DiagnosticNotice
         diagnostics={page?.diagnostics ?? detail.session.diagnostics}

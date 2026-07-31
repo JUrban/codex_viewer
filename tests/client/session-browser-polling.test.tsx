@@ -27,7 +27,7 @@ afterEach(() => {
 });
 
 describe("session polling and failures", () => {
-  it("polls the selected session while visible", async () => {
+  it("keeps polling off by default and starts and stops it manually", async () => {
     vi.useFakeTimers();
     const fetchMock = standardFetch();
     vi.stubGlobal("fetch", fetchMock);
@@ -43,10 +43,98 @@ describe("session polling and failures", () => {
     const detailCalls = () => fetchMock.mock.calls.filter(([url]) => String(url).endsWith(SESSION_ID)).length;
     const before = detailCalls();
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(8_000);
+      await vi.advanceTimersByTimeAsync(16_000);
     });
-    expect(detailCalls()).toBeGreaterThan(before);
+    expect(detailCalls()).toBe(before);
+
+    const autoRefresh = screen.getByRole("switch", { name: "Live updates" });
+    fireEvent.click(autoRefresh);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(7_999);
+    });
+    expect(detailCalls()).toBe(before);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    expect(detailCalls()).toBe(before + 1);
+
+    fireEvent.change(
+      screen.getByRole("spinbutton", { name: "Refresh interval in seconds" }),
+      { target: { value: "3" } },
+    );
+    expect(window.localStorage.getItem("codex-sessions-reader.refresh-interval-seconds.v1"))
+      .toBe("3");
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2_999);
+    });
+    expect(detailCalls()).toBe(before + 1);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    expect(detailCalls()).toBe(before + 2);
+
+    fireEvent.click(autoRefresh);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(16_000);
+    });
+    expect(detailCalls()).toBe(before + 2);
   });
+
+  it("restores a persisted refresh interval", async () => {
+    vi.useFakeTimers();
+    window.localStorage.setItem(
+      "codex-sessions-reader.refresh-interval-seconds.v1",
+      "15",
+    );
+    const fetchMock = standardFetch();
+    vi.stubGlobal("fetch", fetchMock);
+    render(<App />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Reader work/ }));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    expect(screen.getByRole("spinbutton", { name: "Refresh interval in seconds" }))
+      .toHaveValue(15);
+    const detailCalls = () =>
+      fetchMock.mock.calls.filter(([url]) => String(url).endsWith(SESSION_ID)).length;
+    const before = detailCalls();
+    fireEvent.click(screen.getByRole("switch", { name: "Live updates" }));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(14_999);
+    });
+    expect(detailCalls()).toBe(before);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    expect(detailCalls()).toBe(before + 1);
+  });
+
+  it.each(["0", "3601", "1.5", "not-a-number"])(
+    "falls back to 8s for invalid persisted interval %s",
+    async (storedInterval) => {
+      vi.useFakeTimers();
+      window.localStorage.setItem(
+        "codex-sessions-reader.refresh-interval-seconds.v1",
+        storedInterval,
+      );
+      vi.stubGlobal("fetch", standardFetch());
+      render(<App />);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      fireEvent.click(screen.getByRole("button", { name: /Reader work/ }));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+
+      expect(screen.getByRole("spinbutton", { name: "Refresh interval in seconds" }))
+        .toHaveValue(8);
+    },
+  );
 
   it("does not poll an archived session but keeps manual refresh available", async () => {
     vi.useFakeTimers();
@@ -73,6 +161,8 @@ describe("session polling and failures", () => {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(0);
     });
+    expect(screen.queryByRole("switch", { name: "Live updates" }))
+      .toBeNull();
     const detailCalls = () =>
       fetchMock.mock.calls.filter(([url]) => String(url).endsWith(SESSION_ID)).length;
     const before = detailCalls();
@@ -114,6 +204,7 @@ describe("session polling and failures", () => {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(0);
     });
+    fireEvent.click(screen.getByRole("switch", { name: "Live updates" }));
     fireEvent.click(screen.getByRole("button", { name: "Load more events" }));
     await act(async () => {
       await vi.advanceTimersByTimeAsync(0);
@@ -182,6 +273,7 @@ describe("session polling and failures", () => {
     await act(async () => vi.advanceTimersByTimeAsync(0));
     expect(screen.getByText("Old later event")).toBeInTheDocument();
 
+    fireEvent.click(screen.getByRole("switch", { name: "Live updates" }));
     await act(async () => vi.advanceTimersByTimeAsync(8_000));
     expect(screen.getByText("Fresh session start")).toBeInTheDocument();
     expect(screen.queryByText("Old later event")).toBeNull();
@@ -218,6 +310,7 @@ describe("session polling and failures", () => {
     await act(async () => vi.advanceTimersByTimeAsync(0));
 
     const loadMore = screen.getByRole("button", { name: "Load more events" });
+    fireEvent.click(screen.getByRole("switch", { name: "Live updates" }));
     act(() => vi.advanceTimersByTime(8_000));
     await act(async () => Promise.resolve());
     expect(detailCalls).toBe(2);
@@ -279,16 +372,25 @@ describe("session polling and failures", () => {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(0);
     });
+    fireEvent.click(screen.getByRole("switch", { name: "Live updates" }));
     act(() => {
       vi.advanceTimersByTime(8_000);
     });
     await act(async () => Promise.resolve());
     expect(readerDetailCalls).toBe(2);
+    fireEvent.change(
+      screen.getByRole("spinbutton", { name: "Refresh interval in seconds" }),
+      { target: { value: "12" } },
+    );
     fireEvent.click(screen.getByRole("button", { name: /Other session/ }));
     await act(async () => {
       await vi.advanceTimersByTimeAsync(0);
     });
     expect(screen.getByText("Other timeline")).toBeInTheDocument();
+    expect(screen.getByRole("switch", { name: "Live updates" }))
+      .not.toBeChecked();
+    expect(screen.getByRole("spinbutton", { name: "Refresh interval in seconds" }))
+      .toHaveValue(12);
     resolvePoll(json(detailBody));
     await act(async () => {
       await vi.advanceTimersByTimeAsync(0);
@@ -344,6 +446,7 @@ describe("session polling and failures", () => {
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: /Reader work/ }));
     await screen.findByText("Hello");
+    fireEvent.click(screen.getByRole("switch", { name: "Live updates" }));
     vi.useFakeTimers();
     const count = fetchMock.mock.calls.length;
     await vi.advanceTimersByTimeAsync(16_000);
@@ -435,6 +538,7 @@ describe("session polling and failures", () => {
     fireEvent.click(screen.getByRole("button", { name: /Reader work/ }));
     await act(async () => vi.advanceTimersByTimeAsync(0));
     expect(screen.getByText("Hello")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("switch", { name: "Live updates" }));
     await act(async () => vi.advanceTimersByTimeAsync(8_000));
     expect(screen.getByText("Hello")).toBeInTheDocument();
     expect(screen.getByRole("alert")).toHaveTextContent("Poll failed");
