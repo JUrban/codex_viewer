@@ -9,7 +9,6 @@ import type {
   SourceSessionEntry,
 } from "../../src/server/source/session-source.js";
 import {
-  DEFAULT_CATALOG_FRESHNESS_MS,
   DefaultSessionRepository,
   MAX_ITEM_PAGE_BYTES,
   RepositoryQueryError,
@@ -51,7 +50,7 @@ describe("DefaultSessionRepository", () => {
     const repository = new DefaultSessionRepository(
       [source],
       undefined,
-      DEFAULT_CATALOG_FRESHNESS_MS,
+      undefined,
       () => now,
     );
 
@@ -63,10 +62,10 @@ describe("DefaultSessionRepository", () => {
     expect(discoveries).toBe(1);
     await repository.list({});
     expect(discoveries).toBe(1);
-    now = DEFAULT_CATALOG_FRESHNESS_MS - 1;
+    now = 1_999;
     await repository.list({});
     expect(discoveries).toBe(1);
-    now = DEFAULT_CATALOG_FRESHNESS_MS;
+    now = 2_000;
     await repository.list({});
     expect(discoveries).toBe(2);
     await expect(repository.refresh()).resolves.toBeUndefined();

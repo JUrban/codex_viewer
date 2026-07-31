@@ -9,7 +9,7 @@ import { isAbort, isStaleSessionRevision, messageFor } from "./request-errors";
 import { useSessionPolling } from "./use-session-polling";
 
 const TIMELINE_PAGE_SIZE = 512;
-const DEFAULT_REFRESH_INTERVAL_SECONDS = 8;
+const DEFAULT_REFRESH_INTERVAL_SECONDS = 5;
 const MIN_REFRESH_INTERVAL_SECONDS = 1;
 const MAX_REFRESH_INTERVAL_SECONDS = 3_600;
 const REFRESH_INTERVAL_STORAGE_KEY =

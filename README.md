@@ -6,6 +6,8 @@ It reads rollout JSONL files from your Codex home and serves a responsive local
 interface. It does not edit, delete, resume, export, or upload sessions, and it
 does not create a persistent index or cache.
 
+![Codex Sessions Reader interface](docs/images/codex-sessions-reader.png)
+
 ## Quick start
 
 Requirements:

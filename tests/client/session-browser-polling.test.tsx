@@ -50,7 +50,7 @@ describe("session polling and failures", () => {
     const autoRefresh = screen.getByRole("switch", { name: "Live updates" });
     fireEvent.click(autoRefresh);
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(7_999);
+      await vi.advanceTimersByTimeAsync(4_999);
     });
     expect(detailCalls()).toBe(before);
     await act(async () => {
@@ -114,7 +114,7 @@ describe("session polling and failures", () => {
   });
 
   it.each(["0", "3601", "1.5", "not-a-number"])(
-    "falls back to 8s for invalid persisted interval %s",
+    "falls back to 5s for invalid persisted interval %s",
     async (storedInterval) => {
       vi.useFakeTimers();
       window.localStorage.setItem(
@@ -132,7 +132,7 @@ describe("session polling and failures", () => {
       });
 
       expect(screen.getByRole("spinbutton", { name: "Refresh interval in seconds" }))
-        .toHaveValue(8);
+        .toHaveValue(5);
     },
   );
 
@@ -211,7 +211,7 @@ describe("session polling and failures", () => {
     });
     expect(screen.getByText("Later event")).toBeInTheDocument();
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(8_000);
+      await vi.advanceTimersByTimeAsync(5_000);
     });
     expect(screen.getByText("Later event")).toBeInTheDocument();
   });
@@ -274,7 +274,7 @@ describe("session polling and failures", () => {
     expect(screen.getByText("Old later event")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("switch", { name: "Live updates" }));
-    await act(async () => vi.advanceTimersByTimeAsync(8_000));
+    await act(async () => vi.advanceTimersByTimeAsync(5_000));
     expect(screen.getByText("Fresh session start")).toBeInTheDocument();
     expect(screen.queryByText("Old later event")).toBeNull();
   });
@@ -311,7 +311,7 @@ describe("session polling and failures", () => {
 
     const loadMore = screen.getByRole("button", { name: "Load more events" });
     fireEvent.click(screen.getByRole("switch", { name: "Live updates" }));
-    act(() => vi.advanceTimersByTime(8_000));
+    act(() => vi.advanceTimersByTime(5_000));
     await act(async () => Promise.resolve());
     expect(detailCalls).toBe(2);
     expect(loadMore).toBeDisabled();
@@ -374,7 +374,7 @@ describe("session polling and failures", () => {
     });
     fireEvent.click(screen.getByRole("switch", { name: "Live updates" }));
     act(() => {
-      vi.advanceTimersByTime(8_000);
+      vi.advanceTimersByTime(5_000);
     });
     await act(async () => Promise.resolve());
     expect(readerDetailCalls).toBe(2);
@@ -394,7 +394,7 @@ describe("session polling and failures", () => {
     resolvePoll(json(detailBody));
     await act(async () => {
       await vi.advanceTimersByTimeAsync(0);
-      await vi.advanceTimersByTimeAsync(8_000);
+      await vi.advanceTimersByTimeAsync(12_000);
     });
     expect(readerDetailCalls).toBe(2);
     expect(screen.getByText("Other timeline")).toBeInTheDocument();
@@ -539,7 +539,7 @@ describe("session polling and failures", () => {
     await act(async () => vi.advanceTimersByTimeAsync(0));
     expect(screen.getByText("Hello")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("switch", { name: "Live updates" }));
-    await act(async () => vi.advanceTimersByTimeAsync(8_000));
+    await act(async () => vi.advanceTimersByTimeAsync(5_000));
     expect(screen.getByText("Hello")).toBeInTheDocument();
     expect(screen.getByRole("alert")).toHaveTextContent("Poll failed");
   });

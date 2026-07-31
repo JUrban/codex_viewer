@@ -25,7 +25,7 @@ import {
   type VersionedSession,
 } from "./session-revision-registry.js";
 
-export const DEFAULT_CATALOG_FRESHNESS_MS = 3_000;
+export const DEFAULT_CATALOG_FRESHNESS_MS = 2_000;
 
 export interface CatalogSnapshot {
   readonly signature: string;
