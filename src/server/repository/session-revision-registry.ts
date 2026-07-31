@@ -22,29 +22,44 @@ export interface PreparedSessionRevisions {
 }
 
 export type SessionRevisionFactory = (sequence: bigint) => SessionRevision;
+export type SessionViewDigester = (normalized: NormalizedSession) => string;
 
 const MAX_REVISION_SEQUENCE = (1n << 64n) - 1n;
 
 export class SessionRevisionRegistry {
   #published = new Map<DomainSessionId, RevisionRecord>();
   #nextSequence = 0n;
+  #generation = 0n;
 
   constructor(
     private readonly createRevision: SessionRevisionFactory =
       createProcessRevisionFactory(),
+    private readonly digest: SessionViewDigester = digestSessionView,
   ) {}
 
   prepare(
     sessions: ReadonlyMap<DomainSessionId, NormalizedSession>,
+    dirtyIds?: ReadonlySet<DomainSessionId>,
   ): PreparedSessionRevisions {
+    const baseGeneration = this.#generation;
     const next = new Map<DomainSessionId, RevisionRecord>();
     const versioned = new Map<DomainSessionId, VersionedSession>();
+    let nextSequence = this.#nextSequence;
     for (const [id, normalized] of sessions) {
-      const digest = digestSessionView(normalized);
       const previous = this.#published.get(id);
+      if (
+        previous !== undefined &&
+        dirtyIds !== undefined &&
+        !dirtyIds.has(id)
+      ) {
+        next.set(id, previous);
+        versioned.set(id, { revision: previous.revision, normalized });
+        continue;
+      }
+      const digest = this.digest(normalized);
       const revision = previous?.digest === digest
         ? previous.revision
-        : this.#allocate();
+        : this.#allocate(nextSequence++);
       next.set(id, { digest, revision });
       versioned.set(id, { revision, normalized });
     }
@@ -53,21 +68,27 @@ export class SessionRevisionRegistry {
       sessions: versioned,
       commit: () => {
         if (committed) return;
+        if (this.#generation !== baseGeneration) {
+          throw new Error(
+            "Cannot commit stale prepared session revisions",
+          );
+        }
         this.#published = next;
+        this.#nextSequence = nextSequence;
+        this.#generation += 1n;
         committed = true;
       },
     };
   }
 
-  #allocate(): SessionRevision {
-    if (this.#nextSequence > MAX_REVISION_SEQUENCE) {
+  #allocate(sequence: bigint): SessionRevision {
+    if (sequence > MAX_REVISION_SEQUENCE) {
       throw new Error("Session revision sequence exhausted");
     }
-    const revision = this.createRevision(this.#nextSequence);
+    const revision = this.createRevision(sequence);
     if (!isSessionRevision(revision)) {
       throw new Error("Session revision factory returned an invalid token");
     }
-    this.#nextSequence += 1n;
     return revision;
   }
 }

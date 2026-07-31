@@ -1,6 +1,5 @@
 import type {
   DomainDiagnostic,
-  DomainSession,
   DomainSessionId,
   NormalizedSession,
 } from "../domain/session-domain.js";
@@ -22,6 +21,7 @@ import { RefreshCoordinator } from "./refresh-coordinator.js";
 import {
   SessionRevisionRegistry,
   type SessionRevisionFactory,
+  type SessionViewDigester,
   type VersionedSession,
 } from "./session-revision-registry.js";
 
@@ -35,22 +35,44 @@ export interface CatalogSnapshot {
   readonly orderedIds: readonly DomainSessionId[];
 }
 
+export type SearchDocumentBuilder = (
+  normalized: NormalizedSession,
+) => SearchDocument;
+
+export interface CatalogSnapshotStoreDependencies {
+  readonly revisionFactory?: SessionRevisionFactory;
+  readonly sessionDigester?: SessionViewDigester;
+  readonly searchDocumentBuilder?: SearchDocumentBuilder;
+}
+
 export class CatalogSnapshotStore {
   readonly #coordinator = new RefreshCoordinator<CatalogSnapshot>();
   readonly #revisions: SessionRevisionRegistry;
   readonly #sources: readonly SessionSource[];
+  readonly #buildSearchDocument: SearchDocumentBuilder;
   #snapshot: CatalogSnapshot | null = null;
+  #aggregate: AggregateState | null = null;
   #lastDiscoveryAt = Number.NEGATIVE_INFINITY;
 
   constructor(
     sources: readonly SessionSource[],
     private readonly freshnessMs = DEFAULT_CATALOG_FRESHNESS_MS,
     private readonly now: () => number = performance.now.bind(performance),
-    revisionFactory?: SessionRevisionFactory,
+    revisionFactoryOrDependencies?:
+      | SessionRevisionFactory
+      | CatalogSnapshotStoreDependencies,
   ) {
     assertUniqueSources(sources);
     this.#sources = [...sources];
-    this.#revisions = new SessionRevisionRegistry(revisionFactory);
+    const dependencies = typeof revisionFactoryOrDependencies === "function"
+      ? { revisionFactory: revisionFactoryOrDependencies }
+      : revisionFactoryOrDependencies ?? {};
+    this.#revisions = new SessionRevisionRegistry(
+      dependencies.revisionFactory,
+      dependencies.sessionDigester,
+    );
+    this.#buildSearchDocument =
+      dependencies.searchDocumentBuilder ?? buildSearchDocument;
   }
 
   async current(): Promise<CatalogSnapshot> {
@@ -85,16 +107,27 @@ export class CatalogSnapshotStore {
     const sourceDiagnostics = loadedSources.flatMap(({ snapshot }) =>
       snapshot.diagnostics.map((item) => ({ ...item }))
     );
-    const linked = linkRelationships(loadedSources);
+    const linked = linkRelationships(loadedSources, this.#aggregate);
     const diagnostics = [...sourceDiagnostics, ...linked.diagnostics];
     const normalizedSessions = linked.sessions;
     const orderedIds = [...normalizedSessions.values()]
       .sort(compareSessions)
       .map((session) => session.session.id);
-    const documents = orderedIds.map((id) =>
-      buildSearchDocument(normalizedSessions.get(id)!)
+    const documentCache = new Map<DomainSessionId, SearchDocument>();
+    for (const [id, normalized] of normalizedSessions) {
+      const cached = this.#aggregate?.documents.get(id);
+      documentCache.set(
+        id,
+        cached !== undefined && !linked.dirtyIds.has(id)
+          ? cached
+          : this.#buildSearchDocument(normalized),
+      );
+    }
+    const documents = orderedIds.map((id) => documentCache.get(id)!);
+    const preparedRevisions = this.#revisions.prepare(
+      normalizedSessions,
+      linked.dirtyIds,
     );
-    const preparedRevisions = this.#revisions.prepare(normalizedSessions);
     const snapshot: CatalogSnapshot = {
       signature,
       diagnostics,
@@ -103,6 +136,14 @@ export class CatalogSnapshotStore {
       orderedIds,
     };
     preparedRevisions.commit();
+    this.#aggregate = {
+      inputs: linked.inputs,
+      nativeBuckets: linked.nativeBuckets,
+      parentNativeDependents: linked.parentNativeDependents,
+      resolvedParents: linked.resolvedParents,
+      sessions: normalizedSessions,
+      documents: documentCache,
+    };
     this.#snapshot = snapshot;
     return snapshot;
   }
@@ -115,17 +156,36 @@ interface LoadedSource {
 
 interface PendingSession {
   readonly descriptor: SessionSourceDescriptor;
-  readonly entry: SourceSessionEntry;
   readonly id: DomainSessionId;
+  readonly nativeSessionId: string | null;
+  readonly parentNativeSessionId: string | null;
+  readonly origin: SourceSessionEntry["origin"];
+  readonly normalized: NormalizedSession;
 }
 
-type MutableLinkedSession = Omit<DomainSession, "childIds"> & {
-  childIds: DomainSessionId[];
-};
+interface AggregateState {
+  readonly inputs: ReadonlyMap<DomainSessionId, PendingSession>;
+  readonly nativeBuckets: ReadonlyMap<string, readonly DomainSessionId[]>;
+  readonly parentNativeDependents: ReadonlyMap<
+    string,
+    ReadonlySet<DomainSessionId>
+  >;
+  readonly resolvedParents: ReadonlyMap<DomainSessionId, DomainSessionId | null>;
+  readonly sessions: ReadonlyMap<DomainSessionId, NormalizedSession>;
+  readonly documents: ReadonlyMap<DomainSessionId, SearchDocument>;
+}
 
 interface LinkedSessions {
   readonly sessions: Map<DomainSessionId, NormalizedSession>;
   readonly diagnostics: readonly DomainDiagnostic[];
+  readonly dirtyIds: ReadonlySet<DomainSessionId>;
+  readonly inputs: ReadonlyMap<DomainSessionId, PendingSession>;
+  readonly nativeBuckets: ReadonlyMap<string, readonly DomainSessionId[]>;
+  readonly parentNativeDependents: ReadonlyMap<
+    string,
+    ReadonlySet<DomainSessionId>
+  >;
+  readonly resolvedParents: ReadonlyMap<DomainSessionId, DomainSessionId | null>;
 }
 
 function assertUniqueSources(sources: readonly SessionSource[]): void {
@@ -156,10 +216,12 @@ function aggregateSignature(sources: readonly LoadedSource[]): string {
 
 function linkRelationships(
   sources: readonly LoadedSource[],
+  previous: AggregateState | null,
 ): LinkedSessions {
   const diagnostics: DomainDiagnostic[] = [];
-  const pending: PendingSession[] = [];
-  const identities = new Map<string, DomainSessionId | null>();
+  const inputs = new Map<DomainSessionId, PendingSession>();
+  const nativeBuckets = new Map<string, DomainSessionId[]>();
+  const parentNativeDependents = new Map<string, Set<DomainSessionId>>();
   for (const { descriptor, snapshot } of sources) {
     const localIds = new Set<string>();
     for (const entry of snapshot.sessions) {
@@ -174,67 +236,199 @@ function linkRelationships(
       }
       localIds.add(entry.localId);
       const id = opaqueIdForParts(descriptor.instanceKey, entry.localId);
-      pending.push({ descriptor, entry, id });
+      const input: PendingSession = {
+        descriptor,
+        id,
+        nativeSessionId: entry.nativeSessionId,
+        parentNativeSessionId: entry.parentNativeSessionId,
+        origin: entry.origin,
+        normalized: entry.normalized,
+      };
+      inputs.set(id, input);
       if (entry.nativeSessionId !== null) {
         const nativeKey = identityKey(
           descriptor.instanceKey,
           entry.nativeSessionId,
         );
-        if (!identities.has(nativeKey)) identities.set(nativeKey, id);
-        else identities.set(nativeKey, null);
+        const bucket = nativeBuckets.get(nativeKey);
+        if (bucket === undefined) nativeBuckets.set(nativeKey, [id]);
+        else bucket.push(id);
+      }
+      if (entry.parentNativeSessionId !== null) {
+        const parentKey = identityKey(
+          descriptor.instanceKey,
+          entry.parentNativeSessionId,
+        );
+        const dependents = parentNativeDependents.get(parentKey);
+        if (dependents === undefined) {
+          parentNativeDependents.set(parentKey, new Set([id]));
+        } else {
+          dependents.add(id);
+        }
       }
     }
   }
 
-  const mutable = new Map<DomainSessionId, {
-    session: MutableLinkedSession;
-    normalized: NormalizedSession;
-  }>();
-  for (const item of pending) {
-    const parentId = item.entry.parentNativeSessionId === null
+  const resolvedParents = new Map<DomainSessionId, DomainSessionId | null>();
+  const children = new Map<DomainSessionId, DomainSessionId[]>();
+  for (const item of inputs.values()) {
+    const parentId = item.parentNativeSessionId === null
       ? null
-      : identities.get(
-        identityKey(
-          item.descriptor.instanceKey,
-          item.entry.parentNativeSessionId,
+      : uniqueIdentity(
+        nativeBuckets.get(
+          identityKey(
+            item.descriptor.instanceKey,
+            item.parentNativeSessionId,
+          ),
         ),
-      ) ?? null;
-    const source = item.entry.normalized.session;
-    mutable.set(item.id, {
+      );
+    resolvedParents.set(item.id, parentId);
+    if (parentId !== null) {
+      const childIds = children.get(parentId);
+      if (childIds === undefined) children.set(parentId, [item.id]);
+      else childIds.push(item.id);
+    }
+  }
+
+  const dirtyIds = findDirtyIds(
+    inputs,
+    nativeBuckets,
+    parentNativeDependents,
+    resolvedParents,
+    previous,
+  );
+  const sessions = new Map<DomainSessionId, NormalizedSession>();
+  for (const [id, item] of inputs) {
+    const cached = previous?.sessions.get(id);
+    if (cached !== undefined && !dirtyIds.has(id)) {
+      sessions.set(id, cached);
+      continue;
+    }
+    const source = item.normalized.session;
+    sessions.set(id, {
       session: {
         ...source,
-        id: item.id,
-        sourceId: item.entry.nativeSessionId,
+        id,
+        sourceId: item.nativeSessionId,
         origin: {
-          ...item.entry.origin,
+          ...item.origin,
           sourceType: item.descriptor.sourceType,
           sourceInstanceId: item.descriptor.sourceInstanceId,
           agentName: item.descriptor.displayName,
         },
-        parentId,
-        childIds: [],
+        parentId: resolvedParents.get(id) ?? null,
+        childIds: [...(children.get(id) ?? [])].sort(compareCodeUnits),
       },
-      normalized: item.entry.normalized,
+      timeline: item.normalized.timeline,
+      toolDetails: item.normalized.toolDetails,
+      directiveDetails: item.normalized.directiveDetails,
     });
   }
-  for (const linked of mutable.values()) {
-    if (linked.session.parentId === null) continue;
-    mutable.get(linked.session.parentId)?.session.childIds.push(linked.session.id);
+  return {
+    sessions,
+    diagnostics,
+    dirtyIds,
+    inputs,
+    nativeBuckets,
+    parentNativeDependents,
+    resolvedParents,
+  };
+}
+
+function findDirtyIds(
+  inputs: ReadonlyMap<DomainSessionId, PendingSession>,
+  nativeBuckets: ReadonlyMap<string, readonly DomainSessionId[]>,
+  parentNativeDependents: ReadonlyMap<
+    string,
+    ReadonlySet<DomainSessionId>
+  >,
+  resolvedParents: ReadonlyMap<DomainSessionId, DomainSessionId | null>,
+  previous: AggregateState | null,
+): Set<DomainSessionId> {
+  const dirty = new Set<DomainSessionId>();
+  if (previous === null) {
+    for (const id of inputs.keys()) dirty.add(id);
+    return dirty;
   }
 
-  const sessions = new Map<DomainSessionId, NormalizedSession>();
-  for (const [id, linked] of mutable) {
-    sessions.set(id, {
-      session: {
-        ...linked.session,
-        childIds: [...linked.session.childIds].sort(),
-      },
-      timeline: linked.normalized.timeline,
-      toolDetails: linked.normalized.toolDetails,
-      directiveDetails: linked.normalized.directiveDetails,
-    });
+  for (const [id, input] of inputs) {
+    const oldInput = previous.inputs.get(id);
+    // SourceSessionEntry wrappers may be rebuilt on every refresh. The Codex
+    // adapter reuses unchanged immutable NormalizedSession objects, so identity
+    // is only a safe optimization hint: a new object means "recompute", never
+    // that the public revision must change. The final-view digest decides that.
+    if (oldInput === undefined || !sameSourceInput(oldInput, input)) {
+      dirty.add(id);
+    }
+    const oldParent = previous.resolvedParents.get(id) ?? null;
+    const newParent = resolvedParents.get(id) ?? null;
+    if (oldInput === undefined || oldParent !== newParent) {
+      dirty.add(id);
+      if (oldParent !== null && inputs.has(oldParent)) dirty.add(oldParent);
+      if (newParent !== null) dirty.add(newParent);
+    }
   }
-  return { sessions, diagnostics };
+  for (const [id] of previous.inputs) {
+    if (inputs.has(id)) continue;
+    const oldParent = previous.resolvedParents.get(id) ?? null;
+    if (oldParent !== null && inputs.has(oldParent)) dirty.add(oldParent);
+  }
+
+  const identityKeys = new Set([
+    ...previous.nativeBuckets.keys(),
+    ...nativeBuckets.keys(),
+  ]);
+  for (const key of identityKeys) {
+    if (
+      uniqueIdentity(previous.nativeBuckets.get(key)) ===
+        uniqueIdentity(nativeBuckets.get(key))
+    ) {
+      continue;
+    }
+    const dependents = new Set([
+      ...(previous.parentNativeDependents.get(key) ?? []),
+      ...(parentNativeDependents.get(key) ?? []),
+    ]);
+    for (const id of dependents) {
+      if (!inputs.has(id)) continue;
+      dirty.add(id);
+      const oldParent = previous.resolvedParents.get(id) ?? null;
+      const newParent = resolvedParents.get(id) ?? null;
+      if (oldParent !== null && inputs.has(oldParent)) dirty.add(oldParent);
+      if (newParent !== null) dirty.add(newParent);
+    }
+  }
+  return dirty;
+}
+
+function sameSourceInput(
+  left: PendingSession,
+  right: PendingSession,
+): boolean {
+  return left.normalized === right.normalized &&
+    left.nativeSessionId === right.nativeSessionId &&
+    left.parentNativeSessionId === right.parentNativeSessionId &&
+    sameOrigin(left.origin, right.origin) &&
+    left.descriptor.sourceType === right.descriptor.sourceType &&
+    left.descriptor.sourceInstanceId === right.descriptor.sourceInstanceId &&
+    left.descriptor.displayName === right.descriptor.displayName;
+}
+
+function sameOrigin(
+  left: SourceSessionEntry["origin"],
+  right: SourceSessionEntry["origin"],
+): boolean {
+  return left.sourceType === right.sourceType &&
+    left.sourceInstanceId === right.sourceInstanceId &&
+    left.agentName === right.agentName &&
+    left.agentVersion === right.agentVersion &&
+    left.formatVersion === right.formatVersion;
+}
+
+function uniqueIdentity(
+  bucket: readonly DomainSessionId[] | undefined,
+): DomainSessionId | null {
+  return bucket?.length === 1 ? bucket[0]! : null;
 }
 
 function identityKey(sourceKey: string, nativeId: string): string {

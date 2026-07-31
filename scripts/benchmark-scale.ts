@@ -10,11 +10,18 @@ import {
 } from "node:fs/promises";
 import { join } from "node:path";
 import { performance } from "node:perf_hooks";
-import { createCodexSessionRepository } from "../src/server/create-session-repository.js";
+import { createCodexSessionSource } from "../src/server/adapters/codex/codex-session-source.js";
+import {
+  DEFAULT_CATALOG_FRESHNESS_MS,
+  DefaultSessionRepository,
+} from "../src/server/repository/session-repository.js";
+import { digestSessionView } from "../src/server/repository/session-view-digest.js";
+import { buildSearchDocument } from "../src/server/search/search-document.js";
 
 const SESSION_COUNT = 3_000;
 const MIN_CORPUS_BYTES = 100 * 1024 * 1024;
 const FILLER_CHARS = 18_000;
+const PRIOR_SINGLE_APPEND_BASELINE_MS = 266.8;
 
 interface Measurement {
   milliseconds: number;
@@ -32,19 +39,64 @@ try {
     throw new Error(`Synthetic corpus was only ${totalBytes} bytes`);
   }
 
-  const repository = await createCodexSessionRepository(root);
+  const derivationCalls = { digest: 0, searchDocument: 0 };
+  const repository = new DefaultSessionRepository(
+    [await createCodexSessionSource(root)],
+    undefined,
+    DEFAULT_CATALOG_FRESHNESS_MS,
+    performance.now.bind(performance),
+    {
+      sessionDigester(normalized) {
+        derivationCalls.digest += 1;
+        return digestSessionView(normalized);
+      },
+      searchDocumentBuilder(normalized) {
+        derivationCalls.searchDocument += 1;
+        return buildSearchDocument(normalized);
+      },
+    },
+  );
   const coldCatalog = await measure(() => repository.list({ limit: 200 }));
+  assertDerivationDelta(
+    "cold catalog",
+    { digest: 0, searchDocument: 0 },
+    derivationCalls,
+    SESSION_COUNT,
+  );
   const firstList = coldCatalog.value;
+  const beforeNoChangeDerivations = { ...derivationCalls };
   const noChangeRefresh = await measure(() => repository.refresh());
+  assertDerivationDelta(
+    "no-change refresh",
+    beforeNoChangeDerivations,
+    derivationCalls,
+    0,
+  );
   const afterNoChangeList = await repository.list({ limit: 200 });
   if (afterNoChangeList.listRevision !== firstList.listRevision) {
     throw new Error("A no-change refresh changed listRevision");
   }
-  const search = await measure(() => repository.list({ q: "needle-scale", limit: 200 }));
+  const search = await measure(() =>
+    repository.list({
+      q: "needle-scale",
+      project: "/synthetic/project-0",
+      limit: 200,
+    }));
   const absentSearch = await measure(() =>
     repository.list({ q: "absent-search-value", limit: 200 }));
   const selected = search.value.sessions[0];
-  if (selected === undefined) throw new Error("Scale search did not find the special session");
+  if (selected === undefined) {
+    throw new Error(
+      "Scale search did not find the special session: " +
+        JSON.stringify({
+          search: search.value,
+          firstTitles: firstList.sessions.slice(0, 3).map(
+            ({ session }) => session.title,
+          ),
+          derivationCalls,
+        }),
+    );
+  }
   const unrelated = firstList.sessions.find((entry) => entry.session.id !== selected.session.id);
   if (unrelated === undefined) throw new Error("Scale catalog did not contain an unrelated session");
   const detailFirstPage = await measure(async () => {
@@ -89,7 +141,14 @@ try {
       },
     })}\n`,
   );
+  const beforeAppendDerivations = { ...derivationCalls };
   const appendRefresh = await measure(() => repository.refresh());
+  assertDerivationDelta(
+    "single-session append",
+    beforeAppendDerivations,
+    derivationCalls,
+    1,
+  );
   const afterAppendList = await repository.list({ limit: 200 });
   const afterAppendDetail = await requiredDetail(repository, selected.session.id);
   const afterAppendUnrelated = await requiredDetail(repository, unrelated.session.id);
@@ -112,7 +171,14 @@ try {
   const replacement = `${specialPath}.replacement`;
   await writeFile(replacement, `${await rollout(0, "atomic-replacement", 256)}\n`);
   await rename(replacement, specialPath);
+  const beforeReplacementDerivations = { ...derivationCalls };
   const replaceRefresh = await measure(() => repository.refresh());
+  assertDerivationDelta(
+    "single-session replacement",
+    beforeReplacementDerivations,
+    derivationCalls,
+    1,
+  );
   const afterReplaceList = await repository.list({ limit: 200 });
   const afterReplaceDetail = await requiredDetail(repository, selected.session.id);
   const afterReplaceUnrelated = await requiredDetail(repository, unrelated.session.id);
@@ -157,6 +223,19 @@ try {
       boundedAbsentSearch: round(absentSearch.measurement.milliseconds),
       detailFirstPage: round(detailFirstPage.measurement.milliseconds),
     },
+    baselineComparison: {
+      priorSingleSessionAppendMs: PRIOR_SINGLE_APPEND_BASELINE_MS,
+      measuredSingleSessionAppendMs: round(
+        appendRefresh.measurement.milliseconds,
+      ),
+      reductionPercent: round(
+        100 *
+          (PRIOR_SINGLE_APPEND_BASELINE_MS -
+            appendRefresh.measurement.milliseconds) /
+          PRIOR_SINGLE_APPEND_BASELINE_MS,
+      ),
+      hardTimingGate: false,
+    },
     memory: {
       processMaxRssBytes: process.resourceUsage().maxRSS * 1024,
       coldCatalogRssAfterBytes: coldCatalog.measurement.rssAfterBytes,
@@ -198,10 +277,35 @@ try {
         unrelatedRevision === afterReplaceUnrelated.sessionRevision,
       unrelatedOldRevisionReadable: true,
     },
+    derivationCalls: {
+      total: derivationCalls,
+      expected: {
+        coldCatalog: SESSION_COUNT,
+        noChangeRefresh: 0,
+        singleSessionAppendRefresh: 1,
+        singleSessionReplaceRefresh: 1,
+      },
+    },
   };
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
 } finally {
   await rm(root, { recursive: true, force: true });
+}
+
+function assertDerivationDelta(
+  label: string,
+  before: Readonly<{ digest: number; searchDocument: number }>,
+  after: Readonly<{ digest: number; searchDocument: number }>,
+  expected: number,
+): void {
+  const digest = after.digest - before.digest;
+  const searchDocument = after.searchDocument - before.searchDocument;
+  if (digest !== expected || searchDocument !== expected) {
+    throw new Error(
+      `${label} derivation calls: expected ${expected}, got ` +
+        `digest=${digest}, searchDocument=${searchDocument}`,
+    );
+  }
 }
 
 async function generateCorpus(directory: string): Promise<string[]> {
@@ -310,7 +414,7 @@ function round(value: number): number {
   return Math.round(value * 10) / 10;
 }
 
-type Repository = Awaited<ReturnType<typeof createCodexSessionRepository>>;
+type Repository = DefaultSessionRepository;
 
 async function requiredDetail(repository: Repository, sessionId: string) {
   const detail = await repository.getSession(sessionId);

@@ -18,6 +18,7 @@ import {
 } from "../search/search-document.js";
 import {
   CatalogSnapshotStore,
+  type CatalogSnapshotStoreDependencies,
   DEFAULT_CATALOG_FRESHNESS_MS,
 } from "./catalog-snapshot-store.js";
 import {
@@ -59,11 +60,13 @@ export class DefaultSessionRepository implements SessionRepository {
     searchBudget: SearchBudget = DEFAULT_SEARCH_BUDGET,
     freshnessMs = DEFAULT_CATALOG_FRESHNESS_MS,
     now: () => number = performance.now.bind(performance),
+    storeDependencies?: CatalogSnapshotStoreDependencies,
   ) {
     this.#store = new CatalogSnapshotStore(
       sources,
       freshnessMs,
       now,
+      storeDependencies,
     );
     this.#queries = new SessionQueryService(searchBudget);
   }

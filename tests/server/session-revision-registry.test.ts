@@ -35,6 +35,54 @@ describe("SessionRevisionRegistry", () => {
     expect(revision(stillComparedWithA)).toBe(revision(first));
   });
 
+  it("skips digest work for clean published sessions", () => {
+    const digested: string[] = [];
+    const registry = new SessionRevisionRegistry(
+      sequenceToken,
+      (normalized) => {
+        digested.push(normalized.session.title);
+        return normalized.session.title;
+      },
+    );
+    const first = publish(registry, sessions("A"));
+    const prepared = registry.prepare(sessions("A"), new Set());
+    prepared.commit();
+
+    expect(digested).toEqual(["A"]);
+    expect(revision(prepared.sessions)).toBe(revision(first));
+  });
+
+  it("does not consume prepared revision sequences unless committed", () => {
+    const observed: bigint[] = [];
+    const registry = new SessionRevisionRegistry((sequence) => {
+      observed.push(sequence);
+      return sequenceToken(sequence);
+    });
+    publish(registry, sessions("A"));
+    registry.prepare(sessions("B"));
+    const published = publish(registry, sessions("C"));
+
+    expect(observed).toEqual([0n, 1n, 1n]);
+    expect(revision(published)).toBe(sequenceToken(1n));
+  });
+
+  it("rejects a prepared result after another result commits", () => {
+    const registry = new SessionRevisionRegistry(
+      sequenceToken,
+      (normalized) => normalized.session.title,
+    );
+    const first = registry.prepare(sessions("A"));
+    const stale = registry.prepare(sessions("B"));
+
+    first.commit();
+
+    expect(() => stale.commit()).toThrow(
+      "Cannot commit stale prepared session revisions",
+    );
+    const stillPublished = publish(registry, sessions("A"));
+    expect(revision(stillPublished)).toBe(revision(first.sessions));
+  });
+
   it("derives non-reusing revisions from a monotonic sequence", () => {
     const observed: bigint[] = [];
     const registry = new SessionRevisionRegistry((sequence) => {
