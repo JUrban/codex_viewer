@@ -80,7 +80,7 @@ function SessionIndex({
         ? (
             <DiagnosticNotice
               diagnostics={catalog.list.warnings}
-              label="Catalog diagnostics"
+              label="Search warnings"
             />
           )
         : null}

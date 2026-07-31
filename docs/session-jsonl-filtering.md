@@ -13,6 +13,8 @@ timeline items. Keep it synchronized with `rollout-decoder.ts`,
 - Lines larger than 8 MiB are skipped with a diagnostic.
 - A final line without a newline is treated as an incomplete live-write
   fragment and is not decoded until it is terminated.
+- Codex session diagnostics retain only the first 50 entries in production
+  order. Additional diagnostics are silently discarded.
 
 ## Record normalization
 

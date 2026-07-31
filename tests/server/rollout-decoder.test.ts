@@ -27,4 +27,32 @@ describe("WholeFileRolloutDecoder", () => {
     ]);
     expect(decoded.incompleteTail).toBe(true);
   });
+
+  it("keeps only the first 50 diagnostics while preserving physical ordinals", async () => {
+    const home = await createTempDirectory("codex-decode-limit-");
+    const directory = join(home, "sessions", "2026", "07", "28");
+    await mkdir(directory, { recursive: true });
+    const path = join(directory, "rollout-decoder-limit.jsonl");
+    const malformedLines = Array.from(
+      { length: 60 },
+      (_, index) => `malformed-${index + 1}`,
+    );
+    await writeFile(
+      path,
+      `${malformedLines.join("\n")}\n{"type":"valid"}\n`,
+    );
+    const policy = await PathPolicy.create(home);
+    const descriptor = await policy.register(path);
+    expect(descriptor).not.toBeNull();
+
+    const decoded = await new WholeFileRolloutDecoder().decode(descriptor!);
+
+    expect(decoded.diagnostics).toHaveLength(50);
+    expect(decoded.diagnostics.map((diagnostic) => diagnostic.ordinal)).toEqual(
+      Array.from({ length: 50 }, (_, index) => index + 1),
+    );
+    expect(decoded.records).toEqual([
+      expect.objectContaining({ ordinal: 61, value: { type: "valid" } }),
+    ]);
+  });
 });

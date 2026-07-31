@@ -2,7 +2,10 @@ import { createReadStream } from "node:fs";
 import { StringDecoder } from "node:string_decoder";
 import type { Diagnostic } from "../../../shared/domain.js";
 import type { RolloutDescriptor } from "./path-policy.js";
-import { MAX_JSONL_LINE_BYTES } from "./limits.js";
+import {
+  MAX_JSONL_LINE_BYTES,
+  MAX_SESSION_DIAGNOSTICS,
+} from "./limits.js";
 
 export interface DecodedRecord {
   ordinal: number;
@@ -48,7 +51,7 @@ export class WholeFileRolloutDecoder implements RolloutDecoder {
         newline = buffered.indexOf("\n");
       }
       if (Buffer.byteLength(buffered, "utf8") > MAX_JSONL_LINE_BYTES) {
-        diagnostics.push(lineTooLargeDiagnostic(ordinal + 1));
+        appendDiagnostic(diagnostics, lineTooLargeDiagnostic(ordinal + 1));
         buffered = "";
         droppingOversizedLine = true;
       }
@@ -72,13 +75,13 @@ function decodeLine(
 ): void {
   if (line.length === 0) return;
   if (Buffer.byteLength(line, "utf8") > MAX_JSONL_LINE_BYTES) {
-    diagnostics.push(lineTooLargeDiagnostic(ordinal));
+    appendDiagnostic(diagnostics, lineTooLargeDiagnostic(ordinal));
     return;
   }
   try {
     const value: unknown = JSON.parse(line);
     if (!isObject(value)) {
-      diagnostics.push({
+      appendDiagnostic(diagnostics, {
         code: "invalid_record",
         severity: "warning",
         message: "A rollout line was not a JSON object and was skipped.",
@@ -88,7 +91,7 @@ function decodeLine(
     }
     records.push({ ordinal, value });
   } catch {
-    diagnostics.push({
+    appendDiagnostic(diagnostics, {
       code: "malformed_json",
       severity: "warning",
       message: "A malformed rollout line was skipped.",
@@ -104,6 +107,15 @@ function lineTooLargeDiagnostic(ordinal: number): Diagnostic {
     message: "A rollout record exceeded the decode limit and was skipped.",
     ordinal,
   };
+}
+
+function appendDiagnostic(
+  diagnostics: Diagnostic[],
+  diagnostic: Diagnostic,
+): void {
+  if (diagnostics.length < MAX_SESSION_DIAGNOSTICS) {
+    diagnostics.push(diagnostic);
+  }
 }
 
 export function isObject(value: unknown): value is Record<string, unknown> {

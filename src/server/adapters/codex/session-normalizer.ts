@@ -11,6 +11,7 @@ import {
   normalizeSessionTitle,
   truncateText,
 } from "../../domain/session-text.js";
+import { MAX_SESSION_DIAGNOSTICS } from "./limits.js";
 import {
   internalItem,
   internalItemFromPayload,
@@ -44,9 +45,9 @@ export class DefaultSessionNormalizer implements SessionNormalizer {
     metadata: SessionMetadata,
     origin: DomainSessionOrigin = DEFAULT_SESSION_ORIGIN,
   ): NormalizedSession {
-    const diagnostics = [...decoded.diagnostics];
+    const diagnostics = decoded.diagnostics.slice(0, MAX_SESSION_DIAGNOSTICS);
     if (decoded.incompleteTail) {
-      diagnostics.push({
+      appendDiagnostic(diagnostics, {
         code: "incomplete_tail",
         severity: "info",
         message: "The final unterminated rollout fragment is pending and was not decoded.",
@@ -153,12 +154,21 @@ function consumeRecord(
     fixedItems.push(internalItem(record.ordinal, timestamp, eventType));
     return;
   }
-  diagnostics.push({
+  appendDiagnostic(diagnostics, {
     code: "unknown_record",
     severity: "info",
     message: "A record without a recognized type was reduced to a safe diagnostic.",
     ordinal: record.ordinal,
   });
+}
+
+function appendDiagnostic(
+  diagnostics: DomainDiagnostic[],
+  diagnostic: DomainDiagnostic,
+): void {
+  if (diagnostics.length < MAX_SESSION_DIAGNOSTICS) {
+    diagnostics.push(diagnostic);
+  }
 }
 
 function consumeParsedResponse(
