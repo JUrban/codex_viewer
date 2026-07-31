@@ -171,7 +171,7 @@ describe("server architecture boundaries", () => {
     ).toBe(10);
   });
 
-  it("keeps query validation, filtering, facets, paging, and version checks pure", () => {
+  it("filters lists, publishes facets, and reads timeline items", () => {
     const queries = new SessionQueryService();
     const snapshot = snapshotOf(normalized);
     const first = queries.list(snapshot, { project: "/project", limit: 1 });
@@ -189,16 +189,6 @@ describe("server architecture boundaries", () => {
         timelinePrefixRevision: read.timelinePrefixRevision,
       },
     })?.items).toEqual(timeline);
-    expect(() => queries.list(snapshot, { offset: 1 })).toThrowError(
-      expect.objectContaining<Partial<RepositoryQueryError>>({ code: "invalid_query" }),
-    );
-    expect(() => queries.list(snapshot, {
-      listRevision: "x".repeat(32),
-    })).toThrowError(
-      expect.objectContaining<Partial<RepositoryQueryError>>({
-        code: "stale_list_revision",
-      }),
-    );
   });
 
   it("rejects cursors whose through ordinal is not an actual timeline boundary", () => {

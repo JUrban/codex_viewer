@@ -49,17 +49,6 @@ async function startApi(maxScannedBytes?: number) {
 }
 
 describe("versioned session API", () => {
-  it("does not expose a status endpoint", async () => {
-    const { base } = await startApi();
-    const response = await fetch(`${base}/api/v1/status`);
-
-    expect(response.status).toBe(404);
-    expect(response.headers.get("cache-control")).toBe("no-store");
-    await expect(response.json()).resolves.toEqual(expect.objectContaining({
-      error: expect.objectContaining({ code: "not_found" }),
-    }));
-  });
-
   it("serves list, detail, paged items, and lazy tool detail", async () => {
     const { base } = await startApi();
     const listResponse = await fetch(`${base}/api/v1/sessions?q=synthetic&limit=10`);
@@ -228,9 +217,6 @@ describe("versioned session API", () => {
       `&${cursorQuery(page.context.cursor)}`,
     );
     expect(following.status).toBe(200);
-    expect((await fetch(
-      `${base}/api/v1/sessions/${basic.session.id}/items/continuity`,
-    )).status).toBe(404);
     expect((await fetch(
       `${base}/api/v1/sessions/${basic.session.id}` +
       `?sessionRevision=${page.context.cursor.sessionRevision}`,

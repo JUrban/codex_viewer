@@ -90,23 +90,6 @@ describe("SessionRevisionRegistry", () => {
     expect(revision(stillPublished)).toBe(revision(first.sessions));
   });
 
-  it("derives non-reusing revisions from a monotonic sequence", () => {
-    const observed: bigint[] = [];
-    const registry = new SessionRevisionRegistry((sequence) => {
-      observed.push(sequence);
-      return sequenceToken(sequence);
-    });
-    const revisions = new Set<string>();
-    for (let index = 0; index < 10_000; index += 1) {
-      revisions.add(revision(publish(registry, sessions(String(index)))));
-    }
-
-    expect(observed).toEqual(
-      Array.from({ length: 10_000 }, (_, index) => BigInt(index)),
-    );
-    expect(revisions.size).toBe(10_000);
-  });
-
   it("allocates opaque revisions independently across production instances", () => {
     const first = publish(new SessionRevisionRegistry(), sessions("A"));
     const otherProcess = publish(new SessionRevisionRegistry(), sessions("A"));

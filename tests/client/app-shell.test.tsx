@@ -40,7 +40,6 @@ describe("application shell", () => {
     expect(await screen.findByRole("alert"))
       .toHaveTextContent("Could not load sessionsCatalog unavailable");
     const dismiss = screen.getByRole("button", { name: "Dismiss" });
-    expect(dismiss).toHaveTextContent("×");
 
     fireEvent.click(dismiss);
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();

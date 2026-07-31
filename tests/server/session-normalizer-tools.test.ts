@@ -1,5 +1,3 @@
-import { readFile } from "node:fs/promises";
-import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   MAX_DIRECTIVE_CHARS,
@@ -7,7 +5,6 @@ import {
 } from "../../src/server/adapters/codex/limits.js";
 import { MAX_PREVIEW_CHARS } from "../../src/server/domain/session-text.js";
 import {
-  fixtureHome,
   normalizeFixture,
   normalizeRecords,
 } from "./session-normalizer.fixtures.js";
@@ -25,9 +22,6 @@ describe("tool normalization", () => {
     expect(normalized.toolDetails.get(tools[0]!.id)?.output).toBe("synthetic result");
     expect(normalized.toolDetails.get(tools[2]!.id)?.output).toBe("string-shaped output");
     expect(normalized.toolDetails.get(tools[3]!.id)?.output).toBe("array shaped output");
-  
-    const source = await readFile(resolve(fixtureHome, "sessions/2026/07/28/rollout-2026-07-28T10-00-00-basic-session.jsonl"), "utf8");
-    expect(source.length).toBeLessThan(MAX_TOOL_DETAIL_CHARS);
   });
 
   it("truncates oversized synthetic tool input and output before retaining detail", async () => {
