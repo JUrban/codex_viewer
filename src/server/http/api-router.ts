@@ -11,6 +11,7 @@ import {
   type SessionRepository,
 } from "../repository/session-repository.js";
 import { isSessionRevision } from "../repository/session-revision-registry.js";
+import { isListRevision } from "../repository/list-revision.js";
 import { sendJson, type ApiRouter } from "./router.js";
 
 const API_ROOT = "/api/v1";
@@ -108,7 +109,7 @@ export function createApiRouter(
       return notFound(response, headOnly);
     } catch (error) {
       if (error instanceof RepositoryQueryError) {
-        const status = error.code === "stale_catalog_generation" ||
+        const status = error.code === "stale_list_revision" ||
             error.code === "stale_session_revision"
           ? 409
           : 400;
@@ -142,7 +143,7 @@ function parseListQuery(params: URLSearchParams): SessionListQuery {
   const archiveScope = optional(params, "archiveScope");
   const offset = optional(params, "offset");
   const limit = optional(params, "limit");
-  const catalogGeneration = optional(params, "catalogGeneration");
+  const listRevision = optional(params, "listRevision");
   if (q !== undefined) query.q = q;
   if (project !== undefined) query.project = project;
   if (from !== undefined) query.from = from;
@@ -159,8 +160,9 @@ function parseListQuery(params: URLSearchParams): SessionListQuery {
   }
   if (offset !== undefined) query.offset = integer(offset, "offset");
   if (limit !== undefined) query.limit = integer(limit, "limit");
-  if (catalogGeneration !== undefined) {
-    query.catalogGeneration = integer(catalogGeneration, "catalogGeneration");
+  if (listRevision !== undefined) {
+    if (!isListRevision(listRevision)) invalid("listRevision is invalid");
+    query.listRevision = listRevision;
   }
   return query;
 }

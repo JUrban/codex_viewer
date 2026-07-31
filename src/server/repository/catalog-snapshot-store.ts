@@ -28,7 +28,6 @@ import {
 export const DEFAULT_CATALOG_FRESHNESS_MS = 3_000;
 
 export interface CatalogSnapshot {
-  readonly catalogGeneration: number;
   readonly signature: string;
   readonly diagnostics: readonly DomainDiagnostic[];
   readonly sessions: ReadonlyMap<DomainSessionId, VersionedSession>;
@@ -90,13 +89,14 @@ export class CatalogSnapshotStore {
     const linked = linkRelationships(loadedSources);
     const diagnostics = [...sourceDiagnostics, ...linked.diagnostics];
     const normalizedSessions = linked.sessions;
-    const documents = [...normalizedSessions.values()].map(buildSearchDocument);
     const orderedIds = [...normalizedSessions.values()]
       .sort(compareSessions)
       .map((session) => session.session.id);
+    const documents = orderedIds.map((id) =>
+      buildSearchDocument(normalizedSessions.get(id)!)
+    );
     const preparedRevisions = this.#revisions.prepare(normalizedSessions);
     const snapshot: CatalogSnapshot = {
-      catalogGeneration: (previous?.catalogGeneration ?? 0) + 1,
       signature,
       diagnostics,
       sessions: preparedRevisions.sessions,
@@ -259,5 +259,10 @@ function identityKey(sourceKey: string, nativeId: string): string {
 function compareSessions(left: NormalizedSession, right: NormalizedSession): number {
   return (right.session.updatedAt ?? right.session.createdAt ?? "")
     .localeCompare(left.session.updatedAt ?? left.session.createdAt ?? "") ||
-    left.session.title.localeCompare(right.session.title);
+    left.session.title.localeCompare(right.session.title) ||
+    compareCodeUnits(left.session.id, right.session.id);
+}
+
+function compareCodeUnits(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
 }

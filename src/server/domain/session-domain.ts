@@ -1,6 +1,5 @@
 export type DomainSessionId = string;
 export type DomainItemId = string;
-export type DomainCatalogGeneration = number;
 
 export type DomainDiagnosticSeverity = "info" | "warning" | "error";
 

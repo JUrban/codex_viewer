@@ -1,0 +1,85 @@
+---
+status: accepted
+date: 2026-07-30
+---
+
+# Use query-scoped revisions for session-list pagination
+
+## Context and Problem Statement
+
+Session-list offset pagination used one catalog-wide generation. Any published source change invalidated every in-progress list, even when diagnostics, unrelated content, or another query changed without affecting the current query's ordered session IDs. Pagination needs to reject changes that could silently duplicate or omit matching sessions without promising a globally immutable catalog view.
+
+## Decision Drivers
+
+- Prevent silent duplicates and omissions when offset pagination spans changes to the ordered matching session IDs.
+- Avoid invalidating a query for source diagnostics or content that cannot affect that query's membership or order.
+- Keep query details and result fingerprints opaque to clients.
+- Preserve deterministic aggregation across source registration order and equal sort values.
+- Retain offset pagination and the existing filtering, search, and sorting behavior.
+
+## Considered Options
+
+- Use a source/global snapshot generation.
+- Use a generation derived from the global complete-list projection.
+- Use a query-scoped revision derived from the canonical query and ordered matching IDs.
+- Use keyset pagination without a revision.
+
+## Decision Outcome
+
+Chosen option: "Use a query-scoped revision derived from the canonical query and ordered matching IDs", because it places invalidation at the exact consistency boundary required for safe offsets.
+
+After filtering, search, and deterministic sorting, the server computes a 32-character base64url `listRevision` from the canonical query and the complete ordered matching session ID sequence. The canonical query contains normalized `q`, exact `project`, normalized timestamps, and the default-expanded `archiveScope`; it excludes `offset` and `limit`. Summaries, excerpts, diagnostics, and complete session content are not inputs.
+
+The revision is a truncated HMAC using a random per-process key and length-framed fields. It therefore does not reveal a reusable query or result fingerprint, and tokens from an earlier process naturally become stale. Session ID is the final sort tie-breaker. A later page must provide the first page's revision, and any supplied non-matching revision is rejected.
+
+Source snapshot signatures remain internal refresh signals. A changed signature still publishes a new immutable snapshot and status atomically, but the snapshot has no public or internal global catalog generation.
+
+This decision further refines the list consistency boundary described by ADR-0001 and ADR-0004. It does not supersede either decision.
+
+### Positive Consequences
+
+- Diagnostics, unavailable-source recovery, summaries, excerpts, and unrelated content changes do not restart pagination when ordered membership is unchanged.
+- Membership additions, removals, and reordering invalidate unsafe offsets.
+- Revisions are scoped to the exact canonical query and cannot be reused accidentally across different queries.
+- Clients cannot correlate a stable public content digest across process restarts.
+- Source registration order and equal time/title values cannot introduce nondeterministic ordering.
+
+### Negative Consequences
+
+- Different pages may contain summaries or search excerpts produced from different snapshot moments.
+- The guarantee is limited to preventing silent duplicates or omissions caused by a changed ordered ID sequence; it is not a complete cross-page content snapshot.
+- Every list query must traverse the complete matching result and HMAC every ordered ID before slicing the requested page.
+- Process restarts invalidate all outstanding pagination revisions.
+- Offset pagination still requires a restart rather than resuming from a stable key when membership or order changes.
+
+## Pros and Cons of the Options
+
+### Source/global snapshot generation
+
+- Good: Simple comparison and a strong whole-snapshot consistency boundary.
+- Good: Reuses the source refresh lifecycle directly.
+- Bad: Invalidates every list for diagnostics and unrelated content changes.
+- Bad: Couples query pagination to changes that cannot affect its offsets.
+
+### Global complete-list projection generation
+
+- Good: Ignores changes outside the globally sorted session ID projection.
+- Good: One token can be reused across list queries.
+- Bad: A change relevant only to another filter or search still invalidates the current query.
+- Bad: Query-specific membership changes are represented only indirectly through a broader projection.
+
+### Query-scoped ordered-ID revision
+
+- Good: Invalidates exactly when the canonical query or its complete ordered IDs differ.
+- Good: Excludes summaries, excerpts, diagnostics, and irrelevant session content.
+- Good: Retains the existing offset API and makes its safety boundary explicit.
+- Bad: Requires a full result traversal and HMAC for every query.
+- Bad: Does not provide cross-page summary or excerpt snapshot consistency.
+
+### Keyset pagination without a revision
+
+- Good: Can continue from a stable sort key without hashing the complete result.
+- Good: Avoids maintaining or transmitting a revision token.
+- Bad: Concurrent insertions, removals, and sort-key updates still require carefully defined traversal semantics.
+- Bad: Requires a different pagination API and stable, fully exposed cursor ordering semantics.
+- Bad: Does not directly detect that earlier membership changed in a way relevant to the user's logical result.

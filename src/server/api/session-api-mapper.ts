@@ -30,7 +30,6 @@ export class SessionApiMapper {
   status(snapshot: CatalogSnapshot): StatusResponse {
     return {
       available: snapshot.sessions.size > 0,
-      catalogGeneration: snapshot.catalogGeneration,
       sessionCount: snapshot.sessions.size,
       warningCount: snapshot.warningCount,
     };
@@ -38,7 +37,7 @@ export class SessionApiMapper {
 
   list(result: SessionListResult): SessionListResponse {
     return {
-      catalogGeneration: result.catalogGeneration,
+      listRevision: result.listRevision,
       sessions: result.sessions.map((entry) => ({
         session: this.summary(entry.session),
         matches: entry.matches.map((match) => ({ ...match })),

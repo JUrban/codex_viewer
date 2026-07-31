@@ -1,7 +1,7 @@
 import type {
-  CatalogGeneration,
   Diagnostic,
   ItemId,
+  ListRevision,
   SessionDetail,
   SessionId,
   SessionRevision,
@@ -24,7 +24,6 @@ export interface ApiError {
 
 export interface StatusResponse {
   available: boolean;
-  catalogGeneration: CatalogGeneration;
   sessionCount: number;
   warningCount: number;
 }
@@ -39,7 +38,7 @@ export interface SessionListQuery {
   archiveScope?: ArchiveScope;
   offset?: number;
   limit?: number;
-  catalogGeneration?: CatalogGeneration;
+  listRevision?: ListRevision;
 }
 
 export interface SearchMatch {
@@ -58,7 +57,7 @@ export interface ProjectFacet {
 }
 
 export interface SessionListResponse {
-  catalogGeneration: CatalogGeneration;
+  listRevision: ListRevision;
   sessions: SessionListEntry[];
   projects: ProjectFacet[];
   total: number;

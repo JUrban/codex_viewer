@@ -2,9 +2,8 @@ import type {
   ItemPageQuery,
   SessionListQuery,
 } from "../../shared/api-contract.js";
-import type { SessionRevision } from "../../shared/domain.js";
+import type { ListRevision, SessionRevision } from "../../shared/domain.js";
 import type {
-  DomainCatalogGeneration,
   DomainDiagnostic,
   DomainDirectiveDetail,
   DomainSession,
@@ -22,6 +21,12 @@ import {
 } from "../search/search-document.js";
 import type { CatalogSnapshot } from "./catalog-snapshot-store.js";
 import type { VersionedSession } from "./session-revision-registry.js";
+import {
+  canonicalListQuery,
+  createProcessListRevisionFactory,
+  isListRevision,
+  type ListRevisionFactory,
+} from "./list-revision.js";
 
 const DEFAULT_LIST_LIMIT = 50;
 const MAX_LIST_LIMIT = 200;
@@ -33,7 +38,7 @@ export class RepositoryQueryError extends Error {
   constructor(
     readonly code:
       | "invalid_query"
-      | "stale_catalog_generation"
+      | "stale_list_revision"
       | "stale_session_revision",
     message: string,
   ) {
@@ -42,7 +47,7 @@ export class RepositoryQueryError extends Error {
 }
 
 export interface SessionListResult {
-  readonly catalogGeneration: DomainCatalogGeneration;
+  readonly listRevision: ListRevision;
   readonly sessions: readonly {
     readonly session: DomainSession;
     readonly matches: readonly SearchMatch[];
@@ -69,16 +74,15 @@ export interface ItemPageResult {
 }
 
 export class SessionQueryService {
-  constructor(private readonly searchBudget: SearchBudget = DEFAULT_SEARCH_BUDGET) {}
+  constructor(
+    private readonly searchBudget: SearchBudget = DEFAULT_SEARCH_BUDGET,
+    private readonly createListRevision: ListRevisionFactory =
+      createProcessListRevisionFactory(),
+  ) {}
 
   list(snapshot: CatalogSnapshot, query: SessionListQuery): SessionListResult {
     validateListQuery(query);
     const offset = query.offset ?? 0;
-    assertCatalogGeneration(
-      snapshot.catalogGeneration,
-      query.catalogGeneration,
-      offset > 0,
-    );
     const structurallyEligible: NormalizedSession[] = [];
     const eligibleIds = new Set<string>();
     for (const id of snapshot.orderedIds) {
@@ -104,6 +108,11 @@ export class SessionQueryService {
       if (session.cwd !== null) projects.set(session.cwd, (projects.get(session.cwd) ?? 0) + 1);
       matchedSessions.push(normalized);
     }
+    const listRevision = this.createListRevision(
+      canonicalListQuery(query),
+      matchedSessions.map(({ session }) => session.id),
+    );
+    assertListRevision(listRevision, query.listRevision, offset > 0);
     const limit = query.limit ?? DEFAULT_LIST_LIMIT;
     const sessions = matchedSessions.slice(offset, offset + limit).map((normalized) => ({
       session: normalized.session,
@@ -112,7 +121,7 @@ export class SessionQueryService {
     const nextOffset = offset + sessions.length;
     const hasMore = nextOffset < matchedSessions.length;
     return {
-      catalogGeneration: snapshot.catalogGeneration,
+      listRevision,
       sessions,
       projects: [...projects.entries()]
         .map(([project, count]) => ({ project, count }))
@@ -268,21 +277,24 @@ function validateItemQuery(query: ItemPageQuery): void {
   }
 }
 
-function assertCatalogGeneration(
-  current: DomainCatalogGeneration,
-  requested: DomainCatalogGeneration | undefined,
+function assertListRevision(
+  current: ListRevision,
+  requested: ListRevision | undefined,
   required: boolean,
 ): void {
   if (required && requested === undefined) {
     throw new RepositoryQueryError(
       "invalid_query",
-      "catalogGeneration is required for subsequent pages",
+      "listRevision is required for subsequent pages",
     );
+  }
+  if (requested !== undefined && !isListRevision(requested)) {
+    throw new RepositoryQueryError("invalid_query", "listRevision is invalid");
   }
   if (requested !== undefined && requested !== current) {
     throw new RepositoryQueryError(
-      "stale_catalog_generation",
-      "The catalog generation changed; restart pagination",
+      "stale_list_revision",
+      "The session list changed; restart pagination",
     );
   }
 }

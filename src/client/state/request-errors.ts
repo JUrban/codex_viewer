@@ -9,8 +9,8 @@ export function isAbort(reason: unknown): boolean {
   return reason instanceof DOMException && reason.name === "AbortError";
 }
 
-export function isStaleCatalogGeneration(reason: unknown): reason is ApiClientError {
-  return reason instanceof ApiClientError && reason.code === "stale_catalog_generation";
+export function isStaleListRevision(reason: unknown): reason is ApiClientError {
+  return reason instanceof ApiClientError && reason.code === "stale_list_revision";
 }
 
 export function isStaleSessionRevision(reason: unknown): reason is ApiClientError {

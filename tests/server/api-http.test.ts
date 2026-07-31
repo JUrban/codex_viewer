@@ -48,13 +48,14 @@ describe("versioned session API", () => {
     const statusBody = await status.json();
     expect(statusBody).toEqual(expect.objectContaining({
       available: true,
-      catalogGeneration: 1,
       sessionCount: 4,
     }));
+    expect(statusBody).not.toHaveProperty("listRevision");
 
     const listResponse = await fetch(`${base}/api/v1/sessions?q=synthetic&limit=10`);
     const list = await listResponse.json();
     expect(list).toEqual(expect.objectContaining({
+      listRevision: expect.stringMatching(/^[A-Za-z0-9_-]{32}$/),
       total: expect.any(Number),
       hasMore: false,
       nextOffset: null,
@@ -201,13 +202,13 @@ describe("versioned session API", () => {
     expect(stale.status).toBe(409);
     expect((await stale.json()).error.code).toBe("stale_session_revision");
 
-    const staleCatalog = await fetch(
-      `${base}/api/v1/sessions?offset=1&limit=1` +
-      `&catalogGeneration=${list.catalogGeneration}`,
+    const staleList = await fetch(
+      `${base}/api/v1/sessions?archiveScope=all&offset=1&limit=1` +
+      `&listRevision=${list.listRevision}`,
     );
-    expect(staleCatalog.status).toBe(409);
-    expect((await staleCatalog.json()).error.code)
-      .toBe("stale_catalog_generation");
+    expect(staleList.status).toBe(409);
+    expect((await staleList.json()).error.code)
+      .toBe("stale_list_revision");
 
     const canary = "PRIVATE_QUERY_CANARY_".repeat(20);
     const invalid = await fetch(`${base}/api/v1/sessions?q=${canary}`);
@@ -217,6 +218,15 @@ describe("versioned session API", () => {
     expect(JSON.parse(body).error.code).toBe("invalid_query");
     expect((await fetch(`${base}/api/v1/sessions?archiveScope=maybe`)).status).toBe(400);
     expect((await fetch(`${base}/api/v1/sessions?offset=1`)).status).toBe(400);
+    expect((await fetch(
+      `${base}/api/v1/sessions?offset=1&listRevision=short`,
+    )).status).toBe(400);
+    const mismatchedFirstPage = await fetch(
+      `${base}/api/v1/sessions?listRevision=${"x".repeat(32)}`,
+    );
+    expect(mismatchedFirstPage.status).toBe(409);
+    expect((await mismatchedFirstPage.json()).error.code)
+      .toBe("stale_list_revision");
     const itemsUrl = `${base}/api/v1/sessions/${basic.session.id}/items`;
     expect((await fetch(`${itemsUrl}?limit=2`)).status).toBe(400);
     expect((await fetch(
@@ -262,9 +272,7 @@ describe("versioned session API", () => {
 
     const refreshedList = await fetch(`${base}/api/v1/sessions?archiveScope=all`)
       .then((response) => response.json());
-    expect(refreshedList.catalogGeneration).toBeGreaterThan(
-      list.catalogGeneration,
-    );
+    expect(refreshedList.listRevision).toMatch(/^[A-Za-z0-9_-]{32}$/);
     expect((await fetch(
       `${base}/api/v1/sessions/${basic.session.id}/items?limit=2` +
       `&afterOrdinal=${first.nextAfterOrdinal}` +

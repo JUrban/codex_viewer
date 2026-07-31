@@ -36,8 +36,9 @@ try {
   const coldCatalog = await measure(() => repository.list({ limit: 200 }));
   const firstList = coldCatalog.value;
   const noChangeRefresh = await measure(() => repository.refresh());
-  if (noChangeRefresh.value !== firstList.catalogGeneration) {
-    throw new Error("A no-change refresh advanced catalogGeneration");
+  const afterNoChangeList = await repository.list({ limit: 200 });
+  if (afterNoChangeList.listRevision !== firstList.listRevision) {
+    throw new Error("A no-change refresh changed listRevision");
   }
   const search = await measure(() => repository.list({ q: "needle-scale", limit: 200 }));
   const absentSearch = await measure(() =>
@@ -72,13 +73,13 @@ try {
   }
 
   const specialPath = paths[0]!;
-  const beforeMutation = firstList.catalogGeneration;
+  const beforeMutationListRevision = firstList.listRevision;
   const beforeMutatedRevision = detailFirstPage.value.detail.sessionRevision;
   const unrelatedRevision = unrelatedDetail.sessionRevision;
   await appendFile(
     specialPath,
     `${JSON.stringify({
-      timestamp: "2026-07-28T12:01:00.000Z",
+      timestamp: "2026-07-28T12:00:03.000Z",
       type: "response_item",
       payload: {
         type: "message",
@@ -89,12 +90,14 @@ try {
     })}\n`,
   );
   const appendRefresh = await measure(() => repository.refresh());
+  const afterAppendList = await repository.list({ limit: 200 });
   const afterAppendDetail = await requiredDetail(repository, selected.session.id);
   const afterAppendUnrelated = await requiredDetail(repository, unrelated.session.id);
   assertMutationIsolation({
     label: "append",
-    previousCatalogGeneration: beforeMutation,
-    currentCatalogGeneration: appendRefresh.value,
+    previousListRevision: beforeMutationListRevision,
+    currentListRevision: afterAppendList.listRevision,
+    expectListRevisionChange: false,
     previousMutatedRevision: beforeMutatedRevision,
     currentMutatedRevision: afterAppendDetail.sessionRevision,
     unrelatedRevision,
@@ -110,12 +113,14 @@ try {
   await writeFile(replacement, `${await rollout(0, "atomic-replacement", 256)}\n`);
   await rename(replacement, specialPath);
   const replaceRefresh = await measure(() => repository.refresh());
+  const afterReplaceList = await repository.list({ limit: 200 });
   const afterReplaceDetail = await requiredDetail(repository, selected.session.id);
   const afterReplaceUnrelated = await requiredDetail(repository, unrelated.session.id);
   assertMutationIsolation({
     label: "replacement",
-    previousCatalogGeneration: appendRefresh.value,
-    currentCatalogGeneration: replaceRefresh.value,
+    previousListRevision: afterAppendList.listRevision,
+    currentListRevision: afterReplaceList.listRevision,
+    expectListRevisionChange: true,
     previousMutatedRevision: afterAppendDetail.sessionRevision,
     currentMutatedRevision: afterReplaceDetail.sessionRevision,
     unrelatedRevision,
@@ -178,10 +183,11 @@ try {
       permissionProbe,
     },
     mutations: {
-      catalogGeneration: {
-        before: beforeMutation,
-        afterAppend: appendRefresh.value,
-        afterReplace: replaceRefresh.value,
+      listRevision: {
+        unchangedAfterContentAppend:
+          beforeMutationListRevision === afterAppendList.listRevision,
+        changedAfterReplacementReorder:
+          afterAppendList.listRevision !== afterReplaceList.listRevision,
       },
       mutatedSessionRevisionChanged: {
         afterAppend: beforeMutatedRevision !== afterAppendDetail.sessionRevision,
@@ -314,15 +320,19 @@ async function requiredDetail(repository: Repository, sessionId: string) {
 
 function assertMutationIsolation(input: {
   label: string;
-  previousCatalogGeneration: number;
-  currentCatalogGeneration: number;
+  previousListRevision: string;
+  currentListRevision: string;
+  expectListRevisionChange: boolean;
   previousMutatedRevision: string;
   currentMutatedRevision: string;
   unrelatedRevision: string;
   currentUnrelatedRevision: string;
 }): void {
-  if (input.currentCatalogGeneration <= input.previousCatalogGeneration) {
-    throw new Error(`${input.label} did not advance catalogGeneration`);
+  if (
+    (input.currentListRevision !== input.previousListRevision) !==
+      input.expectListRevisionChange
+  ) {
+    throw new Error(`${input.label} produced the wrong listRevision behavior`);
   }
   if (input.currentMutatedRevision === input.previousMutatedRevision) {
     throw new Error(`${input.label} did not change the mutated sessionRevision`);

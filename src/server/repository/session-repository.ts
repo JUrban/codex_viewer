@@ -10,7 +10,7 @@ import type {
   ToolDetailQuery,
   ToolDetailResponse,
 } from "../../shared/api-contract.js";
-import type { CatalogGeneration, SessionId } from "../../shared/domain.js";
+import type { SessionId } from "../../shared/domain.js";
 import { SessionApiMapper } from "../api/session-api-mapper.js";
 import type { SessionSource } from "../source/session-source.js";
 import {
@@ -48,7 +48,7 @@ export interface SessionRepository {
     itemId: string,
     query: DirectiveDetailQuery,
   ): Promise<DirectiveDetailResponse | null>;
-  refresh(): Promise<CatalogGeneration>;
+  refresh(): Promise<void>;
 }
 
 export class DefaultSessionRepository implements SessionRepository {
@@ -70,8 +70,8 @@ export class DefaultSessionRepository implements SessionRepository {
     this.#queries = new SessionQueryService(searchBudget);
   }
 
-  async refresh(): Promise<CatalogGeneration> {
-    return (await this.#store.refresh()).catalogGeneration;
+  async refresh(): Promise<void> {
+    await this.#store.refresh();
   }
 
   async getStatus(): Promise<StatusResponse> {

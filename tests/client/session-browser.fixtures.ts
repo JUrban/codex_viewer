@@ -11,6 +11,8 @@ export const CHILD_ID = "zyxwvutsrqponmlkjihgfedc";
 export const OTHER_ID = "otherabcdefghijklmnopqrs";
 export const SESSION_REVISION = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 export const NEXT_SESSION_REVISION = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+export const LIST_REVISION = "llllllllllllllllllllllllllllllll";
+export const NEXT_LIST_REVISION = "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm";
 
 export const baseSession: SessionSummary = {
   id: SESSION_ID, title: "Reader work", preview: "preview", cwd: "/project/reader",
@@ -28,7 +30,7 @@ export const baseSession: SessionSummary = {
 };
 
 export const listBody = {
-  catalogGeneration: 1,
+  listRevision: LIST_REVISION,
   sessions: [{ session: baseSession, matches: [] }],
   projects: [{ project: "/project/reader", count: 1 }],
   total: 1, nextOffset: null, hasMore: false,

@@ -72,7 +72,7 @@ export const api = {
         archiveScope: query.archiveScope,
         offset: query.offset,
         limit: query.limit,
-        catalogGeneration: query.catalogGeneration,
+        listRevision: query.listRevision,
       })}`,
       signal,
     ),

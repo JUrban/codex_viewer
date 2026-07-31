@@ -121,7 +121,7 @@ describe("session catalog interactions", () => {
       const url = String(input);
       if (url.includes("offset=1")) return Promise.resolve(json({
         ...listBody,
-        catalogGeneration: 1,
+        listRevision: listBody.listRevision,
         sessions: [later],
         total: 2,
         nextOffset: null,
@@ -141,8 +141,88 @@ describe("session catalog interactions", () => {
     expect(await screen.findByRole("button", { name: /Later session/ })).toBeInTheDocument();
     expect(fetchMock.mock.calls.some(([url]) =>
       String(url).includes("offset=1") &&
-      String(url).includes("catalogGeneration=1")
+      String(url).includes(`listRevision=${listBody.listRevision}`)
     )).toBe(true);
+  });
+
+  it("restarts once from the first page after a stale list revision", async () => {
+    const replacement = entry({
+      ...baseSession,
+      id: CHILD_ID,
+      title: "Replacement first page",
+    });
+    let listCalls = 0;
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      listCalls += 1;
+      if (url.includes("offset=1")) {
+        return Promise.resolve(json({
+          error: {
+            code: "stale_list_revision",
+            message: "The session list changed",
+          },
+        }, 409));
+      }
+      if (listCalls === 1) {
+        return Promise.resolve(json({
+          ...listBody,
+          total: 2,
+          nextOffset: 1,
+          hasMore: true,
+        }));
+      }
+      return Promise.resolve(json({
+        ...listBody,
+        listRevision: "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm",
+        sessions: [replacement],
+      }));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", {
+      name: "Load more sessions (1 of 2)",
+    }));
+    expect(await screen.findByRole("button", {
+      name: /Replacement first page/,
+    })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Reader work/ })).toBeNull();
+    expect(listCalls).toBe(3);
+  });
+
+  it("replaces accumulated pages when a successful response has another revision", async () => {
+    const replacement = entry({
+      ...baseSession,
+      id: CHILD_ID,
+      title: "Different ordered result",
+    });
+    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("offset=1")) {
+        return Promise.resolve(json({
+          ...listBody,
+          listRevision: "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm",
+          sessions: [replacement],
+        }));
+      }
+      return Promise.resolve(json({
+        ...listBody,
+        total: 2,
+        nextOffset: 1,
+        hasMore: true,
+      }));
+    }));
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", {
+      name: "Load more sessions (1 of 2)",
+    }));
+    expect(await screen.findByRole("button", {
+      name: /Different ordered result/,
+    })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Reader work/ })).toBeNull();
   });
 
   it("refreshes the catalog and selected timeline without clearing the current UI", async () => {
@@ -168,7 +248,9 @@ describe("session catalog interactions", () => {
       listCalls += 1;
       return Promise.resolve(json({
         ...listBody,
-        catalogGeneration: listCalls > 1 ? 2 : 1,
+        listRevision: listCalls > 1
+          ? "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm"
+          : listBody.listRevision,
       }));
     });
     vi.stubGlobal("fetch", fetchMock);
@@ -238,7 +320,7 @@ describe("session catalog interactions", () => {
       listCalls += 1;
       return Promise.resolve(json({
         ...listBody,
-        catalogGeneration: listCalls,
+        listRevision: listBody.listRevision,
       }));
     });
     vi.stubGlobal("fetch", fetchMock);
@@ -317,7 +399,10 @@ describe("session catalog interactions", () => {
     await user.click(toggle);
     expect(await screen.findByText(/Internal view/)).toBeInTheDocument();
   
-    resolveRefresh(json({ ...listBody, catalogGeneration: 2 }));
+    resolveRefresh(json({
+      ...listBody,
+      listRevision: "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm",
+    }));
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "Refresh sessions" })).toBeEnabled()
     );
@@ -416,7 +501,10 @@ describe("session catalog interactions", () => {
     await user.keyboard("{Enter}");
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "Refresh sessions" })).toBeEnabled());
-    resolveRefresh(json({ ...listBody, catalogGeneration: 2 }));
+    resolveRefresh(json({
+      ...listBody,
+      listRevision: "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm",
+    }));
   });
 
   it("does not merge an obsolete catalog page after filters change", async () => {

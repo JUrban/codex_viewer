@@ -60,21 +60,53 @@ describe("DefaultSessionRepository", () => {
     release();
     expect(await status).toEqual(expect.objectContaining({
       available: false,
-      catalogGeneration: 1,
       sessionCount: 0,
     }));
-    expect((await list).catalogGeneration).toBe(1);
+    expect((await list).listRevision).toMatch(/^[A-Za-z0-9_-]{32}$/);
     expect(discoveries).toBe(1);
-    expect((await repository.getStatus()).catalogGeneration).toBe(1);
+    await repository.getStatus();
     expect(discoveries).toBe(1);
     now = DEFAULT_CATALOG_FRESHNESS_MS - 1;
-    expect((await repository.getStatus()).catalogGeneration).toBe(1);
+    await repository.getStatus();
     expect(discoveries).toBe(1);
     now = DEFAULT_CATALOG_FRESHNESS_MS;
-    expect((await repository.getStatus()).catalogGeneration).toBe(1);
+    await repository.getStatus();
     expect(discoveries).toBe(2);
-    expect(await repository.refresh()).toBe(1);
+    await expect(repository.refresh()).resolves.toBeUndefined();
     expect(discoveries).toBe(3);
+  });
+
+  it("updates status diagnostics without changing an unaffected list revision", async () => {
+    let signature = "warning";
+    let diagnostics = [{
+      code: "temporary_source_warning",
+      severity: "warning" as const,
+      message: "temporarily unavailable",
+      ordinal: null,
+    }];
+    const source: SessionSource = {
+      ...staticSource("diagnostics", []),
+      async refresh() {
+        return {
+          signature,
+          sessions: [sourceEntry(
+            "stable",
+            normalizedSession("stable", "Stable", "/project", []),
+          )],
+          diagnostics,
+        };
+      },
+    };
+    const repository = new DefaultSessionRepository([source]);
+    const first = await repository.list({});
+    expect(await repository.getStatus()).toMatchObject({ warningCount: 1 });
+
+    signature = "recovered";
+    diagnostics = [];
+    await repository.refresh();
+
+    expect(await repository.getStatus()).toMatchObject({ warningCount: 0 });
+    expect((await repository.list({})).listRevision).toBe(first.listRevision);
   });
 
   it("publishes linked summaries, pages one immutable revision, and replaces it after append", async () => {
@@ -222,13 +254,14 @@ describe("DefaultSessionRepository", () => {
     });
     const directive = first!.items.find((item) => item.kind === "directive")!;
 
-    let latestCatalogGeneration = list.catalogGeneration;
+    let latestListRevision = list.listRevision;
     for (const change of ["changed-once", "changed-twice"]) {
       sourceSignature = `session-b-${change}`;
       sessionB = normalizedSession("session-b", `Session B ${change}`, null, []);
-      const nextCatalogGeneration = await repository.refresh();
-      expect(nextCatalogGeneration).toBeGreaterThan(latestCatalogGeneration);
-      latestCatalogGeneration = nextCatalogGeneration;
+      await repository.refresh();
+      const nextListRevision = (await repository.list({})).listRevision;
+      expect(nextListRevision).toBe(latestListRevision);
+      latestListRevision = nextListRevision;
       expect((await repository.getSession(sessionAId))?.sessionRevision)
         .toBe(detail!.sessionRevision);
     }
@@ -306,10 +339,10 @@ describe("DefaultSessionRepository", () => {
 
     sourceSignature = "children-a-z";
     childIds = [...childIds].reverse();
-    const nextCatalogGeneration = await repository.refresh();
+    await repository.refresh();
     const second = await repository.getSession(parentId);
 
-    expect(nextCatalogGeneration).toBeGreaterThan(firstList.catalogGeneration);
+    expect((await repository.list({})).listRevision).toBe(firstList.listRevision);
     expect(second?.session.childIds).toEqual(first?.session.childIds);
     expect(second?.sessionRevision).toBe(first?.sessionRevision);
   });
@@ -498,7 +531,7 @@ describe("DefaultSessionRepository", () => {
     const second = await repository.list({
       offset: first.nextOffset!,
       limit: 200,
-      catalogGeneration: first.catalogGeneration,
+      listRevision: first.listRevision,
     });
     expect(second).toMatchObject({ total: 205, hasMore: false, nextOffset: null });
     expect(second.sessions).toHaveLength(5);

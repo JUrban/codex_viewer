@@ -166,7 +166,7 @@ describe("server architecture boundaries", () => {
     const snapshot = snapshotOf(normalized);
     const first = queries.list(snapshot, { project: "/project", limit: 1 });
     expect(first).toMatchObject({
-      catalogGeneration: 3,
+      listRevision: expect.stringMatching(/^[A-Za-z0-9_-]{32}$/),
       total: 1,
       hasMore: false,
       projects: [{ project: "/project", count: 1 }],
@@ -177,9 +177,11 @@ describe("server architecture boundaries", () => {
     expect(() => queries.list(snapshot, { offset: 1 })).toThrowError(
       expect.objectContaining<Partial<RepositoryQueryError>>({ code: "invalid_query" }),
     );
-    expect(() => queries.list(snapshot, { catalogGeneration: 2 })).toThrowError(
+    expect(() => queries.list(snapshot, {
+      listRevision: "x".repeat(32),
+    })).toThrowError(
       expect.objectContaining<Partial<RepositoryQueryError>>({
-        code: "stale_catalog_generation",
+        code: "stale_list_revision",
       }),
     );
   });
@@ -228,6 +230,11 @@ describe("server architecture boundaries", () => {
 
     expect(first.signature).toBe(reordered.signature);
     expect(first.signature).toBe(reorderedEntries.signature);
+    expect(first.orderedIds).toEqual(reordered.orderedIds);
+    const queries = new SessionQueryService();
+    expect(queries.list(first, { archiveScope: "all" }).listRevision).toBe(
+      queries.list(reordered, { archiveScope: "all" }).listRevision,
+    );
     expect([...first.sessions.keys()].sort()).toEqual(
       [...reordered.sessions.keys()].sort(),
     );
@@ -252,6 +259,27 @@ describe("server architecture boundaries", () => {
         .normalized.session.childIds,
     );
   });
+
+  it("uses session ID as the final tie-breaker across source registration order", async () => {
+    const sourceA = testSource("tie-a", [sourceEntry("same", null, "Tie")]);
+    const sourceB = testSource("tie-b", [sourceEntry("same", null, "Tie")]);
+    const first = await new CatalogSnapshotStore([sourceA, sourceB]).current();
+    const reversed = await new CatalogSnapshotStore([sourceB, sourceA]).current();
+
+    expect(first.orderedIds).toEqual(reversed.orderedIds);
+    const queries = new SessionQueryService({
+      maxScannedBytes: 1_000_000,
+      maxResults: 1,
+      maxExcerptChars: 100,
+      maxDurationMs: 1_000,
+    });
+    const firstResult = queries.list(first, { q: "tie" });
+    const reversedResult = queries.list(reversed, { q: "tie" });
+    expect(firstResult.sessions.map(({ session: value }) => value.id)).toEqual(
+      reversedResult.sessions.map(({ session: value }) => value.id),
+    );
+    expect(firstResult.listRevision).toBe(reversedResult.listRevision);
+  });
 });
 
 async function typescriptFiles(directory: string): Promise<string[]> {
@@ -268,7 +296,6 @@ async function typescriptFiles(directory: string): Promise<string[]> {
 
 function snapshotOf(value: NormalizedSession): CatalogSnapshot {
   return {
-    catalogGeneration: 3,
     signature: "snapshot",
     diagnostics: [],
     sessions: new Map([[
