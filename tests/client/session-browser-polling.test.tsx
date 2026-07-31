@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "../../src/client/App";
 import {
@@ -384,6 +384,31 @@ describe("session polling and failures", () => {
     fireEvent.click(await screen.findByRole("button", { name: /Reader work/ }));
     expect(await screen.findByRole("alert")).toHaveTextContent("Reader failed");
     expect(screen.getByRole("button", { name: /Reader work/ })).toBeInTheDocument();
+  });
+
+  it("clears a failed reader selection when its error is dismissed", async () => {
+    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith(SESSION_ID)) {
+        return Promise.resolve(json({
+          error: { code: "internal_error", message: "Reader failed" },
+        }, 500));
+      }
+      return Promise.resolve(json(listBody));
+    }));
+
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: /Reader work/ }));
+    const alert = await screen.findByRole("alert");
+    expect(window.location.search).toContain(`session=${SESSION_ID}`);
+
+    fireEvent.click(within(alert).getByRole("button", { name: "Dismiss" }));
+
+    expect(await screen.findByRole("heading", { name: "Choose a session" }))
+      .toBeInTheDocument();
+    expect(window.location.search).toBe("");
+    expect(screen.getByRole("button", { name: /Reader work/ }))
+      .not.toHaveAttribute("aria-current");
   });
 
   it("preserves the current reader content when a visible poll fails", async () => {

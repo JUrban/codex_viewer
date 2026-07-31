@@ -29,6 +29,7 @@ export function App() {
       <Reader
         visibility={browser.location.visibility}
         onVisibilityChange={browser.location.setVisibility}
+        onClearSelection={() => browser.location.selectSession(null)}
         reader={browser.reader}
       />
     </main>
@@ -161,10 +162,12 @@ function emptyMessage(scope: SessionBrowser["filters"]["applied"]["archiveScope"
 function Reader({
   visibility,
   onVisibilityChange,
+  onClearSelection,
   reader,
 }: {
   visibility: SessionBrowser["location"]["visibility"];
   onVisibilityChange: SessionBrowser["location"]["setVisibility"];
+  onClearSelection: () => void;
   reader: SessionBrowser["reader"];
 }) {
   if (reader.readerError && !reader.detail) {
@@ -173,7 +176,10 @@ function Reader({
         <ErrorState
           title="Could not load session"
           message={reader.readerError}
-          onDismiss={reader.clearReaderError}
+          onDismiss={() => {
+            reader.clearReaderError();
+            onClearSelection();
+          }}
         />
       </section>
     );

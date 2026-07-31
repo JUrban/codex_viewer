@@ -44,6 +44,15 @@ describe("application shell", () => {
     fireEvent.click(dismiss);
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
+
+  it("falls back safely when an error response has an invalid JSON shape", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(json({}, 502)));
+
+    render(<App />);
+
+    expect(await screen.findByRole("alert"))
+      .toHaveTextContent("Could not load sessionsRequest failed (502)");
+  });
 });
 
 function json(body: unknown, status = 200): Response {

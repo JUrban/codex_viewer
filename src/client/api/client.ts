@@ -27,19 +27,29 @@ async function request<T>(path: string, signal?: AbortSignal): Promise<T> {
     signal,
   });
   if (!response.ok) {
-    let body: ApiError | undefined;
+    let body: unknown;
     try {
-      body = (await response.json()) as ApiError;
+      body = await response.json();
     } catch {
       // The API normally returns JSON, but the client still fails safely if a proxy does not.
     }
+    const apiError = parseApiError(body);
     throw new ApiClientError(
       response.status,
-      body?.error.code ?? "request_failed",
-      body?.error.message ?? `Request failed (${response.status})`,
+      apiError?.code ?? "request_failed",
+      apiError?.message ?? `Request failed (${response.status})`,
     );
   }
   return response.json() as Promise<T>;
+}
+
+function parseApiError(value: unknown): ApiError["error"] | null {
+  if (typeof value !== "object" || value === null || !("error" in value)) return null;
+  const error = value.error;
+  if (typeof error !== "object" || error === null) return null;
+  if (!("code" in error) || typeof error.code !== "string") return null;
+  if (!("message" in error) || typeof error.message !== "string") return null;
+  return { code: error.code, message: error.message };
 }
 
 function queryString(values: Record<string, string | number | boolean | undefined>): string {
