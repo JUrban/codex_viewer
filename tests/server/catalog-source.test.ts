@@ -1,4 +1,4 @@
-import { cp, mkdir, rename, symlink, writeFile } from "node:fs/promises";
+import { cp, mkdir, realpath, rename, stat, symlink, utimes, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
@@ -52,6 +52,73 @@ describe("catalog discovery", () => {
       }),
     ]);
     expect(JSON.stringify(changed.diagnostics)).not.toContain(changedHome);
+  });
+
+  it("keys decoded rollouts by source-relative path rather than canonical path", async () => {
+    const base = await createTempDirectory("codex-adapter-cache-identity-");
+    const home = join(base, "home");
+    const firstRoot = join(base, "first-sessions");
+    const secondRoot = join(base, "second-sessions");
+    await mkdir(home);
+    await mkdir(firstRoot);
+    await mkdir(secondRoot);
+    const firstRollout = join(firstRoot, "rollout-stable.jsonl");
+    const secondRollout = join(secondRoot, "rollout-stable.jsonl");
+    await writeFile(
+      firstRollout,
+      '{"type":"session_meta","payload":{"id":"stable","title":"Stable"}}\n',
+    );
+    await cp(firstRollout, secondRollout);
+    const cacheTimestamp = 1_800_000_000;
+    await Promise.all([
+      utimes(firstRollout, cacheTimestamp, cacheTimestamp),
+      utimes(secondRollout, cacheTimestamp, cacheTimestamp),
+    ]);
+    const firstInfo = await stat(firstRollout);
+    await writeFile(
+      join(secondRoot, "rollout-new.jsonl"),
+      '{"type":"session_meta","payload":{"id":"new","title":"New"}}\n',
+    );
+    const sessionsLink = join(home, "sessions");
+    await symlink(firstRoot, sessionsLink);
+
+    const decoder = new WholeFileRolloutDecoder();
+    const decodedPaths: string[] = [];
+    const source = new CodexSessionSource(home, "codex-cache-identity", {
+      async decode(descriptor) {
+        decodedPaths.push(descriptor.canonicalPath);
+        return decoder.decode(descriptor);
+      },
+    });
+    const first = await source.refresh();
+    const firstDescriptor = await (await PathPolicy.create(home)).register(
+      join(sessionsLink, "rollout-stable.jsonl"),
+    );
+
+    const nextLink = join(home, "next-sessions");
+    await symlink(secondRoot, nextLink);
+    await rename(nextLink, sessionsLink);
+    const secondDescriptor = await (await PathPolicy.create(home)).register(
+      join(sessionsLink, "rollout-stable.jsonl"),
+    );
+    const second = await source.refresh();
+
+    expect(firstDescriptor?.sourceRelativePath).toBe(
+      secondDescriptor?.sourceRelativePath,
+    );
+    expect(firstDescriptor?.canonicalPath).toBe(await realpath(firstRollout));
+    expect(secondDescriptor?.canonicalPath).toBe(await realpath(secondRollout));
+    expect(secondDescriptor?.canonicalPath).not.toBe(firstDescriptor?.canonicalPath);
+    expect(await stat(secondRollout)).toMatchObject({
+      size: firstInfo.size,
+      mtimeMs: firstInfo.mtimeMs,
+    });
+    expect(decodedPaths.filter((path) => path.endsWith("rollout-stable.jsonl")))
+      .toEqual([await realpath(firstRollout)]);
+    expect(decodedPaths.filter((path) => path.endsWith("rollout-new.jsonl")))
+      .toEqual([await realpath(join(secondRoot, "rollout-new.jsonl"))]);
+    expect(first.sessions).toHaveLength(1);
+    expect(second.sessions).toHaveLength(2);
   });
 
   it("hides unreadable rollouts, reports them internally, and retries them", async () => {

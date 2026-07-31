@@ -1,19 +1,20 @@
 # Codex Sessions Reader
 
-A private, read-only Web reader for local Codex session history. It discovers
-rollout JSONL files below a configured Codex home and serves a responsive
-browser interface from the same Node process, bound to loopback by default.
+A private, read-only web viewer for local Codex session history.
 
-The reader does not edit, archive, delete, resume, export, or upload sessions.
-It creates no persistent index or application cache.
+It reads rollout JSONL files from your Codex home and serves a responsive local
+interface. It does not edit, delete, resume, export, or upload sessions, and it
+does not create a persistent index or cache.
 
-## Prerequisites
+## Quick start
 
-- Node.js 22.13 or newer.
-- npm, with permission to install the packages pinned by `package-lock.json`.
-- A local Codex home. By default this is `~/.codex`.
+Requirements:
 
-## Install and start
+- Node.js 22.13 or newer
+- npm
+- A local Codex home (usually `~/.codex`)
+
+Install, build, and start:
 
 ```sh
 npm install
@@ -21,189 +22,114 @@ npm run build
 npm start
 ```
 
-Open `http://127.0.0.1:4173`. The startup message prints the exact URL.
-
-The server reads the catalog on demand, so an active rollout can appear or
-change without restarting the process. Stop it with `Ctrl-C`.
-
-For client-only development, `npm run dev` starts Vite on loopback. It does not
-provide the local session API; use a production build plus `npm start` when
-testing real session data.
-
-Message Markdown supports KaTeX math: use `$...$` for inline formulas and
-`$$...$$` for display formulas. Math-like text inside inline or fenced code is
-left unchanged.
+Open `http://127.0.0.1:4173`. The server prints the exact URL at startup and
+detects session changes without a restart. Press `Ctrl-C` to stop it.
 
 ## Configuration
 
-Configuration is accepted only from the process environment at startup:
+Set these environment variables before starting the server:
 
-| Variable | Default | Meaning |
+| Variable | Default | Description |
 | --- | --- | --- |
-| `CODEX_HOME` | `~/.codex` | Codex home whose `sessions/` and `archived_sessions/` roots may be read. |
-| `CODEX_VIEWER_HOST` | `127.0.0.1` | Address or hostname on which the server listens. |
-| `CODEX_VIEWER_PORT` | `4173` | TCP port, from `0` through `65535`. Port `0` asks the operating system to choose one. |
+| `CODEX_HOME` | `~/.codex` | Codex home containing `sessions/` and optionally `archived_sessions/` |
+| `CODEX_VIEWER_HOST` | `127.0.0.1` | Server host |
+| `CODEX_VIEWER_PORT` | `4173` | Server port; use `0` to select a free port automatically |
 
 Example:
 
 ```sh
-CODEX_HOME=/path/to/codex-home CODEX_VIEWER_HOST=0.0.0.0 CODEX_VIEWER_PORT=4180 npm start
+CODEX_HOME=/path/to/codex-home CODEX_VIEWER_PORT=4180 npm start
 ```
 
-Changing environment variables requires a restart. There is no HTTP endpoint
-for changing paths or configuration.
+Restart the server after changing configuration.
 
-## Security model
+## Features and limits
 
-The Node process is the trust boundary between the browser and local files.
+- Browse active and archived Codex sessions.
+- Search session titles, project paths, and visible user and assistant messages.
+- Render Markdown, GitHub-flavored Markdown, and KaTeX math.
+- Continue reading rollout files while Codex is writing them.
+- Handle malformed or unknown records with diagnostics where possible.
 
-- It accepts only `GET` and `HEAD` and emits no permissive CORS header.
-- It registers only regular rollout files under the canonical allowlisted
-  session roots. Traversal, leaf symlinks, and symlink escapes are rejected.
-- Browser APIs use opaque session IDs and never accept filesystem paths or
-  expose raw Codex records.
-- API responses use `Cache-Control: no-store`. The app also sends a restrictive
-  Content Security Policy, `nosniff`, and `Referrer-Policy: no-referrer`.
-- Markdown raw HTML is not rendered. Remote images are replaced by text;
-  `javascript:`, `data:`, and `file:` links are disabled. Tools show a short
-  plain-text preview; capped input and output are loaded only when expanded.
-- User-role context injected by Codex, such as project instructions or skill
-  content, and developer-role messages are shown as short summaries. Their
-  plain-text detail is loaded only when expanded and is capped at 256,000
-  characters.
+The viewer reads only `rollout-*.jsonl` files. It does not inspect Codex
+databases. Large records and responses are capped to keep memory and search work
+bounded. See [Session JSONL filtering rules](docs/session-jsonl-filtering.md)
+for the detailed decoding and visibility policy.
 
-Loopback limits network exposure but does not make an unlocked local account
-untrusted. A reverse proxy or non-loopback bind can widen that exposure; enforce
-authentication and network access outside the reader.
+## Security
 
-## Search and large catalogs
+The server listens on loopback by default and exposes a read-only API. It
+rejects path traversal and symlink escapes, does not enable permissive CORS, and
+does not expose raw filesystem paths or Codex records.
 
-Search covers session title, project path, canonical assistant messages, and
-user messages corroborated by matching `event_msg.user_message` records. It
-excludes directives, tools, token usage, and internal event payloads,
-including the safe summaries derived from reasoning records.
+Rendered Markdown cannot run raw HTML. Remote images are replaced with text,
+and unsafe links are disabled.
 
-Search work is bounded by elapsed time, scanned bytes, result count, query
-length, and excerpt length. A partial-results notice means a safety budget was
-reached; narrow the project or date filters and search again. Search data and
-normalized sessions are held only in process memory and disappear when the
-server stops.
+Loopback protects against network access, not other processes or users on the
+same machine. If you bind to a non-loopback address or place the viewer behind a
+reverse proxy, add authentication and restrict network access.
 
-The session index is paged. Use **Load more sessions** to browse past the first
-200 summaries. Its offset cursor is tied to the numeric `catalogGeneration`
-returned with the first page. Any catalog change can affect membership, order,
-search results, or facets, so a later page with an old generation receives HTTP
-409 `stale_catalog_generation` and the browser restarts the catalog query.
+## Architecture decisions
 
-Session reading uses a separate consistency domain. Session detail returns an
-opaque `sessionRevision`, and every timeline page, including the first, must send
-that revision. Tool and directive detail requests use the same token. If that
-session's published view changes, an old token receives HTTP 409
-`stale_session_revision` and the browser restarts the detail-to-first-page
-handshake. Changes to other sessions can still advance `catalogGeneration`, but
-do not change this session's revision or discard its loaded pages.
+Accepted architecture decisions are recorded under [`docs/adr`](docs/adr):
 
-## Architecture
+- [ADR-0001: Generation-based whole-file session snapshots](docs/adr/0001-use-generation-based-session-snapshots.md)
+- [ADR-0002: JSONL-only session discovery](docs/adr/0002-use-jsonl-only-session-discovery.md)
+- [ADR-0003: Session source adapters](docs/adr/0003-use-session-source-adapters.md)
+- [ADR-0004: Session-scoped reader revisions](docs/adr/0004-use-session-scoped-reader-revisions.md)
 
-The server separates stable session behavior from agent-specific storage:
+## Development
 
-```text
-SessionSource adapters
-  -> source-local normalized sessions
-  -> aggregate catalog with catalog and per-session versions
-  -> query and search services
-  -> API DTOs
+Run the client-only Vite server:
+
+```sh
+npm run dev
 ```
 
-The Codex adapter owns `sessions/` and `archived_sessions/` discovery, JSONL
-decoding, file fingerprints, format recovery, and Codex metadata extraction.
-Its implementation lives under `src/server/adapters/codex`; generic server
-modules do not import the adapter directly, and the root composition factory
-connects it to the session repository.
-The aggregate catalog knows only source descriptors and normalized sessions.
-It namespaces session identity by source instance, so future adapters can
-publish overlapping native session IDs safely. Each successful refresh
-atomically publishes the catalog generation, final linked session views, and
-their opaque revisions. The internal content digests used to decide revision
-reuse are never returned by the API.
+This does not provide the local session API. Use `npm run build` followed by
+`npm start` when testing real session data.
 
-## Compatibility and limits
-
-The JSONL reader supports the observed Codex rollout record families and
-degrades unknown records to safe summaries or diagnostics. A malformed middle
-line does not hide later complete records. An unterminated final line is treated
-as a pending live-write fragment until its newline arrives.
-The complete decode, normalization, deduplication, and visibility policy is
-documented in [Session JSONL filtering rules](docs/session-jsonl-filtering.md).
-
-Rollout JSONL is the only session discovery and identity source. The reader
-does not inspect Codex state databases or create a derived index.
-
-Individual JSONL lines over 8 MiB are skipped. Normalized message text is capped
-at 1,000,000 characters; directive detail and tool input/output are
-capped at 256,000 characters each. Session previews, item summaries, tool
-previews, and search excerpts use a shared 240-character limit.
-Timeline pages stop at 512 entries or approximately 4 MiB of serialized item
-content, whichever comes first; a single valid item is always returned so its
-cursor can advance. Session-scoped revisions change only the HTTP consistency
-boundary: a changed fingerprint still causes that rollout to be decoded and
-normalized again from the beginning. The reader has no watcher, incremental
-tail state, historical snapshot store, or persistent full-text index.
-Successful catalog discovery is reused for three seconds so a detail request
-and its immediately following item or lazy-detail request do not rescan the
-same catalog.
-
-## Verification
+Verification commands:
 
 ```sh
 npm run typecheck
 npm test
 npm run build
+```
+
+An optional scale benchmark creates a temporary synthetic corpus under
+`/private/tmp` and removes it afterward:
+
+```sh
 npm run benchmark:scale
-```
-
-The scale command creates roughly 3,000 synthetic rollouts and more than
-100 MiB only below `/private/tmp`. It measures cold catalog construction,
-no-change refresh, single-session append and replacement refresh, search,
-detail loading, and peak RSS. It also asserts that catalog generations advance,
-only the changed session receives a new revision, and an unrelated session's
-old token remains readable. The temporary corpus is removed afterward; the
-benchmark never reads or copies real session content.
-
-To confirm the production listener on macOS:
-
-```sh
-lsof -nP -iTCP:4173 -sTCP:LISTEN
-```
-
-With default configuration, the address must be `127.0.0.1:4173`. A safe status
-probe is:
-
-```sh
-curl --fail --silent http://127.0.0.1:4173/api/v1/status
 ```
 
 ## Troubleshooting
 
-**The page shows no sessions.** Confirm `CODEX_HOME` points to the directory
-containing `sessions/`, not to `sessions/` itself. Check that rollout files are
-regular files named `rollout-*.jsonl`.
+**No sessions appear**
 
-**A session reports diagnostics.** Codex may still be writing its final line or
-a record may exceed a safety limit. Wait for the writer to finish and reload.
-Rollouts that cannot be read are omitted from the catalog and counted in the
-status endpoint's warnings until a later refresh can read them.
+Point `CODEX_HOME` to the directory containing `sessions/`, not to `sessions/`
+itself. Session files must be regular files named `rollout-*.jsonl`.
 
-**Search reports partial results.** Add a project/date filter or use a more
-specific phrase. Partial is an intentional bound, not evidence that source files
-were changed.
+**A session shows diagnostics**
 
-**The port is already in use.** Choose another port, for example
-`CODEX_VIEWER_PORT=4180 npm start`.
+Codex may still be writing the file, or a record may exceed a safety limit.
+Wait for the write to finish and reload.
+
+**Search returns partial results**
+
+Narrow the search with a project or date filter, or use a more specific phrase.
+
+**The port is already in use**
+
+Choose another port:
+
+```sh
+CODEX_VIEWER_PORT=4180 npm start
+```
 
 ## Uninstall
 
-Stop the process and delete this repository (and optionally the npm download
-cache managed by npm). The reader has no database, configuration file, watcher,
-background service, or cache under the Codex home. Uninstalling it does not
-modify or remove Codex sessions.
+Stop the server and delete this repository. The viewer creates no database,
+background service, or cache in your Codex home, so your sessions are not
+affected.

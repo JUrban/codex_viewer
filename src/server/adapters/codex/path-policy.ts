@@ -11,8 +11,6 @@ export interface RolloutDescriptor {
   archived: boolean;
   size: number;
   mtimeMs: number;
-  device: number | null;
-  inode: number | null;
 }
 
 interface AllowedRoot {
@@ -72,8 +70,6 @@ export class PathPolicy {
         archived: root.archived,
         size: info.size,
         mtimeMs: info.mtimeMs,
-        device: finiteInteger(info.dev),
-        inode: finiteInteger(info.ino),
       };
     } catch {
       return null;
@@ -84,8 +80,4 @@ export class PathPolicy {
 function isWithin(root: string, candidate: string): boolean {
   const child = relative(root, candidate);
   return child === "" || (!child.startsWith(`..${sep}`) && child !== ".." && !child.startsWith(sep));
-}
-
-function finiteInteger(value: number): number | null {
-  return Number.isSafeInteger(value) ? value : null;
 }

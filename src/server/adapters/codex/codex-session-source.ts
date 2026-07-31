@@ -27,10 +27,7 @@ const EXPECTED_ROLLOUT_IO_ERRORS = new Set([
 ]);
 
 interface FileFingerprint {
-  readonly canonicalPath: string;
   readonly sourceRelativePath: string;
-  readonly device: number | null;
-  readonly inode: number | null;
   readonly size: number;
   readonly mtimeMs: number;
   readonly decoderVersion: number;
@@ -91,16 +88,16 @@ export class CodexSessionSource implements SessionSource {
     const loadDiagnostics: DomainDiagnostic[] = [];
     for (const { descriptor } of discovery.entries) {
       const fingerprint = fingerprintOf(descriptor);
-      const cached = this.#cache.get(descriptor.canonicalPath);
+      const cached = this.#cache.get(descriptor.sourceRelativePath);
       if (cached !== undefined && sameFingerprint(cached.fingerprint, fingerprint)) {
-        nextCache.set(descriptor.canonicalPath, cached);
+        nextCache.set(descriptor.sourceRelativePath, cached);
       } else {
         const loaded = await this.#load(descriptor, fingerprint);
         if (loaded === null) {
           unavailableRollouts.push(descriptor.sourceRelativePath);
           loadDiagnostics.push(rolloutUnavailableDiagnostic());
         } else {
-          nextCache.set(descriptor.canonicalPath, loaded);
+          nextCache.set(descriptor.sourceRelativePath, loaded);
         }
       }
     }
@@ -227,10 +224,7 @@ function rolloutUnavailableDiagnostic(): DomainDiagnostic {
 
 function fingerprintOf(descriptor: RolloutDescriptor): FileFingerprint {
   return {
-    canonicalPath: descriptor.canonicalPath,
     sourceRelativePath: descriptor.sourceRelativePath,
-    device: descriptor.device,
-    inode: descriptor.inode,
     size: descriptor.size,
     mtimeMs: descriptor.mtimeMs,
     decoderVersion: DECODER_VERSION,
@@ -238,10 +232,7 @@ function fingerprintOf(descriptor: RolloutDescriptor): FileFingerprint {
 }
 
 function sameFingerprint(left: FileFingerprint, right: FileFingerprint): boolean {
-  return left.canonicalPath === right.canonicalPath &&
-    left.sourceRelativePath === right.sourceRelativePath &&
-    left.device === right.device &&
-    left.inode === right.inode &&
+  return left.sourceRelativePath === right.sourceRelativePath &&
     left.size === right.size &&
     left.mtimeMs === right.mtimeMs &&
     left.decoderVersion === right.decoderVersion;

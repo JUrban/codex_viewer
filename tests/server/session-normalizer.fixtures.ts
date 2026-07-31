@@ -41,8 +41,6 @@ export function decodedRollout(id: string, records: DecodedRecord[]): DecodedRol
       archived: false,
       size: 1,
       mtimeMs: 1,
-      device: 1,
-      inode: 1,
     },
     diagnostics: [],
     incompleteTail: false,
