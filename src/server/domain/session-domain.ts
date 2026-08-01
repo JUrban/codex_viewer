@@ -54,16 +54,29 @@ export interface DomainMessageRecord extends DomainTimelineRecordBase {
   readonly kind: "message";
   readonly role: "user" | "assistant";
   readonly phase: "commentary" | "final" | null;
+  readonly itemType: string | null;
   readonly markdown: string;
 }
 
-export interface DomainDirectiveRecord extends DomainTimelineRecordBase {
+interface DomainDirectiveRecordBase extends DomainTimelineRecordBase {
   readonly kind: "directive";
-  readonly summary: string;
   readonly charCount: number;
-  readonly truncated: boolean;
-  readonly hasDetail: true;
 }
+
+export interface DomainInlineDirectiveRecord extends DomainDirectiveRecordBase {
+  readonly hasDetail: false;
+  readonly text: string;
+}
+
+export interface DomainLazyDirectiveRecord extends DomainDirectiveRecordBase {
+  readonly hasDetail: true;
+  readonly summary: string;
+  readonly truncated: boolean;
+}
+
+export type DomainDirectiveRecord =
+  | DomainInlineDirectiveRecord
+  | DomainLazyDirectiveRecord;
 
 interface DomainToolRecordBase extends DomainTimelineRecordBase {
   readonly kind: "tool";

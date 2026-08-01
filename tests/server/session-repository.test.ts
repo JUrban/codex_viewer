@@ -131,7 +131,7 @@ describe("DefaultSessionRepository", () => {
       cursor: initialDetail!.context.cursor,
       limit: 200,
     });
-    const directive = allItems!.items.find((item) => item.kind === "directive")!;
+    const directive = allItems!.items.find((item) => item.id === "directive-4")!;
     expect(JSON.stringify(allItems)).not.toContain("DIRECTIVE_DETAIL_CANARY");
     expect(await repository.getDirectiveDetail(parent.session.id, directive.id, {
       cursor: allItems!.context.cursor,
@@ -158,7 +158,7 @@ describe("DefaultSessionRepository", () => {
     expect(second!.context.cursor.sessionRevision)
       .not.toBe(initialDetail!.context.cursor.sessionRevision);
     expect(second!.context.session.messageCount)
-      .toBe(parent.session.messageCount + 1);
+      .toBe(parent.session.messageCount);
     expect(second!.context.cursor.throughOrdinal)
       .toBe(page!.context.cursor.throughOrdinal);
     expect(second!.context.hasMore).toBe(true);
@@ -483,28 +483,59 @@ describe("DefaultSessionRepository", () => {
     );
   });
 
-  it("accepts item pages up to 512 entries", async () => {
+  it("accepts item pages up to 300 entries", async () => {
     const { repository } = await fixtureRepository();
     const list = await repository.list({});
     const session = list.sessions.find((entry) => entry.session.title === "Synthetic trace")!;
     const detail = await repository.getSession(session.session.id);
     await expect(repository.getItems(session.session.id, {
       cursor: detail!.context.cursor,
-      limit: 512,
+      limit: 300,
     }))
       .resolves.not.toBeNull();
     await expect(repository.getItems(session.session.id, {
       cursor: detail!.context.cursor,
-      limit: 513,
+      limit: 301,
     }))
       .rejects.toMatchObject<Partial<RepositoryQueryError>>({ code: "invalid_query" });
+  });
+
+  it("defaults timeline pages to 100 entries", async () => {
+    const timeline: DomainTimelineRecord[] = Array.from(
+      { length: 101 },
+      (_, index) => ({
+        kind: "message",
+        id: `message-${index + 1}`,
+        ordinal: index + 1,
+        timestamp: "2026-07-28T00:00:00Z",
+        role: "assistant",
+        phase: "commentary",
+        markdown: `Message ${index + 1}`,
+      }),
+    );
+    const repository = new DefaultSessionRepository(
+      [staticSource("timeline-default", [
+        sourceEntry(
+          "timeline-default",
+          normalizedSession("timeline-default", "Timeline default", null, timeline),
+        ),
+      ])],
+    );
+    const session = (await repository.list({})).sessions[0]!.session;
+    const detail = await repository.getSession(session.id);
+    const page = await repository.getItems(session.id, {
+      cursor: detail!.context.cursor,
+    });
+
+    expect(page?.items).toHaveLength(100);
+    expect(page?.context.hasMore).toBe(true);
   });
 
   it("searches only permitted fields and reports bounded partial results", async () => {
     const { repository } = await fixtureRepository();
     expect((await repository.list({ q: "Synthetic trace" })).sessions).toHaveLength(1);
     expect((await repository.list({ q: "/synthetic/project" })).sessions).toHaveLength(1);
-    expect((await repository.list({ q: "Final synthetic answer" })).sessions).toHaveLength(1);
+    expect((await repository.list({ q: "The synthetic widget is ready" })).sessions).toHaveLength(1);
     for (const canary of [
       "DEVELOPER_DIRECTIVE_CANARY",
       "REASONING_CANARY_NEVER_RENDER",
@@ -617,8 +648,8 @@ describe("DefaultSessionRepository", () => {
     })).rejects.toMatchObject<Partial<RepositoryQueryError>>({ code: "invalid_query" });
   });
 
-  it("pages catalogs larger than the per-response safety limit", async () => {
-    const entries = Array.from({ length: 205 }, (_, index) =>
+  it("defaults catalog pages to 100 entries and accepts up to 300", async () => {
+    const entries = Array.from({ length: 305 }, (_, index) =>
       sourceEntry(
         `thread-${index}`,
         normalizedSession(
@@ -634,19 +665,22 @@ describe("DefaultSessionRepository", () => {
       [staticSource("large", entries)],
     );
 
-    const first = await repository.list({ limit: 200 });
-    expect(first).toMatchObject({ total: 205, hasMore: true, nextOffset: 200 });
-    await expect(repository.list({ offset: 200, limit: 200 }))
+    const first = await repository.list({});
+    expect(first).toMatchObject({ total: 305, hasMore: true, nextOffset: 100 });
+    expect(first.sessions).toHaveLength(100);
+    await expect(repository.list({ offset: 100, limit: 300 }))
       .rejects.toMatchObject<Partial<RepositoryQueryError>>({ code: "invalid_query" });
     const second = await repository.list({
       offset: first.nextOffset!,
-      limit: 200,
+      limit: 300,
       listRevision: first.listRevision,
     });
-    expect(second).toMatchObject({ total: 205, hasMore: false, nextOffset: null });
-    expect(second.sessions).toHaveLength(5);
+    expect(second).toMatchObject({ total: 305, hasMore: false, nextOffset: null });
+    expect(second.sessions).toHaveLength(205);
     expect(new Set([...first.sessions, ...second.sessions].map((entry) => entry.session.id)).size)
-      .toBe(205);
+      .toBe(305);
+    await expect(repository.list({ limit: 301 }))
+      .rejects.toMatchObject<Partial<RepositoryQueryError>>({ code: "invalid_query" });
   });
 
   it("bounds a page of individually valid long messages by response bytes", async () => {

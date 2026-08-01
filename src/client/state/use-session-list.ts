@@ -7,7 +7,7 @@ import { api } from "../api/client";
 import { isStaleListRevision, messageFor } from "./request-errors";
 import type { BrowserFilters } from "./use-session-filters";
 
-const LIST_PAGE_SIZE = 200;
+const LIST_PAGE_SIZE = 300;
 
 export type CatalogOperation = "query" | "page" | "refresh" | null;
 

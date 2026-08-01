@@ -39,6 +39,13 @@ describe("digestSessionView", () => {
     );
   });
 
+  it("includes inline directive text in the session digest", () => {
+    const left = withInlineDirective(view(), "inline one");
+    const right = withInlineDirective(view(), "inline two");
+
+    expect(digestSessionView(right)).not.toBe(digestSessionView(left));
+  });
+
   it("stores exactly one 24-byte state per prefix and locates ordinal gaps", () => {
     const normalized = view();
     normalized.timeline = normalized.timeline.map((item, index) => ({
@@ -218,7 +225,7 @@ describe("digestSessionView", () => {
     }],
     ["message payload", (value: MutableView) => {
       value.timeline = value.timeline.map((item) =>
-        item.kind === "message" ? { ...item, markdown: "changed" } : item
+        item.kind === "message" ? { ...item, itemType: "Plan" } : item
       );
     }],
     ["directive summary", (value: MutableView) => {
@@ -379,4 +386,20 @@ function view(): MutableView {
       ["directive-2", { text: "detail", truncated: false }],
     ]),
   } satisfies NormalizedSession;
+}
+
+function withInlineDirective(value: MutableView, text: string): MutableView {
+  value.timeline = value.timeline.map((item) => item.kind === "directive"
+    ? {
+        kind: "directive",
+        id: item.id,
+        ordinal: item.ordinal,
+        timestamp: item.timestamp,
+        hasDetail: false,
+        text,
+        charCount: text.length,
+      }
+    : item) as DomainTimelineRecord[];
+  value.directiveDetails = new Map();
+  return value;
 }

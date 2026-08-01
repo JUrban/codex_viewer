@@ -1,9 +1,11 @@
 import type {
   DomainDiagnostic,
+  DomainDirectiveDetail,
   DomainMessageRecord,
   DomainSession,
   DomainSessionOrigin,
   DomainTimelineRecord,
+  DomainToolDetail,
   NormalizedSession,
 } from "../../domain/session-domain.js";
 import {
@@ -17,10 +19,8 @@ import {
   internalItemFromPayload,
 } from "./internal-event-parser.js";
 import {
-  eventMessageCandidate,
+  eventMessage,
   firstUserTitle,
-  normalizeMessages,
-  type MessageCandidate,
 } from "./message-normalizer.js";
 import type { SessionMetadata } from "./identity-resolver.js";
 import {
@@ -29,7 +29,10 @@ import {
 } from "./response-item-parser.js";
 import type { DecodedRecord, DecodedRollout } from "./rollout-decoder.js";
 import { isObject } from "./rollout-decoder.js";
-import { ToolAccumulator } from "./tool-accumulator.js";
+import {
+  type AccumulatedTool,
+  ToolAccumulator,
+} from "./tool-accumulator.js";
 
 export interface SessionNormalizer {
   normalize(
@@ -47,27 +50,20 @@ export class DefaultSessionNormalizer implements SessionNormalizer {
   ): NormalizedSession {
     const diagnostics = decoded.diagnostics.slice(0, MAX_SESSION_DIAGNOSTICS);
 
-    const responseMessages: MessageCandidate[] = [];
-    const eventMessages: MessageCandidate[] = [];
-    const fixedItems: DomainTimelineRecord[] = [];
+    const items: DomainTimelineRecord[] = [];
+    const directiveDetails = new Map<string, DomainDirectiveDetail>();
+    const toolDetails = new Map<string, DomainToolDetail>();
     const tools = new ToolAccumulator();
     for (const record of decoded.records) {
-      consumeRecord(record, responseMessages, eventMessages, fixedItems, tools, diagnostics);
+      consumeRecord(record, items, directiveDetails, toolDetails, tools, diagnostics);
     }
 
-    const normalizedMessages = normalizeMessages(responseMessages, eventMessages);
-    const accumulatedTools = tools.finish();
-    const items = [
-      ...normalizedMessages.items,
-      ...fixedItems,
-      ...accumulatedTools.map((tool) => tool.item),
-    ].sort((left, right) => left.ordinal - right.ordinal);
     const firstMessage = items.find(
       (item): item is DomainMessageRecord => item.kind === "message",
     );
     const messageCount = items.filter((item) => item.kind === "message").length;
-    const toolCount = accumulatedTools.filter(
-      (tool) => tool.item.stage === "call",
+    const toolCount = items.filter(
+      (item) => item.kind === "tool" && item.stage === "call",
     ).length;
     const warningCount = diagnostics.filter(
       (diagnostic) => diagnostic.severity !== "info",
@@ -99,8 +95,8 @@ export class DefaultSessionNormalizer implements SessionNormalizer {
     return {
       session,
       timeline: items,
-      toolDetails: new Map(accumulatedTools.map((tool) => [tool.item.id, tool.detail])),
-      directiveDetails: normalizedMessages.directiveDetails,
+      toolDetails,
+      directiveDetails,
     };
   }
 }
@@ -115,9 +111,9 @@ const DEFAULT_SESSION_ORIGIN: DomainSessionOrigin = {
 
 function consumeRecord(
   record: DecodedRecord,
-  responseMessages: MessageCandidate[],
-  eventMessages: MessageCandidate[],
-  fixedItems: DomainTimelineRecord[],
+  items: DomainTimelineRecord[],
+  directiveDetails: Map<string, DomainDirectiveDetail>,
+  toolDetails: Map<string, DomainToolDetail>,
   tools: ToolAccumulator,
   diagnostics: DomainDiagnostic[],
 ): void {
@@ -126,26 +122,27 @@ function consumeRecord(
   if (record.value.type === "response_item" && isObject(payload)) {
     consumeParsedResponse(
       parseResponseItem(record.ordinal, timestamp, payload),
-      responseMessages,
-      fixedItems,
+      items,
+      directiveDetails,
+      toolDetails,
       tools,
     );
     return;
   }
   if (record.value.type === "event_msg" && isObject(payload)) {
-    const eventMessage = eventMessageCandidate(record.ordinal, timestamp, payload);
-    if (eventMessage !== null) eventMessages.push(eventMessage);
-    else fixedItems.push(internalItemFromPayload(record.ordinal, timestamp, payload));
+    const message = eventMessage(record.ordinal, timestamp, payload);
+    if (message !== null) items.push(message);
+    else items.push(internalItemFromPayload(record.ordinal, timestamp, payload));
     return;
   }
   if (record.value.type === "session_meta") return;
   if (record.value.type === "turn_context") {
-    fixedItems.push(internalItem(record.ordinal, timestamp, "turn_context"));
+    items.push(internalItem(record.ordinal, timestamp, "turn_context"));
     return;
   }
   const eventType = string(record.value.type);
   if (eventType !== null) {
-    fixedItems.push(internalItem(record.ordinal, timestamp, eventType));
+    items.push(internalItem(record.ordinal, timestamp, eventType));
     return;
   }
   appendDiagnostic(diagnostics, {
@@ -167,26 +164,39 @@ function appendDiagnostic(
 
 function consumeParsedResponse(
   parsed: ParsedResponseItem,
-  responseMessages: MessageCandidate[],
-  fixedItems: DomainTimelineRecord[],
+  items: DomainTimelineRecord[],
+  directiveDetails: Map<string, DomainDirectiveDetail>,
+  toolDetails: Map<string, DomainToolDetail>,
   tools: ToolAccumulator,
 ): void {
   switch (parsed.kind) {
-    case "message":
-      responseMessages.push(parsed.value);
+    case "directive":
+      items.push(parsed.value.item);
+      if (parsed.value.detail !== null) {
+        directiveDetails.set(parsed.value.item.id, parsed.value.detail);
+      }
       break;
     case "timeline":
-      fixedItems.push(parsed.value);
+      items.push(parsed.value);
       break;
     case "tool_call":
-      tools.addCall(parsed.value);
+      addTool(tools.addCall(parsed.value), items, toolDetails);
       break;
     case "tool_output":
-      tools.addOutput(parsed.value);
+      addTool(tools.addOutput(parsed.value), items, toolDetails);
       break;
     case "ignored":
       break;
   }
+}
+
+function addTool(
+  tool: AccumulatedTool,
+  items: DomainTimelineRecord[],
+  details: Map<string, DomainToolDetail>,
+): void {
+  items.push(tool.item);
+  details.set(tool.item.id, tool.detail);
 }
 
 function string(value: unknown): string | null {

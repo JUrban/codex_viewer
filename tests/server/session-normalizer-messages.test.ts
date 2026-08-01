@@ -1,115 +1,79 @@
 import { describe, expect, it } from "vitest";
+import {
+  MAX_INLINE_DIRECTIVE_CHARS,
+  MAX_MESSAGE_CHARS,
+} from "../../src/server/adapters/codex/limits.js";
 import { normalizeRecords } from "./session-normalizer.fixtures.js";
 
 describe("message and directive normalization", () => {
-  it("classifies unmatched message events as directives with retrievable detail", () => {
+  it("keeps response messages as directives and emits event messages without matching", () => {
     const normalized = normalizeRecords("message-source-session", [
-        {
-          ordinal: 1,
-          value: {
-            type: "response_item",
-            payload: {
-              type: "message", role: "user",
-              content: [{ type: "input_text", text: "Directive summary\nDIRECTIVE_ONLY_SECRET" }],
-            },
+      {
+        ordinal: 1,
+        value: {
+          type: "response_item",
+          payload: {
+            type: "message", role: "user",
+            content: [{ type: "input_text", text: "Actual user" }],
           },
         },
-        {
-          ordinal: 2,
-          value: {
-            type: "response_item",
-            payload: {
-              type: "message", role: "user",
-              content: [
-                { type: "input_text", text: "Actual user" },
-                { type: "input_text", text: "input" },
-              ],
-            },
+      },
+      {
+        ordinal: 2,
+        value: {
+          type: "event_msg",
+          payload: { type: "user_message", message: "Actual user" },
+        },
+      },
+      {
+        ordinal: 3,
+        value: {
+          type: "response_item",
+          payload: {
+            type: "message", role: "assistant", phase: "commentary",
+            content: [{ type: "output_text", text: "Canonical assistant" }],
           },
         },
-        {
-          ordinal: 3,
-          value: {
-            type: "event_msg",
-            payload: { type: "user_message", message: "Actual user\n\ninput" },
+      },
+      {
+        ordinal: 4,
+        value: {
+          type: "event_msg",
+          payload: {
+            type: "agent_message",
+            phase: "commentary",
+            message: "Canonical assistant",
           },
         },
-        {
-          ordinal: 4,
-          value: {
-            type: "response_item",
-            payload: {
-              type: "message", role: "assistant", phase: "commentary",
-              content: [
-                { type: "output_text", text: "Canonical" },
-                { type: "text", text: "assistant" },
-              ],
-            },
-          },
-        },
-        {
-          ordinal: 5,
-          value: {
-            type: "event_msg",
-            payload: {
-              type: "agent_message",
-              phase: "commentary",
-              message: "Canonical\n\nassistant",
-            },
-          },
-        },
-        {
-          ordinal: 6,
-          value: {
-            type: "event_msg",
-            payload: { type: "agent_message", phase: "commentary", message: "Propagated parent text" },
-          },
-        },
-        {
-          ordinal: 7,
-          value: {
-            type: "event_msg",
-            payload: { type: "user_message", message: "Unmatched user event" },
-          },
-        },
+      },
     ]);
-  
+
     expect(normalized.timeline.map((item) => [item.ordinal, item.kind])).toEqual([
       [1, "directive"],
       [2, "message"],
+      [3, "directive"],
       [4, "message"],
-      [6, "directive"],
-      [7, "directive"],
     ]);
-    expect(normalized.timeline[3]).toEqual(expect.objectContaining({
-      id: "directive-6",
-      summary: "Propagated parent text",
-      charCount: 22,
-      hasDetail: true,
+    expect(normalized.timeline[0]).toEqual(expect.objectContaining({
+      hasDetail: false,
+      text: "Actual user",
+      charCount: 11,
     }));
-    expect(normalized.directiveDetails.get("directive-6")).toEqual({
-      text: "Propagated parent text",
-      truncated: false,
-    });
-    expect(normalized.timeline[4]).toEqual(expect.objectContaining({
-      id: "directive-7",
-      summary: "Unmatched user event",
-      charCount: 20,
-      hasDetail: true,
-    }));
-    expect(normalized.directiveDetails.get("directive-7")).toEqual({
-      text: "Unmatched user event",
-      truncated: false,
-    });
+    expect(normalized.directiveDetails.has("directive-1")).toBe(false);
     expect(normalized.session).toEqual(expect.objectContaining({
       title: "Actual user",
-      preview: "Actual user\n\ninput",
+      preview: "Actual user",
       messageCount: 2,
     }));
-    expect(normalized.timeline.filter((item) => item.kind === "message").map((item) => item.markdown))
-      .toEqual(["Actual user\n\ninput", "Canonical\n\nassistant"]);
-    expect(JSON.stringify(normalized.timeline)).not.toContain("DIRECTIVE_ONLY_SECRET");
-    expect(JSON.stringify(normalized.timeline)).toContain("Propagated parent text");
+    expect(normalized.timeline.filter((item) => item.kind === "message"))
+      .toEqual([
+        expect.objectContaining({ role: "user", markdown: "Actual user" }),
+        expect.objectContaining({
+          role: "assistant",
+          phase: "commentary",
+          markdown: "Canonical assistant",
+        }),
+      ]);
   });
 
   it("accepts only allowlisted message content parts and does not guess string content", () => {
@@ -143,12 +107,97 @@ describe("message and directive normalization", () => {
   
     expect(normalized.timeline).toEqual([
       expect.objectContaining({
-        kind: "message",
+        kind: "directive",
         ordinal: 2,
-        markdown: "Allowed assistant text",
+        hasDetail: false,
+        text: "Allowed assistant text",
       }),
     ]);
+    expect(normalized.directiveDetails.has("directive-2")).toBe(false);
     expect(JSON.stringify(normalized)).not.toContain("STRING_CONTENT_MUST_NOT_RENDER");
     expect(JSON.stringify(normalized)).not.toContain("NON_TEXT_PART_MUST_NOT_RENDER");
   });
+
+  it("inlines 500 characters and retains 501 characters as lazy detail", () => {
+    const inlineText = "i".repeat(MAX_INLINE_DIRECTIVE_CHARS);
+    const lazyText = "l".repeat(MAX_INLINE_DIRECTIVE_CHARS + 1);
+    const normalized = normalizeRecords("directive-boundaries", [
+      responseMessage(1, inlineText),
+      responseMessage(2, lazyText),
+    ]);
+
+    expect(normalized.timeline[0]).toEqual(expect.objectContaining({
+      kind: "directive",
+      hasDetail: false,
+      text: inlineText,
+      charCount: MAX_INLINE_DIRECTIVE_CHARS,
+    }));
+    expect(normalized.directiveDetails.has("directive-1")).toBe(false);
+    expect(normalized.timeline[1]).toEqual(expect.objectContaining({
+      kind: "directive",
+      hasDetail: true,
+      summary: "l".repeat(240),
+      charCount: MAX_INLINE_DIRECTIVE_CHARS + 1,
+      truncated: false,
+    }));
+    expect(normalized.timeline[1]).not.toHaveProperty("text");
+    expect(normalized.directiveDetails.get("directive-2")).toEqual({
+      text: lazyText,
+      truncated: false,
+    });
+  });
+
+  it("emits completed items as typed assistant final Markdown messages", () => {
+    const normalized = normalizeRecords("completed-item-session", [{
+      ordinal: 1,
+      value: {
+        type: "event_msg",
+        payload: {
+          type: "item_completed",
+          item: { type: "Plan", text: "# Plan\n\n- First step" },
+        },
+      },
+    }]);
+
+    expect(normalized.timeline).toEqual([expect.objectContaining({
+      kind: "message",
+      role: "assistant",
+      phase: "final",
+      itemType: "Plan",
+      markdown: "# Plan\n\n- First step",
+    })]);
+  });
+
+  it("limits completed item types to the message character boundary", () => {
+    const itemType = "t".repeat(MAX_MESSAGE_CHARS + 1);
+    const normalized = normalizeRecords("completed-item-type-boundary", [{
+      ordinal: 1,
+      value: {
+        type: "event_msg",
+        payload: {
+          type: "item_completed",
+          item: { type: itemType, text: "Done" },
+        },
+      },
+    }]);
+
+    expect(normalized.timeline[0]).toEqual(expect.objectContaining({
+      kind: "message",
+      itemType: "t".repeat(MAX_MESSAGE_CHARS),
+    }));
+  });
 });
+
+function responseMessage(ordinal: number, text: string) {
+  return {
+    ordinal,
+    value: {
+      type: "response_item",
+      payload: {
+        type: "message",
+        role: "user",
+        content: [{ type: "input_text", text }],
+      },
+    },
+  };
+}

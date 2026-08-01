@@ -38,10 +38,10 @@ import {
   type ListRevisionFactory,
 } from "./list-revision.js";
 
-const DEFAULT_LIST_LIMIT = 50;
-const MAX_LIST_LIMIT = 200;
-const DEFAULT_ITEM_LIMIT = 50;
-const MAX_ITEM_LIMIT = 512;
+const DEFAULT_LIST_LIMIT = 100;
+const MAX_LIST_LIMIT = 300;
+const DEFAULT_ITEM_LIMIT = 100;
+const MAX_ITEM_LIMIT = 300;
 export const MAX_ITEM_PAGE_BYTES = 4 * 1024 * 1024;
 
 export class RepositoryQueryError extends Error {

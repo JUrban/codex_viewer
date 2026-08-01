@@ -132,7 +132,7 @@ describe("session catalog interactions", () => {
     expect(all).toBeChecked();
   });
 
-  it("loads catalog pages beyond the first 200 summaries", async () => {
+  it("loads catalog pages beyond the first 300 summaries", async () => {
     const later = entry({ ...baseSession, id: CHILD_ID, title: "Later session" });
     const fetchMock = vi.fn((input: RequestInfo | URL) => {
       const url = String(input);

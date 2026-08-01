@@ -23,6 +23,36 @@ export function DirectiveItem({
   onContext,
   onConflict,
 }: DirectiveItemProps) {
+  if (!item.hasDetail) {
+    return <InlineDirective item={item} />;
+  }
+  return (
+    <LazyDirective
+      item={item}
+      sessionId={sessionId}
+      cursor={cursor}
+      onContext={onContext}
+      onConflict={onConflict}
+    />
+  );
+}
+
+function InlineDirective({ item }: { item: Extract<Directive, { hasDetail: false }> }) {
+  return (
+    <article className="directive-body">
+      <p className="event-label">Directive · {item.ordinal}</p>
+      <pre className="directive-block">{item.text}</pre>
+    </article>
+  );
+}
+
+function LazyDirective({
+  item,
+  sessionId,
+  cursor,
+  onContext,
+  onConflict,
+}: DirectiveItemProps & { item: Extract<Directive, { hasDetail: true }> }) {
   const [open, setOpen] = useState(false);
   const loadDetail = useCallback(
     (signal: AbortSignal): Promise<DirectiveDetailResponse> =>

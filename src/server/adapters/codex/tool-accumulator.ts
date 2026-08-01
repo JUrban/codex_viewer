@@ -30,16 +30,15 @@ export interface AccumulatedTool {
 }
 
 export class ToolAccumulator {
-  readonly #items: AccumulatedTool[] = [];
   readonly #latestCalls = new Map<string, ToolCall>();
 
-  addCall(call: ToolCall): void {
+  addCall(call: ToolCall): AccumulatedTool {
     this.#latestCalls.set(call.callId, call);
     const input = truncateNullable(call.input);
     const preview = previewText(call.input);
     const detailTruncated = input.truncated;
     const itemTruncated = detailTruncated || preview.truncated;
-    this.#items.push({
+    return {
       item: {
         kind: "tool",
         stage: "call",
@@ -53,10 +52,10 @@ export class ToolAccumulator {
         hasDetail: call.input !== null,
       },
       detail: { input: input.text, output: null, truncated: detailTruncated },
-    });
+    };
   }
 
-  addOutput(output: ToolOutput): void {
+  addOutput(output: ToolOutput): AccumulatedTool {
     const call = this.#latestCalls.get(output.callId);
     const input = truncateNullable(call?.input ?? null);
     const result = truncateNullable(output.output);
@@ -67,7 +66,7 @@ export class ToolAccumulator {
     );
     const detailTruncated = input.truncated || result.truncated;
     const itemTruncated = detailTruncated || preview.truncated;
-    this.#items.push({
+    return {
       item: {
         kind: "tool",
         stage: "output",
@@ -87,11 +86,7 @@ export class ToolAccumulator {
         output: result.text,
         truncated: detailTruncated,
       },
-    });
-  }
-
-  finish(): AccumulatedTool[] {
-    return this.#items;
+    };
   }
 }
 

@@ -11,84 +11,80 @@ import {
 } from "../../domain/session-text.js";
 import {
   MAX_DIRECTIVE_CHARS,
+  MAX_INLINE_DIRECTIVE_CHARS,
   MAX_MESSAGE_CHARS,
 } from "./limits.js";
 import { isObject } from "./rollout-decoder.js";
 
-export interface MessageCandidate {
-  readonly ordinal: number;
-  readonly timestamp: string | null;
-  readonly role: "user" | "assistant";
-  readonly phase: "commentary" | "final" | null;
-  readonly text: string;
-  readonly alwaysDirective: boolean;
+export interface ParsedDirective {
+  readonly item: DomainDirectiveRecord;
+  readonly detail: DomainDirectiveDetail | null;
 }
 
-export interface NormalizedMessages {
-  readonly items: Array<DomainMessageRecord | DomainDirectiveRecord>;
-  readonly directiveDetails: Map<string, DomainDirectiveDetail>;
-}
-
-export function responseMessageCandidate(
+export function responseDirective(
   ordinal: number,
   timestamp: string | null,
   payload: Record<string, unknown>,
-): MessageCandidate | null {
+): ParsedDirective | null {
   const role = payload.role;
   if (role !== "user" && role !== "assistant" && role !== "developer") return null;
-  const markdown = contentText(payload.content);
-  if (markdown === null) return null;
-  const phase = role === "assistant" ? normalizePhase(payload.phase) : null;
+  const text = contentText(payload.content);
+  if (text === null) return null;
+  const id = `directive-${ordinal}`;
+  if (text.length <= MAX_INLINE_DIRECTIVE_CHARS) {
+    return {
+      item: {
+        kind: "directive",
+        id,
+        ordinal,
+        timestamp,
+        text,
+        charCount: text.length,
+        hasDetail: false,
+      },
+      detail: null,
+    };
+  }
+  const detail = truncateText(text, MAX_DIRECTIVE_CHARS);
   return {
-    ordinal,
-    timestamp,
-    role: role === "developer" ? "user" : role,
-    phase,
-    text: markdown,
-    alwaysDirective: role === "developer",
+    item: {
+      kind: "directive",
+      id,
+      ordinal,
+      timestamp,
+      summary: directiveSummary(text),
+      charCount: text.length,
+      truncated: detail.truncated,
+      hasDetail: true,
+    },
+    detail,
   };
 }
 
-export function eventMessageCandidate(
+export function eventMessage(
   ordinal: number,
   timestamp: string | null,
   payload: Record<string, unknown>,
-): MessageCandidate | null {
+): DomainMessageRecord | null {
   const type = string(payload.type);
-  if (type !== "user_message" && type !== "agent_message") return null;
-  const markdown = string(payload.message);
+  if (type === "user_message" || type === "agent_message") {
+    const markdown = string(payload.message);
+    if (markdown === null) return null;
+    const role = type === "user_message" ? "user" : "assistant";
+    const phase = type === "agent_message" ? normalizePhase(payload.phase) : null;
+    return messageItem(ordinal, timestamp, role, phase, null, markdown);
+  }
+  if (type !== "item_completed" || !isObject(payload.item)) return null;
+  const markdown = string(payload.item.text);
   if (markdown === null) return null;
-  const role = type === "user_message" ? "user" : "assistant";
-  const phase = type === "agent_message" ? normalizePhase(payload.phase) : null;
-  return { ordinal, timestamp, role, phase, text: markdown, alwaysDirective: false };
-}
-
-export function normalizeMessages(
-  responseMessages: readonly MessageCandidate[],
-  eventMessages: readonly MessageCandidate[],
-): NormalizedMessages {
-  const items: Array<DomainMessageRecord | DomainDirectiveRecord> = [];
-  const directiveDetails = new Map<string, DomainDirectiveDetail>();
-  const usedEvents = new Set<number>();
-
-  for (const response of responseMessages) {
-    const matchingEvent = response.alwaysDirective
-      ? null
-      : nearestMatchingEvent(response, eventMessages, usedEvents);
-    if (matchingEvent !== null) usedEvents.add(matchingEvent);
-    if (!response.alwaysDirective && (response.role === "assistant" || matchingEvent !== null)) {
-      items.push(messageItem(response));
-      continue;
-    }
-    addDirective(response, items, directiveDetails);
-  }
-
-  for (let index = 0; index < eventMessages.length; index += 1) {
-    if (usedEvents.has(index)) continue;
-    addDirective(eventMessages[index]!, items, directiveDetails);
-  }
-
-  return { items, directiveDetails };
+  return messageItem(
+    ordinal,
+    timestamp,
+    "assistant",
+    "final",
+    string(payload.item.type),
+    markdown,
+  );
 }
 
 export function firstUserTitle(items: readonly DomainTimelineRecord[]): string | null {
@@ -98,61 +94,25 @@ export function firstUserTitle(items: readonly DomainTimelineRecord[]): string |
   return first === undefined ? null : normalizeSessionTitle(first.markdown);
 }
 
-function addDirective(
-  candidate: MessageCandidate,
-  items: Array<DomainMessageRecord | DomainDirectiveRecord>,
-  directiveDetails: Map<string, DomainDirectiveDetail>,
-): void {
-  const id = `directive-${candidate.ordinal}`;
-  const detail = truncateText(candidate.text, MAX_DIRECTIVE_CHARS);
-  items.push({
-    kind: "directive",
-    id,
-    ordinal: candidate.ordinal,
-    timestamp: candidate.timestamp,
-    summary: directiveSummary(candidate.text),
-    charCount: candidate.text.length,
-    truncated: detail.truncated,
-    hasDetail: true,
-  });
-  directiveDetails.set(id, detail);
-}
-
-function nearestMatchingEvent(
-  response: MessageCandidate,
-  events: readonly MessageCandidate[],
-  used: ReadonlySet<number>,
-): number | null {
-  let match: number | null = null;
-  let distance = Number.POSITIVE_INFINITY;
-  for (let index = 0; index < events.length; index += 1) {
-    if (used.has(index)) continue;
-    const event = events[index]!;
-    if (
-      event.role !== response.role ||
-      event.phase !== response.phase ||
-      event.text !== response.text
-    ) {
-      continue;
-    }
-    const candidateDistance = Math.abs(event.ordinal - response.ordinal);
-    if (candidateDistance <= 2 && candidateDistance < distance) {
-      match = index;
-      distance = candidateDistance;
-    }
-  }
-  return match;
-}
-
-function messageItem(candidate: MessageCandidate): DomainMessageRecord {
+function messageItem(
+  ordinal: number,
+  timestamp: string | null,
+  role: "user" | "assistant",
+  phase: "commentary" | "final" | null,
+  itemType: string | null,
+  markdown: string,
+): DomainMessageRecord {
   return {
     kind: "message",
-    id: `message-${candidate.ordinal}`,
-    ordinal: candidate.ordinal,
-    timestamp: candidate.timestamp,
-    role: candidate.role,
-    phase: candidate.phase,
-    markdown: truncateText(candidate.text, MAX_MESSAGE_CHARS).text,
+    id: `message-${ordinal}`,
+    ordinal,
+    timestamp,
+    role,
+    phase,
+    itemType: itemType === null
+      ? null
+      : truncateText(itemType, MAX_MESSAGE_CHARS).text,
+    markdown: truncateText(markdown, MAX_MESSAGE_CHARS).text,
   };
 }
 

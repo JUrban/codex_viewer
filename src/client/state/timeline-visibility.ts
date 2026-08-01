@@ -33,3 +33,29 @@ export function isTimelineItemVisible(
       return visibility.internal;
   }
 }
+
+export function filterVisibleTimelineItems(
+  items: readonly TimelineItem[],
+  visibility: TimelineVisibility,
+): TimelineItem[] {
+  return items.filter((item, index) =>
+    isTimelineItemVisible(item, visibility) &&
+    !isDuplicateInlineDirective(items, index)
+  );
+}
+
+function isDuplicateInlineDirective(
+  items: readonly TimelineItem[],
+  index: number,
+): boolean {
+  const item = items[index];
+  if (item?.kind !== "directive" || item.hasDetail) return false;
+
+  const start = Math.max(0, index - 2);
+  const end = Math.min(items.length - 1, index + 2);
+  for (let neighborIndex = start; neighborIndex <= end; neighborIndex += 1) {
+    const neighbor = items[neighborIndex];
+    if (neighbor?.kind === "message" && neighbor.markdown === item.text) return true;
+  }
+  return false;
+}

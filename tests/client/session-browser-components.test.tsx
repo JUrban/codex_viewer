@@ -245,7 +245,7 @@ describe("session browser components", () => {
 
   it("renders Markdown without raw HTML, external images, or dangerous links", () => {
     render(<MessageItem item={{
-      kind: "message", id: "message-9", ordinal: 9, timestamp: null, role: "assistant", phase: "final",
+      kind: "message", id: "message-9", ordinal: 9, timestamp: null, role: "assistant", phase: "final", itemType: null,
       markdown: "<script>alert(1)</script>\n\n[bad](javascript:alert(1))\n\n![remote](https://tracker.invalid/a.png)\n\n[good](https://example.com)",
     }} />);
     expect(document.querySelector("script")).toBeNull();
@@ -260,7 +260,7 @@ describe("session browser components", () => {
   it("renders single-line double-dollar math inline and multiline math as display", () => {
     render(<MessageItem item={{
       kind: "message", id: "message-math", ordinal: 10, timestamp: null,
-      role: "assistant", phase: "final",
+      role: "assistant", phase: "final", itemType: null,
       markdown: "Inline $E = mc^2$.\n\n$$a^2 + b^2 = c^2$$\n\n$$\n\\int_0^1 x^2\\,dx = \\frac{1}{3}\n$$",
     }} />);
 
@@ -273,7 +273,7 @@ describe("session browser components", () => {
   it("leaves math syntax in code untouched and keeps invalid math readable", () => {
     render(<MessageItem item={{
       kind: "message", id: "message-math-edge", ordinal: 11, timestamp: null,
-      role: "assistant", phase: "final",
+      role: "assistant", phase: "final", itemType: null,
       markdown: "`$notMath$`\n\n```text\n$$not display math$$\n```\n\n$$\\frac{1}{$$",
     }} />);
 
@@ -286,9 +286,17 @@ describe("session browser components", () => {
   it("labels an assistant message with an unknown phase neutrally", () => {
     render(<MessageItem item={{
       kind: "message", id: "message-10", ordinal: 10, timestamp: null,
-      role: "assistant", phase: null, markdown: "Unclassified",
+      role: "assistant", phase: null, itemType: null, markdown: "Unclassified",
     }} />);
     expect(screen.getByText("Assistant · 10")).toBeInTheDocument();
     expect(screen.queryByText(/Assistant final/)).toBeNull();
+  });
+
+  it("shows the completed item type in the message label", () => {
+    render(<MessageItem item={{
+      kind: "message", id: "message-plan", ordinal: 12, timestamp: null,
+      role: "assistant", phase: "final", itemType: "Plan", markdown: "# Plan",
+    }} />);
+    expect(screen.getByText("Assistant final · Plan · 12")).toBeInTheDocument();
   });
 });

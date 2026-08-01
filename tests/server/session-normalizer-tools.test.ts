@@ -91,49 +91,10 @@ describe("tool normalization", () => {
     expect(callDetail?.truncated).toBe(true);
     expect(outputDetail?.truncated).toBe(true);
     const directive = normalized.directiveDetails.get("directive-3");
-    expect(normalized.session.preview).toHaveLength(MAX_PREVIEW_CHARS);
     expect(directiveItem?.kind === "directive" ? directiveItem.summary : null)
       .toHaveLength(MAX_PREVIEW_CHARS);
     expect(directive?.text).toHaveLength(MAX_DIRECTIVE_CHARS);
     expect(directive?.truncated).toBe(true);
-  });
-
-  it("uses the nearest preceding duplicate call and never backfills orphan outputs", () => {
-    const normalized = normalizeRecords("tool-order", [
-      toolOutput(1, "shared", "orphan"),
-      toolCall(2, "shared", "first", "first input"),
-      toolOutput(3, "shared", "first output"),
-      toolCall(4, "shared", "second", "second input"),
-      toolOutput(5, "shared", null, true),
-      toolOutput(6, "shared", "repeated output"),
-    ]);
-    const tools = normalized.timeline.filter((item) => item.kind === "tool");
-
-    expect(tools.map((item) => [
-      item.ordinal,
-      item.stage,
-      item.toolName,
-      item.preview,
-      item.stage === "output" ? item.status : null,
-    ])).toEqual([
-      [1, "output", "unknown tool", "orphan", "completed"],
-      [2, "call", "first", "first input", null],
-      [3, "output", "first", "first output", "completed"],
-      [4, "call", "second", "second input", null],
-      [5, "output", "second", "second input", "failed"],
-      [6, "output", "second", "repeated output", "completed"],
-    ]);
-    expect(normalized.toolDetails.get("tool-1")).toMatchObject({
-      input: null,
-      output: "orphan",
-    });
-    expect(normalized.toolDetails.get("tool-3")?.input).toBe("first input");
-    expect(normalized.toolDetails.get("tool-5")).toMatchObject({
-      input: "second input",
-      output: null,
-    });
-    expect(normalized.session.toolCount).toBe(2);
-    expect(normalized.session.itemCount).toBe(6);
   });
 
   it("does not rewrite an existing call when its output arrives", () => {

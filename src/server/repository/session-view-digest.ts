@@ -222,13 +222,18 @@ function writeTimelineItem(
     case "message":
       writer.string("role", item.role);
       writer.nullableString("phase", item.phase);
+      writer.nullableString("itemType", item.itemType ?? null);
       writer.string("markdown", item.markdown);
       return;
     case "directive":
-      writer.string("summary", item.summary);
       writer.number("charCount", item.charCount);
-      writer.boolean("truncated", item.truncated);
       writer.boolean("hasDetail", item.hasDetail);
+      if (!item.hasDetail) {
+        writer.string("text", item.text);
+        return;
+      }
+      writer.string("summary", item.summary);
+      writer.boolean("truncated", item.truncated);
       writer.nullableObject(
         "detail",
         normalized.directiveDetails.get(item.id) ?? null,

@@ -13,7 +13,7 @@ import {
 } from "./request-errors";
 import { useSessionPolling } from "./use-session-polling";
 
-const TIMELINE_PAGE_SIZE = 512;
+const TIMELINE_PAGE_SIZE = 300;
 const DEFAULT_REFRESH_INTERVAL_SECONDS = 5;
 const MIN_REFRESH_INTERVAL_SECONDS = 1;
 const MAX_REFRESH_INTERVAL_SECONDS = 3_600;

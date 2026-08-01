@@ -9,36 +9,32 @@ import {
 } from "./session-normalizer.fixtures.js";
 
 describe("session identity and recovery", () => {
-  it("uses response messages as canonical and classifies synthetic user and developer messages as directives", async () => {
+  it("uses event messages as canonical and keeps response messages as directives", async () => {
     const normalized = await normalizeFixture("rollout-2026-07-28T10-00-00-basic-session.jsonl");
     const messages = normalized.timeline.filter((item) => item.kind === "message");
-    expect(messages).toHaveLength(3);
+    expect(messages).toHaveLength(2);
     expect(messages.filter((item) => item.role === "user")).toHaveLength(1);
-    expect(messages.filter((item) => item.role === "assistant")).toHaveLength(2);
-    expect(messages.find((item) => item.markdown === "Final synthetic answer.")?.phase).toBe("final");
+    expect(messages.filter((item) => item.role === "assistant")).toHaveLength(1);
     const directives = normalized.timeline.filter((item) => item.kind === "directive");
-    expect(directives).toHaveLength(2);
-    expect(directives[0]).toEqual(expect.objectContaining({
+    expect(directives).toHaveLength(5);
+    expect(directives.find((item) => item.id === "directive-4")).toEqual(expect.objectContaining({
       id: "directive-4",
       summary: "Directive configuration summary",
-      charCount: 55,
+      charCount: 1_206,
       hasDetail: true,
     }));
     expect(normalized.directiveDetails.get("directive-4")).toEqual({
-      text: "Directive configuration summary\nDIRECTIVE_DETAIL_CANARY",
+      text: expect.stringContaining("DIRECTIVE_DETAIL_CANARY"),
       truncated: false,
     });
-    expect(directives[1]).toEqual(expect.objectContaining({
+    expect(directives.find((item) => item.id === "directive-5")).toEqual(expect.objectContaining({
       id: "directive-5",
-      summary: "DEVELOPER_DIRECTIVE_CANARY",
-      charCount: 26,
-      hasDetail: true,
-    }));
-    expect(normalized.directiveDetails.get("directive-5")).toEqual({
       text: "DEVELOPER_DIRECTIVE_CANARY",
-      truncated: false,
-    });
-    expect(normalized.session.messageCount).toBe(3);
+      charCount: 26,
+      hasDetail: false,
+    }));
+    expect(normalized.directiveDetails.has("directive-5")).toBe(false);
+    expect(normalized.session.messageCount).toBe(2);
     expect(normalized.session.sourceId).toBe("basic-session");
     expect(
       normalized.timeline.filter((item) =>
@@ -148,8 +144,8 @@ describe("session identity and recovery", () => {
 
   it("keeps valid records after a malformed middle line and reports a diagnostic", async () => {
     const normalized = await normalizeFixture("rollout-2026-07-28T12-00-00-malformed-session.jsonl");
-    expect(normalized.timeline.filter((item) => item.kind === "message")).toHaveLength(1);
-    expect(normalized.timeline.filter((item) => item.kind === "directive")).toHaveLength(1);
+    expect(normalized.timeline.filter((item) => item.kind === "message")).toHaveLength(0);
+    expect(normalized.timeline.filter((item) => item.kind === "directive")).toHaveLength(2);
     expect(normalized.session.diagnostics).toEqual([
       expect.objectContaining({ code: "malformed_json", ordinal: 3 }),
     ]);

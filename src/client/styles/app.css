@@ -264,7 +264,7 @@
 .trace-event article > p { line-height: 1.72; }
 .event-label { margin-bottom: .55rem; color: var(--trace-color); text-transform: uppercase; }
 .message-body :is(p, li) { line-height: 1.7; }
-.message-body pre, .tool-detail pre {
+.message-body pre, .tool-detail pre, .directive-block {
   max-width: 100%; overflow: auto; padding: 1rem; color: #dce8e8; background: #213138;
   border-left: 3px solid var(--current); white-space: pre-wrap; overflow-wrap: anywhere;
 }

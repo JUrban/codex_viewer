@@ -5,7 +5,7 @@ import type {
 } from "../../shared/api-contract";
 import type { TimelineItem } from "../../shared/domain";
 import {
-  isTimelineItemVisible,
+  filterVisibleTimelineItems,
   type TimelineVisibility,
   type TimelineVisibilityKey,
 } from "../state/timeline-visibility";
@@ -57,7 +57,7 @@ export function SessionReader({
   onDismissError,
 }: SessionReaderProps) {
   const visibleItems = useMemo(
-    () => items.filter((item) => isTimelineItemVisible(item, visibility)),
+    () => filterVisibleTimelineItems(items, visibility),
     [items, visibility],
   );
   const hasMore = context.hasMore;

@@ -126,7 +126,7 @@ describe("versioned session API", () => {
     expect(secondPage.status).toBe(200);
 
     const allItems = await fetch(
-      `${base}/api/v1/sessions/${basic.session.id}/items?limit=512` +
+      `${base}/api/v1/sessions/${basic.session.id}/items?limit=300` +
       `&${cursorQuery(detail.context.cursor)}`,
     ).then((response) => response.json());
     expect(JSON.stringify(allItems)).not.toContain("DIRECTIVE_DETAIL_CANARY");
@@ -139,7 +139,7 @@ describe("versioned session API", () => {
       id: "internal-6",
       summary: "REASONING_SUMMARY_CANARY",
     }));
-    const directive = allItems.items.find((item: { kind: string }) => item.kind === "directive");
+    const directive = allItems.items.find((item: { id: string }) => item.id === "directive-4");
     expect((await fetch(
       `${base}/api/v1/sessions/${basic.session.id}/items/${directive.id}/directive`,
     )).status).toBe(400);
@@ -159,7 +159,16 @@ describe("versioned session API", () => {
     );
     expect(developerDirective).toEqual(expect.objectContaining({
       kind: "directive",
-      summary: "DEVELOPER_DIRECTIVE_CANARY",
+      hasDetail: false,
+      text: "DEVELOPER_DIRECTIVE_CANARY",
+    }));
+    const inlineDirectiveResponse = await fetch(
+      `${base}/api/v1/sessions/${basic.session.id}/items/${developerDirective.id}/directive` +
+      `?${cursorQuery(allItems.context.cursor)}`,
+    );
+    expect(inlineDirectiveResponse.status).toBe(404);
+    expect(await inlineDirectiveResponse.json()).toEqual(expect.objectContaining({
+      error: expect.objectContaining({ code: "directive_not_found" }),
     }));
     const tool = allItems.items.find(
       (item: { kind: string; stage?: string }) =>
@@ -334,11 +343,12 @@ describe("versioned session API", () => {
     )).status).toBe(200);
 
     const allItems = await fetch(
-      `${base}/api/v1/sessions/${basic.session.id}/items?limit=512` +
+      `${base}/api/v1/sessions/${basic.session.id}/items?limit=300` +
       `&${cursorQuery(detail.context.cursor)}`,
     ).then((response) => response.json());
     const directive = allItems.items.find(
-      (item: { kind: string }) => item.kind === "directive",
+      (item: { kind: string; hasDetail?: boolean }) =>
+        item.kind === "directive" && item.hasDetail === true,
     );
     expect((await fetch(
       `${base}/api/v1/sessions/${basic.session.id}/items/${directive.id}/directive` +

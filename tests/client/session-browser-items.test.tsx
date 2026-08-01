@@ -35,6 +35,43 @@ afterEach(() => {
 });
 
 describe("session timeline interactions", () => {
+  it("renders an inline directive as a plain-text directive block without loading detail", () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const text = "<user_action>\nUse **literal Markdown**.\n</user_action>";
+    const inlineDirective = {
+      kind: "directive" as const,
+      id: "directive-6",
+      ordinal: 6,
+      timestamp: null,
+      hasDetail: false as const,
+      text,
+      charCount: text.length,
+    };
+
+    render(
+      <DirectiveItem
+        item={inlineDirective}
+        sessionId={SESSION_ID}
+        cursor={firstPage.context.cursor}
+        onContext={vi.fn()}
+        onConflict={vi.fn()}
+      />,
+    );
+
+    const block = screen.getByText(/literal Markdown/, { selector: "pre" });
+    expect(block.tagName).toBe("PRE");
+    expect(block).toHaveClass("directive-block");
+    expect(block).toHaveTextContent("<user_action>");
+    expect(block).toHaveTextContent("**literal Markdown**");
+    expect(block.closest("article")).toHaveClass("directive-body");
+    expect(block.closest("article")).not.toHaveClass("message-body");
+    expect(screen.queryByText("literal Markdown", { selector: "strong" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /directive/i })).toBeNull();
+    expect(screen.queryByText(/characters/)).toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("labels tool stages, exposes call IDs, and renders stage-specific detail", async () => {
     const call = {
       kind: "tool" as const,
@@ -161,6 +198,54 @@ describe("session timeline interactions", () => {
       !String(url).includes("/items") ||
       String(url).includes(`sessionRevision=${SESSION_REVISION}`)
     )).toBe(true);
+  });
+
+  it("hides a loaded inline directive when a matching message arrives on the next page", async () => {
+    const text = "Repeated page-boundary message";
+    const inlineDirective = {
+      kind: "directive" as const,
+      id: "directive-1",
+      ordinal: 1,
+      timestamp: null,
+      hasDetail: false as const,
+      text,
+      charCount: text.length,
+    };
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("throughOrdinal=1")) return Promise.resolve(json({
+        context: readContext(SESSION_REVISION, 2, false),
+        items: [{
+          kind: "message",
+          id: "message-2",
+          ordinal: 2,
+          timestamp: null,
+          role: "user",
+          phase: null,
+          itemType: null,
+          markdown: text,
+        }],
+      }));
+      if (url.includes("/items")) return Promise.resolve(json({
+        context: readContext(SESSION_REVISION, 1, true),
+        items: [inlineDirective],
+      }));
+      if (url.endsWith(SESSION_ID)) return Promise.resolve(json(detailBody));
+      return Promise.resolve(json(listBody));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    window.history.replaceState(null, "", "/?show=directive");
+
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: /Reader work/ }));
+    expect(await screen.findByText("Directive · 1")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Load more events" }));
+    expect(await screen.findByText("User · 2")).toBeInTheDocument();
+    expect(screen.getByText(text)).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByText("Directive · 1")).toBeNull());
+    expect(fetchMock.mock.calls.filter(([url]) => String(url).includes("/items")))
+      .toHaveLength(2);
   });
 
   it("keeps load more available when the loaded range is fully filtered", async () => {
@@ -568,7 +653,7 @@ describe("session timeline interactions", () => {
       ([url]) => String(url).includes(`/${SESSION_ID}/items`),
     );
     expect(itemCalls()).toHaveLength(1);
-    expect(String(itemCalls()[0]![0])).toContain("limit=512");
+    expect(String(itemCalls()[0]![0])).toContain("limit=300");
     expect(String(itemCalls()[0]![0])).not.toContain("view=");
     expect(String(itemCalls()[0]![0])).not.toContain("includeTools=");
   

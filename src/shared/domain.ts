@@ -63,16 +63,27 @@ export interface MessageItem extends TimelineItemBase {
   kind: "message";
   role: "user" | "assistant";
   phase: "commentary" | "final" | null;
+  itemType: string | null;
   markdown: string;
 }
 
-export interface DirectiveItem extends TimelineItemBase {
+interface DirectiveItemBase extends TimelineItemBase {
   kind: "directive";
-  summary: string;
   charCount: number;
-  truncated: boolean;
-  hasDetail: true;
 }
+
+export interface InlineDirectiveItem extends DirectiveItemBase {
+  hasDetail: false;
+  text: string;
+}
+
+export interface LazyDirectiveItem extends DirectiveItemBase {
+  hasDetail: true;
+  summary: string;
+  truncated: boolean;
+}
+
+export type DirectiveItem = InlineDirectiveItem | LazyDirectiveItem;
 
 interface ToolItemBase extends TimelineItemBase {
   kind: "tool";

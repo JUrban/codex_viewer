@@ -4,14 +4,14 @@ import {
   reasoningInternalItem,
 } from "./internal-event-parser.js";
 import {
-  responseMessageCandidate,
-  type MessageCandidate,
+  responseDirective,
+  type ParsedDirective,
 } from "./message-normalizer.js";
 import { isObject } from "./rollout-decoder.js";
 import type { ToolCall, ToolOutput } from "./tool-accumulator.js";
 
 export type ParsedResponseItem =
-  | { readonly kind: "message"; readonly value: MessageCandidate }
+  | { readonly kind: "directive"; readonly value: ParsedDirective }
   | { readonly kind: "timeline"; readonly value: DomainTimelineRecord }
   | { readonly kind: "tool_call"; readonly value: ToolCall }
   | { readonly kind: "tool_output"; readonly value: ToolOutput }
@@ -24,10 +24,10 @@ export function parseResponseItem(
 ): ParsedResponseItem {
   const type = string(payload.type);
   if (type === "message") {
-    const candidate = responseMessageCandidate(ordinal, timestamp, payload);
-    return candidate === null
+    const directive = responseDirective(ordinal, timestamp, payload);
+    return directive === null
       ? { kind: "ignored" }
-      : { kind: "message", value: candidate };
+      : { kind: "directive", value: directive };
   }
   if (type === "reasoning") {
     return {

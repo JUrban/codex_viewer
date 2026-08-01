@@ -16,9 +16,10 @@ export function safeUrlTransform(url: string): string {
 }
 
 export function MessageItem({ item }: { item: Message }) {
+  const itemType = item.itemType === null ? "" : ` · ${item.itemType}`;
   return (
     <article className="message-body">
-      <p className="event-label">{messageLabel(item)} · {item.ordinal}</p>
+      <p className="event-label">{messageLabel(item)}{itemType} · {item.ordinal}</p>
       <MarkdownContent markdown={item.markdown} />
     </article>
   );

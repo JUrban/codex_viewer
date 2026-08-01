@@ -97,7 +97,7 @@ export const directiveItem: Directive = {
 export const firstPage: ItemPageResponse = {
   context: readContext(),
   items: [
-    { kind: "message", id: "message-1", ordinal: 1, timestamp: null, role: "user", phase: null, markdown: "Hello" },
+    { kind: "message", id: "message-1", ordinal: 1, timestamp: null, role: "user", phase: null, itemType: null, markdown: "Hello" },
     toolItem,
   ],
 };
