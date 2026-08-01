@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { App } from "../../src/client/App";
 import {
   baseSession,
@@ -18,16 +18,20 @@ import {
   SESSION_REVISION,
 } from "./session-browser.fixtures";
 
-afterEach(() => {
-  cleanup();
-  vi.useRealTimers();
-  vi.restoreAllMocks();
-  vi.unstubAllGlobals();
-  Object.defineProperty(document, "hidden", { configurable: true, value: false });
-  window.history.replaceState(null, "", "/");
-});
-
 describe("session catalog interactions", () => {
+  it("normalizes an empty session parameter without opening a session", async () => {
+    window.history.replaceState(null, "", "/?session=");
+    const fetchMock = vi.fn().mockResolvedValue(json(listBody));
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    expect(await screen.findByText("Choose a session")).toBeInTheDocument();
+    expect(window.location.search).toBe("");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain("/api/v1/sessions?");
+  });
+
   it("keeps the selected session in the URL and opens its timeline", async () => {
     vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => {
       const url = String(input);

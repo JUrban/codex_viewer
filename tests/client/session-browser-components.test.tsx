@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { MessageItem, safeUrlTransform } from "../../src/client/components/MessageItem";
 import { SessionHeader } from "../../src/client/components/SessionHeader";
 import { groupSessions, SessionTree } from "../../src/client/components/SessionTree";
@@ -15,15 +15,6 @@ import {
   firstPage,
   SESSION_ID,
 } from "./session-browser.fixtures";
-
-afterEach(() => {
-  cleanup();
-  vi.useRealTimers();
-  vi.restoreAllMocks();
-  vi.unstubAllGlobals();
-  Object.defineProperty(document, "hidden", { configurable: true, value: false });
-  window.history.replaceState(null, "", "/");
-});
 
 describe("session browser components", () => {
   it("renders a reasoning summary as plain internal event text", () => {
@@ -194,6 +185,28 @@ describe("session browser components", () => {
     expect(onRefreshIntervalChange).toHaveBeenCalledTimes(1);
     fireEvent.blur(interval);
     expect(interval).toHaveValue(8);
+  });
+
+  it("falls back when the session update timestamp is invalid", () => {
+    render(
+      <SessionHeader
+        session={{
+          ...baseSession,
+          sourceId: "native-session",
+          diagnostics: [],
+          itemCount: 0,
+          updatedAt: "not-a-timestamp",
+        }}
+        visibility={DEFAULT_TIMELINE_VISIBILITY}
+        onVisibilityChange={vi.fn()}
+        autoRefreshEnabled={false}
+        onAutoRefreshChange={vi.fn()}
+        refreshIntervalSeconds={5}
+        onRefreshIntervalChange={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText(/Time unavailable/)).toBeInTheDocument();
   });
 
   it("collapses child sessions and presents structured agent task identity", async () => {

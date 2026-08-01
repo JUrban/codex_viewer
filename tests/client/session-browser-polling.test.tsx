@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { act, fireEvent, render, screen } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
 import { App } from "../../src/client/App";
 import {
   baseSession,
@@ -17,16 +17,6 @@ import {
   SESSION_REVISION,
   toolItem,
 } from "./session-browser.fixtures";
-
-afterEach(() => {
-  cleanup();
-  vi.useRealTimers();
-  vi.restoreAllMocks();
-  vi.unstubAllGlobals();
-  window.localStorage.clear();
-  Object.defineProperty(document, "hidden", { configurable: true, value: false });
-  window.history.replaceState(null, "", "/");
-});
 
 describe("session polling and failures", () => {
   it("keeps polling off by default and starts and stops it manually", async () => {
@@ -127,10 +117,10 @@ describe("session polling and failures", () => {
     expect(sessionCalls).toBe(1);
   });
 
-  it("migrates an append-only cursor and follows one tail page without continuity", async () => {
+  it("loads an appended page when the confirmed prefix remains valid", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     let sessionCalls = 0;
-    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => {
       const url = String(input);
       if (url.includes("/items") && url.includes("throughOrdinal=2")) {
         return Promise.resolve(json({
@@ -154,21 +144,22 @@ describe("session polling and failures", () => {
           : { context: readContext(NEXT_SESSION_REVISION, 2, true) }));
       }
       return Promise.resolve(json(listBody));
-    });
-    vi.stubGlobal("fetch", fetchMock);
+    }));
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: /Reader work/ }));
     await screen.findByText("Hello");
     fireEvent.click(screen.getByRole("button", { name: "Load more events" }));
     await screen.findByText("Appended event");
-    // Reset to a tail-following initial response for the actual polling assertion.
-    cleanup();
-    sessionCalls = 0;
+  });
+
+  it("follows one appended tail page without a continuity request", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    let sessionCalls = 0;
     const tailPage = {
       ...firstPage,
       context: readContext(SESSION_REVISION, 2, false),
     };
-    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => {
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
       const url = String(input);
       if (url.includes("/items") && url.includes("sessionRevision=bbbb")) {
         return Promise.resolve(json({
@@ -192,19 +183,24 @@ describe("session polling and failures", () => {
           : { context: readContext(NEXT_SESSION_REVISION, 2, true) }));
       }
       return Promise.resolve(json(listBody));
-    }));
+    });
+    vi.stubGlobal("fetch", fetchMock);
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: /Reader work/ }));
     await screen.findByText("Hello");
     fireEvent.click(screen.getByRole("switch", { name: "Live updates" }));
     await act(async () => vi.advanceTimersByTimeAsync(5_000));
     expect(screen.getByText("Appended event")).toBeInTheDocument();
+    expect(fetchMock.mock.calls.some(
+      ([url]) => String(url).includes("sessionRevision=bbbb") &&
+        String(url).includes("throughOrdinal=2"),
+    )).toBe(true);
     expect(fetchMock.mock.calls.every(
       ([url]) => !String(url).includes("/continuity"),
     )).toBe(true);
   });
 
-  it("migrates only metadata while unread items remain", async () => {
+  it("adopts latest metadata while unread items remain", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     let sessionCalls = 0;
     const fetchMock = vi.fn((input: RequestInfo | URL) => {

@@ -56,7 +56,7 @@ function readUrl(): BrowserLocation {
   const params = new URLSearchParams(window.location.search);
   const shown = new Set((params.get("show") ?? "").split(",").filter(Boolean));
   const location = {
-    selectedId: params.get("session"),
+    selectedId: params.get("session") || null,
     visibility: {
       ...DEFAULT_TIMELINE_VISIBILITY,
       directive: shown.has("directive"),

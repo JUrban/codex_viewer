@@ -34,9 +34,7 @@ export function SessionHeader({
     setIntervalDraft(String(refreshIntervalSeconds));
   }, [refreshIntervalSeconds]);
 
-  const updatedAt = session.updatedAt
-    ? DATE_FORMAT.format(new Date(session.updatedAt))
-    : "Time unavailable";
+  const updatedAt = formatTimestamp(session.updatedAt);
 
   return (
     <header className="reader-header">
@@ -109,6 +107,14 @@ export function SessionHeader({
       </div>
     </header>
   );
+}
+
+function formatTimestamp(value: string | null): string {
+  if (value === null) return "Time unavailable";
+  const date = new Date(value);
+  return Number.isNaN(date.valueOf())
+    ? "Time unavailable"
+    : DATE_FORMAT.format(date);
 }
 
 const VISIBILITY_TOGGLES: Array<{

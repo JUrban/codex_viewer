@@ -1,19 +1,12 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { App } from "../../src/client/App";
 import { json, listBody } from "./session-browser.fixtures";
 
 const STORAGE_KEY = "codex-sessions-reader.filters.v1";
-
-afterEach(() => {
-  cleanup();
-  vi.restoreAllMocks();
-  vi.unstubAllGlobals();
-  window.history.replaceState(null, "", "/");
-});
 
 describe("session filters", () => {
   it("orders filters by state, project, date, then query", async () => {

@@ -1,15 +1,8 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
 import { App } from "../../src/client/App";
-
-afterEach(() => {
-  cleanup();
-  vi.restoreAllMocks();
-  vi.unstubAllGlobals();
-  window.history.replaceState(null, "", "/");
-});
 
 describe("application shell", () => {
   it("provides labelled browse landmarks and an actionable empty state", async () => {

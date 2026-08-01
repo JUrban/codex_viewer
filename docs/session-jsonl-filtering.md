@@ -64,9 +64,7 @@ inline directive is also hidden when either of the two preceding or two
 following loaded timeline items is a message with exactly the same text. This
 comparison uses the unfiltered timeline, so event visibility does not change
 the matching neighborhood. Enabled kinds are stored in the page URL
-as one comma-separated `show` parameter. The session list uses an explicit
-`active | archived | all` archive scope. Active is the default; non-default
-scopes are stored in the page URL as `archiveScope`.
+as one comma-separated `show` parameter.
 
 Loaded `user_input` request and response items are projected into one card by
 `call_id`. The request is shown as waiting until its output is loaded; the same
@@ -81,4 +79,6 @@ Message text is capped at 1,000,000 characters. Directive detail and
 tool input/output are capped at 256,000 characters. Session previews, item
 summaries, tool previews, and search excerpts share a 240-character limit.
 Timeline paging may defer items to a later page because of the 300-item and
-4 MiB response size limits. Client-side filtering never changes page cursors.
+approximately 4 MiB response size budget. To guarantee forward progress, the
+first item on a page is always included even when it exceeds that budget.
+Client-side filtering never changes page cursors.

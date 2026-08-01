@@ -1,4 +1,3 @@
-import { vi } from "vitest";
 import type {
   ItemPageResponse,
   SessionListEntry,
@@ -16,13 +15,10 @@ export const CHILD_ID = "zyxwvutsrqponmlkjihgfedc";
 export const OTHER_ID = "otherabcdefghijklmnopqrs";
 export const SESSION_REVISION = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 export const NEXT_SESSION_REVISION = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
-export const LIST_REVISION = "llllllllllllllllllllllllllllllll";
-export const NEXT_LIST_REVISION = "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm";
-export const TIMELINE_PREFIX_REVISION =
+const LIST_REVISION = "llllllllllllllllllllllllllllllll";
+const TIMELINE_PREFIX_REVISION =
   "pppppppppppppppppppppppppppppppp" as TimelinePrefixRevision;
-export const NEXT_TIMELINE_PREFIX_REVISION =
-  "qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq" as TimelinePrefixRevision;
-export const EMPTY_TIMELINE_PREFIX_REVISION =
+const EMPTY_TIMELINE_PREFIX_REVISION =
   "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee" as TimelinePrefixRevision;
 
 export const baseSession: SessionSummary = {
@@ -48,7 +44,7 @@ export const listBody = {
   partial: false, warnings: [],
 };
 
-export const sessionDetail = {
+const sessionDetail = {
   ...baseSession,
   sourceId: "original-session-id",
   diagnostics: [],
@@ -101,20 +97,6 @@ export const firstPage: ItemPageResponse = {
     toolItem,
   ],
 };
-
-export function standardFetch(detail: unknown = detailBody) {
-  return vi.fn((input: RequestInfo | URL) => {
-    const url = String(input);
-    if (url.includes("/items")) {
-      return Promise.resolve(json({
-        ...firstPage,
-        context: { ...firstPage.context, hasMore: false },
-      }));
-    }
-    if (url.endsWith(SESSION_ID)) return Promise.resolve(json(detail));
-    return Promise.resolve(json(listBody));
-  });
-}
 
 export function entry(session: SessionSummary): SessionListEntry {
   return { session, matches: [] };

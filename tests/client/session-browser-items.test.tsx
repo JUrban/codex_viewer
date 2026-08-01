@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { StrictMode } from "react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { App } from "../../src/client/App";
 import { DirectiveItem } from "../../src/client/components/DirectiveItem";
 import { Timeline } from "../../src/client/components/Timeline";
@@ -24,15 +24,6 @@ import {
   SESSION_REVISION,
   toolItem,
 } from "./session-browser.fixtures";
-
-afterEach(() => {
-  cleanup();
-  vi.useRealTimers();
-  vi.restoreAllMocks();
-  vi.unstubAllGlobals();
-  Object.defineProperty(document, "hidden", { configurable: true, value: false });
-  window.history.replaceState(null, "", "/");
-});
 
 describe("session timeline interactions", () => {
   it("renders an inline directive as a plain-text directive block without loading detail", () => {
@@ -511,7 +502,7 @@ describe("session timeline interactions", () => {
     expect(await screen.findByText("Other directive")).toBeInTheDocument();
   });
 
-  it("ignores an aborted lazy-detail resolve after the revision reloads", async () => {
+  it("ignores an aborted lazy-detail resolve after the read cursor changes", async () => {
     let resolveOld!: (response: Response) => void;
     const oldDetail = new Promise<Response>((resolve) => {
       resolveOld = resolve;

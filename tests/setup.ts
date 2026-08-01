@@ -1,5 +1,6 @@
 import "@testing-library/jest-dom/vitest";
-import { afterEach } from "vitest";
+import { cleanup } from "@testing-library/react";
+import { afterEach, vi } from "vitest";
 import { cleanupTempDirectories } from "./helpers/temp-directories.js";
 
 if (typeof window !== "undefined" && window.localStorage === undefined) {
@@ -26,6 +27,14 @@ if (typeof window !== "undefined" && window.localStorage === undefined) {
 
 afterEach(cleanupTempDirectories);
 afterEach(() => {
-  if (typeof sessionStorage !== "undefined") sessionStorage.clear();
-  if (typeof window !== "undefined") window.localStorage.clear();
+  vi.useRealTimers();
+  if (typeof window === "undefined") return;
+  cleanup();
+  window.sessionStorage.clear();
+  window.localStorage.clear();
+  Object.defineProperty(document, "hidden", {
+    configurable: true,
+    value: false,
+  });
+  window.history.replaceState(null, "", "/");
 });

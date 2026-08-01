@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen, within } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { render, screen, within } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
 import { Timeline } from "../../src/client/components/Timeline";
 import type {
   TimelinePrefixRevision,
@@ -26,8 +26,6 @@ const REQUEST: UserInputRequestItem = {
     ],
   }],
 };
-
-afterEach(cleanup);
 
 describe("user input timeline cards", () => {
   it("rewrites the pending request card in place when its answer is loaded", () => {

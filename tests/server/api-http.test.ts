@@ -190,10 +190,10 @@ describe("versioned session API", () => {
       status: "completed",
       toolName: "inspect_widget",
     }));
-    const missingRevision = await fetch(
+    const missingCursor = await fetch(
       `${base}/api/v1/sessions/${basic.session.id}/items/${tool.id}/tool`,
     );
-    expect(missingRevision.status).toBe(400);
+    expect(missingCursor.status).toBe(400);
     const toolResponse = await fetch(
       `${base}/api/v1/sessions/${basic.session.id}/items/${tool.id}/tool` +
       `?${cursorQuery(allItems.context.cursor)}`,
@@ -206,7 +206,7 @@ describe("versioned session API", () => {
     }));
   });
 
-  it("rejects invalid queries safely and reports a stale snapshot cursor after file change", async () => {
+  it("rejects invalid queries and accepts an unchanged timeline prefix after append", async () => {
     const { base, home, repository } = await startApi();
     const list = await fetch(`${base}/api/v1/sessions`).then((response) => response.json());
     const basic = list.sessions.find(
@@ -229,17 +229,17 @@ describe("versioned session API", () => {
       `${previous}{"timestamp":"2026-07-28T10:00:10.000Z","type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"new"}]}}\n`,
     );
     await repository.refresh();
-    const migrated = await fetch(
+    const refreshed = await fetch(
       `${base}/api/v1/sessions/${basic.session.id}` +
       `?${cursorQuery(page.context.cursor)}`,
     );
-    expect(migrated.status).toBe(200);
-    const migratedBody = await migrated.json();
-    expect(migratedBody.context.cursor.sessionRevision)
+    expect(refreshed.status).toBe(200);
+    const refreshedBody = await refreshed.json();
+    expect(refreshedBody.context.cursor.sessionRevision)
       .not.toBe(page.context.cursor.sessionRevision);
-    expect(migratedBody.context.cursor.throughOrdinal)
+    expect(refreshedBody.context.cursor.throughOrdinal)
       .toBe(page.context.cursor.throughOrdinal);
-    expect(migratedBody.context.hasMore).toBe(true);
+    expect(refreshedBody.context.hasMore).toBe(true);
     const following = await fetch(
       `${base}/api/v1/sessions/${basic.session.id}/items?limit=2` +
       `&${cursorQuery(page.context.cursor)}`,
