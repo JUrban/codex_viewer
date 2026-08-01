@@ -1,10 +1,10 @@
 # Codex Sessions Reader
 
-A private, read-only web viewer for local Codex session history.
+A private web viewer for local Codex session history. It is read-only by default
+and can optionally send input to an existing tmux-hosted Codex session.
 
-It reads rollout JSONL files from your Codex home and serves a responsive local
-interface. It does not edit, delete, resume, export, or upload sessions, and it
-does not create a persistent index or cache.
+It reads session history from your Codex home and serves a responsive local
+interface. It does not edit, delete, export, or upload session files.
 
 ![Codex Sessions Reader interface](docs/images/codex-sessions-reader.png)
 
@@ -40,6 +40,7 @@ Pass server options after `npm start --`:
 | `--ssl-cert <path>` | none | PEM server certificate or certificate chain; required with `--ssl` |
 | `--ssl-key <path>` | none | PEM server private key; required with `--ssl` |
 | `--ssl-ca <path>` | none | PEM CA bundle; enables mandatory client-certificate verification |
+| `--enable-interaction` | disabled | Allow prompts, `Ctrl+C`, and `Esc` for active sessions bound to an existing tmux pane |
 | `--help` | — | Print command-line help |
 
 Example:
@@ -86,7 +87,16 @@ restart the server after replacing them.
 - Search session titles, project paths, and visible user and assistant messages.
 - Render Markdown, GitHub-flavored Markdown, and KaTeX math.
 - Continue reading rollout files while Codex is writing them.
+- Enable Live updates for individual active sessions. The setting is off by
+  default, remembered per session, and refreshes every 2 seconds by default.
 - Handle malformed or unknown records with diagnostics where possible.
+- With `--enable-interaction`, send multiline prompts, `Ctrl+C`, and `Esc` to a
+  user-bound tmux pane. Archived sessions remain read-only.
+
+The viewer never starts Codex or creates or manages tmux. To bind an active
+session, run the activation command shown at the bottom of that session's
+timeline from inside its Codex pane. The interaction panel is shown only while
+Live updates are enabled.
 
 The viewer reads only `rollout-*.jsonl` files. It does not inspect Codex
 databases. Large records and responses are capped to keep memory and search work
@@ -95,16 +105,20 @@ for the detailed decoding and visibility policy.
 
 ## Security
 
-The server listens on loopback by default and exposes a read-only API. It
-rejects path traversal and symlink escapes, does not enable permissive CORS, and
-does not expose raw filesystem paths or Codex records.
+The server listens on loopback by default. It rejects path traversal and symlink
+escapes, does not enable permissive CORS, and does not expose raw filesystem
+paths or Codex records. Mutation requests are authorized only when the process
+is started with `--enable-interaction`; they use the same network trust boundary as
+the read API.
 
 Rendered Markdown cannot run raw HTML. Remote images are replaced with text,
 and unsafe links are disabled.
 
 Loopback protects against network access, not other processes or users on the
 same machine. If you bind to a non-loopback address or place the viewer behind a
-reverse proxy, add authentication and restrict network access.
+reverse proxy, add authentication and restrict network access—especially when
+interaction is enabled, because any client that can reach the viewer can call
+its interaction endpoints.
 
 ## Architecture decisions
 
@@ -116,6 +130,7 @@ Accepted architecture decisions are recorded under [`docs/adr`](docs/adr):
 - [ADR-0004: Session-scoped reader revisions](docs/adr/0004-use-session-scoped-reader-revisions.md)
 - [ADR-0005: Query-scoped revisions for session-list pagination](docs/adr/0005-use-query-scoped-revisions-for-session-list-pagination.md)
 - [ADR-0006: Conditional read cursors for session resources](docs/adr/0006-use-timeline-prefix-continuity.md)
+- [ADR-0007: Adapter-discovered tmux interaction](docs/adr/0007-use-adapter-discovered-tmux-interaction.md)
 
 ## Development
 
@@ -136,8 +151,7 @@ npm test
 npm run build
 ```
 
-An optional scale benchmark creates a temporary synthetic corpus under
-`/private/tmp` and removes it afterward:
+Run the optional scale benchmark with:
 
 ```sh
 npm run benchmark:scale

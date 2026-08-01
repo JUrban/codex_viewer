@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import type {
+  InteractionResponse,
   ItemPageResponse,
   SessionReadContext,
   SessionReadCursor,
@@ -14,11 +15,13 @@ import {
 import { useSessionPolling } from "./use-session-polling";
 
 const TIMELINE_PAGE_SIZE = 300;
-const DEFAULT_REFRESH_INTERVAL_SECONDS = 5;
+const DEFAULT_REFRESH_INTERVAL_SECONDS = 2;
 const MIN_REFRESH_INTERVAL_SECONDS = 1;
 const MAX_REFRESH_INTERVAL_SECONDS = 3_600;
 const REFRESH_INTERVAL_STORAGE_KEY =
   "codex-sessions-reader.refresh-interval-seconds.v1";
+const LIVE_UPDATES_STORAGE_KEY_PREFIX =
+  "codex-sessions-reader.live-updates.v1:";
 
 export type ReaderOperation = "open" | "page" | "refresh" | null;
 
@@ -26,6 +29,7 @@ interface ReaderState {
   operation: ReaderOperation;
   context: SessionReadContext | null;
   items: TimelineItem[];
+  interaction: InteractionResponse | null;
   error: string | null;
   prefixChanged: boolean;
   timelineGeneration: number;
@@ -43,12 +47,14 @@ type ReaderAction =
     type: "open-success";
     context: SessionReadContext;
     items: TimelineItem[];
+    interaction: InteractionResponse;
   }
   | { type: "refresh-start" }
   | {
     type: "refresh-success";
     context: SessionReadContext;
     tailPage: ItemPageResponse | null;
+    interaction: InteractionResponse;
   }
   | { type: "prefix-changed" }
   | { type: "load-failure"; error: string }
@@ -72,6 +78,7 @@ const initialState: ReaderState = {
   operation: null,
   context: null,
   items: [],
+  interaction: null,
   error: null,
   prefixChanged: false,
   timelineGeneration: 0,
@@ -145,6 +152,7 @@ export function useSessionReader(
         type: "open-success",
         context: page.context,
         items: page.items,
+        interaction: page.interaction,
       });
       return "loaded";
     } catch (reason) {
@@ -198,6 +206,7 @@ export function useSessionReader(
         type: "refresh-success",
         context: tailPage?.context ?? detail.context,
         tailPage,
+        interaction: tailPage?.interaction ?? detail.interaction,
       });
       return "loaded";
     } catch (reason) {
@@ -229,7 +238,7 @@ export function useSessionReader(
     const switched = previousSelection.current !== selectedId;
     previousSelection.current = selectedId;
     abortActive();
-    if (switched) setAutoRefreshEnabled(false);
+    if (switched) setAutoRefreshEnabled(readLiveUpdatesEnabled(selectedId));
     if (selectedId === null) {
       dispatch({ type: "clear" });
       return;
@@ -304,6 +313,19 @@ export function useSessionReader(
     }
   }, []);
 
+  const setLiveUpdatesEnabled = useCallback((enabled: boolean) => {
+    const id = selectedIdRef.current;
+    setAutoRefreshEnabled(enabled);
+    if (id === null) return;
+    try {
+      const key = `${LIVE_UPDATES_STORAGE_KEY_PREFIX}${id}`;
+      if (enabled) window.localStorage.setItem(key, "1");
+      else window.localStorage.removeItem(key);
+    } catch {
+      // Storage can be unavailable; the in-memory setting remains usable.
+    }
+  }, []);
+
   useSessionPolling(
     autoRefreshEnabled &&
       selectedId !== null &&
@@ -325,6 +347,7 @@ export function useSessionReader(
   return {
     context: selectionChanging ? null : state.context,
     items: selectionChanging ? [] : state.items,
+    interaction: selectionChanging ? null : state.interaction,
     operation,
     readerLoading: operation === "open" || operation === "page",
     readerError: state.error,
@@ -332,7 +355,7 @@ export function useSessionReader(
     timelineGeneration: state.timelineGeneration,
     clearReaderError: () => dispatch({ type: "clear-error" }),
     autoRefreshEnabled,
-    setAutoRefreshEnabled,
+    setAutoRefreshEnabled: setLiveUpdatesEnabled,
     refreshIntervalSeconds,
     setRefreshIntervalSeconds,
     loadMore,
@@ -341,6 +364,17 @@ export function useSessionReader(
     adoptContext,
     refreshLatest,
   };
+}
+
+function readLiveUpdatesEnabled(sessionId: string | null): boolean {
+  if (sessionId === null) return false;
+  try {
+    return window.localStorage.getItem(
+      `${LIVE_UPDATES_STORAGE_KEY_PREFIX}${sessionId}`,
+    ) === "1";
+  } catch {
+    return false;
+  }
 }
 
 function readRefreshIntervalSeconds(): number {
@@ -373,6 +407,7 @@ function reducer(state: ReaderState, action: ReaderAction): ReaderState {
         ...initialState,
         context: action.context,
         items: action.items,
+        interaction: action.interaction,
         timelineGeneration: state.prefixChanged
           ? state.timelineGeneration + 1
           : state.timelineGeneration,
@@ -385,6 +420,7 @@ function reducer(state: ReaderState, action: ReaderAction): ReaderState {
         ...state,
         operation: null,
         context: action.context,
+        interaction: action.interaction,
         items: action.tailPage
           ? appendUnique(state.items, action.tailPage.items)
           : state.items,
@@ -402,6 +438,7 @@ function reducer(state: ReaderState, action: ReaderAction): ReaderState {
         ...state,
         operation: null,
         context: action.page.context,
+        interaction: action.page.interaction,
         items: appendUnique(state.items, action.page.items),
         error: null,
         tailFollowing: !action.page.context.hasMore,

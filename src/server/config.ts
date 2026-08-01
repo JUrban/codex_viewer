@@ -19,6 +19,7 @@ export interface ServerConfig {
   codexHome: string;
   clientDirectory: string;
   tls: ServerTlsConfig;
+  interactionEnabled: boolean;
 }
 
 export type CommandLineResult =
@@ -57,6 +58,7 @@ export function loadConfig(args: readonly string[] = process.argv.slice(2)): Com
       "ssl-key": { type: "string" },
       "ssl-ca": { type: "string" },
       help: { type: "boolean" },
+      "enable-interaction": { type: "boolean" },
     },
   });
 
@@ -96,6 +98,7 @@ export function loadConfig(args: readonly string[] = process.argv.slice(2)): Com
       codexHome: codexHome ? resolve(codexHome) : resolve(homedir(), ".codex"),
       clientDirectory: resolve(process.cwd(), "dist/client"),
       tls,
+      interactionEnabled: values["enable-interaction"] ?? false,
     },
   };
 }
@@ -111,6 +114,7 @@ Options:
   --ssl-cert <path>    PEM server certificate or certificate chain
   --ssl-key <path>     PEM server private key
   --ssl-ca <path>      PEM CA bundle; enables mandatory client certificates
+  --enable-interaction Allow prompts and control keys for bound active sessions
   --help               Show this help
 
 TLS example:

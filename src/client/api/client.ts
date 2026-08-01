@@ -24,9 +24,14 @@ export class ApiClientError extends Error {
   }
 }
 
-async function request<T>(path: string, signal?: AbortSignal): Promise<T> {
+async function request<T>(
+  path: string,
+  signal?: AbortSignal,
+  init: RequestInit = {},
+): Promise<T> {
   const response = await fetch(path, {
-    headers: { Accept: "application/json" },
+    ...init,
+    headers: { Accept: "application/json", ...init.headers },
     signal,
   });
   if (!response.ok) {
@@ -43,7 +48,17 @@ async function request<T>(path: string, signal?: AbortSignal): Promise<T> {
       apiError?.message ?? `Request failed (${response.status})`,
     );
   }
-  return response.json() as Promise<T>;
+  return response.status === 204
+    ? undefined as T
+    : response.json() as Promise<T>;
+}
+
+function postJson<T>(path: string, body: unknown, signal?: AbortSignal): Promise<T> {
+  return request<T>(path, signal, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
 }
 
 function parseApiError(value: unknown): ApiError["error"] | null {
@@ -128,6 +143,24 @@ export const api = {
   ) =>
     request<DirectiveDetailResponse>(
       `/api/v1/sessions/${encodeURIComponent(sessionId)}/items/${encodeURIComponent(itemId)}/directive${cursorQuery(query.cursor)}`,
+      signal,
+    ),
+  sendMessage: (sessionId: string, message: string, signal?: AbortSignal) =>
+    postJson<void>(
+      `/api/v1/sessions/${encodeURIComponent(sessionId)}/messages`,
+      { message },
+      signal,
+    ),
+  interrupt: (sessionId: string, signal?: AbortSignal) =>
+    postJson<void>(
+      `/api/v1/sessions/${encodeURIComponent(sessionId)}/interrupt`,
+      {},
+      signal,
+    ),
+  sendEscape: (sessionId: string, signal?: AbortSignal) =>
+    postJson<void>(
+      `/api/v1/sessions/${encodeURIComponent(sessionId)}/keys`,
+      { key: "escape" },
       signal,
     ),
 };

@@ -34,6 +34,7 @@ async function start() {
     codexHome: "/unused",
     clientDirectory,
     tls: { enabled: false },
+    interactionEnabled: false,
   };
   const server = createServer(config);
   servers.push(server);
@@ -53,6 +54,7 @@ async function startWithRepository(repository: SessionRepository, logger: {
     codexHome: "/unused",
     clientDirectory,
     tls: { enabled: false },
+    interactionEnabled: false,
   };
   const server = createServer(
     config,
@@ -133,6 +135,7 @@ async function startSecure(requireClientCertificate: boolean): Promise<string> {
       privateKeyPath,
       ...(requireClientCertificate ? { certificateAuthorityPath } : {}),
     },
+    interactionEnabled: false,
   };
   const server = createServer(config);
   servers.push(server);
@@ -181,6 +184,7 @@ describe("secure HTTP foundation", () => {
         certificatePath: join(directory, "missing-cert.pem"),
         privateKeyPath: join(directory, "missing-key.pem"),
       },
+      interactionEnabled: false,
     })).toThrow();
 
     const certificatePath = join(directory, "invalid-cert.pem");
@@ -192,6 +196,7 @@ describe("secure HTTP foundation", () => {
     expect(() => createServer({
       ...baseConfig,
       tls: { enabled: true, certificatePath, privateKeyPath },
+      interactionEnabled: false,
     })).toThrow();
   });
 

@@ -16,6 +16,15 @@ import { isSessionRevision } from "../repository/session-revision-registry.js";
 import { isTimelinePrefixRevision } from "../repository/session-view-digest.js";
 import { isListRevision } from "../repository/list-revision.js";
 import { sendJson, type ApiRouter } from "./router.js";
+import {
+  SessionInteractionError,
+  type SessionInteractionService,
+} from "../interaction/interaction-service.js";
+import {
+  MAX_INTERACTION_MESSAGE_BYTES,
+  normalizeMessage,
+  TmuxInteractionError,
+} from "../interaction/tmux-service.js";
 
 const API_ROOT = "/api/v1";
 const SESSION_ROOT = `${API_ROOT}/sessions`;
@@ -30,6 +39,10 @@ export interface ApiErrorLogger {
 export interface ApiRouterOptions {
   readonly logger?: ApiErrorLogger;
   readonly requestId?: () => string;
+  readonly interaction?: Pick<
+    SessionInteractionService,
+    "describe" | "sendMessage" | "interrupt" | "escape"
+  >;
 }
 
 const CONSOLE_ERROR_LOGGER: ApiErrorLogger = {
@@ -49,9 +62,15 @@ export function createApiRouter(
     if (!url.pathname.startsWith("/api/")) return false;
     const requestId = requestIdFactory();
     const headOnly = request.method === "HEAD";
+    const readMethod = request.method === "GET" || headOnly;
+    const mutationPath = new RegExp(
+      `^${SESSION_ROOT}/[A-Za-z0-9_-]{20,100}/(?:messages|interrupt|keys)$`,
+    ).test(url.pathname);
+    if (!readMethod && (request.method !== "POST" || !mutationPath)) return false;
 
     try {
       if (url.pathname === SESSION_ROOT) {
+        if (!readMethod) return false;
         sendJson(response, 200, await repository.list(parseListQuery(url.searchParams)), headOnly);
         return true;
       }
@@ -64,18 +83,54 @@ export function createApiRouter(
 
       const itemId = segments[1] ?? "";
       if (segments.length === 0) {
+        if (!readMethod) return false;
         const result = await repository.getSession(
           id,
           parseSessionQuery(url.searchParams),
         );
         if (result === null) return notFound(response, headOnly, "session_not_found");
-        sendJson(response, 200, result, headOnly);
+        sendJson(response, 200, {
+          ...result,
+          interaction: await describeInteraction(options.interaction, id),
+        }, headOnly);
         return true;
       }
+      if (segments.length === 1 && segments[0] === "messages") {
+        if (request.method !== "POST") return false;
+        if (options.interaction === undefined) return interactionUnavailable(response);
+        const body = await readJsonObject(request);
+        if (Object.keys(body).length !== 1 || typeof body.message !== "string") {
+          invalidBody("body must contain only a string message field");
+        }
+        normalizeMessage(body.message);
+        await options.interaction.sendMessage(id, body.message);
+        return noContent(response);
+      }
+      if (segments.length === 1 && segments[0] === "interrupt") {
+        if (request.method !== "POST") return false;
+        if (options.interaction === undefined) return interactionUnavailable(response);
+        await requireOptionalEmptyJsonObject(request);
+        await options.interaction.interrupt(id);
+        return noContent(response);
+      }
+      if (segments.length === 1 && segments[0] === "keys") {
+        if (request.method !== "POST") return false;
+        if (options.interaction === undefined) return interactionUnavailable(response);
+        const body = await readJsonObject(request);
+        if (Object.keys(body).length !== 1 || body.key !== "escape") {
+          invalidBody('body must be { "key": "escape" }');
+        }
+        await options.interaction.escape(id);
+        return noContent(response);
+      }
       if (segments.length === 1 && segments[0] === "items") {
+        if (!readMethod) return false;
         const result = await repository.getItems(id, parseItemQuery(url.searchParams));
         if (result === null) return notFound(response, headOnly, "session_not_found");
-        sendJson(response, 200, result, headOnly);
+        sendJson(response, 200, {
+          ...result,
+          interaction: await describeInteraction(options.interaction, id),
+        }, headOnly);
         return true;
       }
       if (
@@ -84,6 +139,7 @@ export function createApiRouter(
         isItemId(itemId) &&
         segments[2] === "tool"
       ) {
+        if (!readMethod) return false;
         const result = await repository.getToolDetail(
           id,
           itemId,
@@ -99,6 +155,7 @@ export function createApiRouter(
         isItemId(itemId) &&
         segments[2] === "directive"
       ) {
+        if (!readMethod) return false;
         const result = await repository.getDirectiveDetail(
           id,
           itemId,
@@ -118,6 +175,31 @@ export function createApiRouter(
         sendJson(response, status, { error: { code: error.code, message: error.message } }, headOnly);
         return true;
       }
+      if (error instanceof RequestBodyError) {
+        sendJson(response, error.status, {
+          error: { code: error.code, message: error.message },
+        }, headOnly);
+        return true;
+      }
+      if (error instanceof TmuxInteractionError && error.code === "invalid_message") {
+        sendJson(response, 400, {
+          error: { code: "invalid_message", message: error.message },
+        }, headOnly);
+        return true;
+      }
+      if (error instanceof SessionInteractionError) {
+        const status = error.code === "session_not_found"
+          ? 404
+          : error.code === "operation_result_unknown"
+          ? 504
+          : error.code === "interaction_failed"
+          ? 502
+          : 409;
+        sendJson(response, status, {
+          error: { code: error.code, message: error.message },
+        }, headOnly);
+        return true;
+      }
       logger.error("Session API request failed", { requestId, error });
       sendJson(
         response,
@@ -134,6 +216,84 @@ export function createApiRouter(
       return true;
     }
   };
+}
+
+async function describeInteraction(
+  interaction: ApiRouterOptions["interaction"],
+  sessionId: string,
+) {
+  if (interaction === undefined) return { supported: false as const };
+  return await interaction.describe(sessionId) ?? { supported: false as const };
+}
+
+const MAX_INTERACTION_JSON_BYTES = MAX_INTERACTION_MESSAGE_BYTES * 6 + 1_024;
+
+class RequestBodyError extends Error {
+  constructor(
+    readonly status: number,
+    readonly code: "invalid_json" | "body_too_large",
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
+async function readJsonObject(request: IncomingMessage): Promise<Record<string, unknown>> {
+  const contentType = request.headers["content-type"]?.split(";", 1)[0]?.trim().toLowerCase();
+  if (contentType !== "application/json") invalidBody("Content-Type must be application/json");
+  const declared = Number(request.headers["content-length"]);
+  if (Number.isFinite(declared) && declared > MAX_INTERACTION_JSON_BYTES) bodyTooLarge();
+  const chunks: Buffer[] = [];
+  let bytes = 0;
+  for await (const chunk of request) {
+    const value = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    bytes += value.byteLength;
+    if (bytes > MAX_INTERACTION_JSON_BYTES) bodyTooLarge();
+    chunks.push(value);
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+  } catch {
+    invalidBody("Request body must be valid JSON");
+  }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    invalidBody("Request body must be a JSON object");
+  }
+  return parsed as Record<string, unknown>;
+}
+
+async function requireOptionalEmptyJsonObject(request: IncomingMessage): Promise<void> {
+  if (
+    request.headers["content-length"] === undefined &&
+    request.headers["transfer-encoding"] === undefined
+  ) return;
+  const body = await readJsonObject(request);
+  if (Object.keys(body).length !== 0) invalidBody("body must be an empty JSON object");
+}
+
+function invalidBody(message: string): never {
+  throw new RequestBodyError(400, "invalid_json", message);
+}
+
+function bodyTooLarge(): never {
+  throw new RequestBodyError(413, "body_too_large", "Request body is too large");
+}
+
+function noContent(response: ServerResponse): true {
+  response.statusCode = 204;
+  response.end();
+  return true;
+}
+
+function interactionUnavailable(response: ServerResponse): true {
+  sendJson(response, 409, {
+    error: {
+      code: "interaction_not_supported",
+      message: "Interaction is not enabled",
+    },
+  });
+  return true;
 }
 
 function parseListQuery(params: URLSearchParams): SessionListQuery {

@@ -11,6 +11,7 @@ import type {
   ToolDetailResponse,
 } from "../../shared/api-contract.js";
 import type { SessionId } from "../../shared/domain.js";
+import type { DomainAgentInteraction } from "../domain/session-domain.js";
 import { SessionApiMapper } from "../api/session-api-mapper.js";
 import type { SessionSource } from "../source/session-source.js";
 import {
@@ -39,8 +40,8 @@ export interface SessionRepository {
   getSession(
     id: SessionId,
     query?: SessionDetailQuery,
-  ): Promise<SessionDetailResponse | null>;
-  getItems(id: SessionId, query: ItemPageQuery): Promise<ItemPageResponse | null>;
+  ): Promise<RepositorySessionDetailResponse | null>;
+  getItems(id: SessionId, query: ItemPageQuery): Promise<RepositoryItemPageResponse | null>;
   getToolDetail(
     id: SessionId,
     itemId: string,
@@ -52,6 +53,15 @@ export interface SessionRepository {
     query: DirectiveDetailQuery,
   ): Promise<DirectiveDetailResponse | null>;
   refresh(): Promise<void>;
+  getInteractionSession(id: SessionId): Promise<InteractionSessionSnapshot | null>;
+}
+
+export type RepositorySessionDetailResponse = Omit<SessionDetailResponse, "interaction">;
+export type RepositoryItemPageResponse = Omit<ItemPageResponse, "interaction">;
+
+export interface InteractionSessionSnapshot {
+  readonly archived: boolean;
+  readonly interaction: DomainAgentInteraction | null;
 }
 
 export class DefaultSessionRepository implements SessionRepository {
@@ -87,7 +97,7 @@ export class DefaultSessionRepository implements SessionRepository {
   async getSession(
     id: SessionId,
     query: SessionDetailQuery = {},
-  ): Promise<SessionDetailResponse | null> {
+  ): Promise<RepositorySessionDetailResponse | null> {
     const snapshot = await this.#store.current();
     const result = this.#queries.session(snapshot, id, query);
     return result === null
@@ -95,7 +105,10 @@ export class DefaultSessionRepository implements SessionRepository {
       : this.#mapper.detail(result);
   }
 
-  async getItems(id: SessionId, query: ItemPageQuery): Promise<ItemPageResponse | null> {
+  async getItems(
+    id: SessionId,
+    query: ItemPageQuery,
+  ): Promise<RepositoryItemPageResponse | null> {
     const snapshot = await this.#store.current();
     const result = this.#queries.items(snapshot, id, query);
     return result === null ? null : this.#mapper.itemPage(result);
@@ -133,5 +146,16 @@ export class DefaultSessionRepository implements SessionRepository {
     return result === null
       ? null
       : this.#mapper.directiveDetail(id, itemId, result);
+  }
+
+  async getInteractionSession(id: SessionId): Promise<InteractionSessionSnapshot | null> {
+    const snapshot = await this.#store.current();
+    const normalized = snapshot.sessions.get(id)?.normalized;
+    return normalized === undefined
+      ? null
+      : {
+          archived: normalized.session.archived,
+          interaction: normalized.interaction ?? null,
+        };
   }
 }

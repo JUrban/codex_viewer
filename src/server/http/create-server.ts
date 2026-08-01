@@ -49,14 +49,15 @@ export function createServer(config: ServerConfig, apiRouter: ApiRouter = emptyA
     applySecurityHeaders(response);
     const headOnly = request.method === "HEAD";
 
-    if (request.method !== "GET" && !headOnly) {
-      response.setHeader("Allow", "GET, HEAD");
-      sendJson(response, 405, { error: { code: "method_not_allowed", message: "Only GET and HEAD are allowed" } });
-      return;
-    }
-
     try {
       if (await apiRouter(request, response)) return;
+      if (request.method !== "GET" && !headOnly) {
+        response.setHeader("Allow", "GET, HEAD");
+        sendJson(response, 405, {
+          error: { code: "method_not_allowed", message: "Method is not allowed for this resource" },
+        });
+        return;
+      }
       const url = new URL(request.url ?? "/", "http://localhost");
       const decodedPath = decodeURIComponent(url.pathname);
       const relativePath = decodedPath === "/" ? "index.html" : decodedPath.slice(1);

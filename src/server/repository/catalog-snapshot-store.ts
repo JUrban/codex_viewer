@@ -25,7 +25,7 @@ import {
   type VersionedSession,
 } from "./session-revision-registry.js";
 
-export const DEFAULT_CATALOG_FRESHNESS_MS = 2_000;
+export const DEFAULT_CATALOG_FRESHNESS_MS = 1_500;
 
 export interface CatalogSnapshot {
   readonly signature: string;
@@ -322,6 +322,7 @@ function linkRelationships(
       timeline: item.normalized.timeline,
       toolDetails: item.normalized.toolDetails,
       directiveDetails: item.normalized.directiveDetails,
+      interaction: item.normalized.interaction ?? null,
     });
   }
   return {

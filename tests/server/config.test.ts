@@ -16,7 +16,13 @@ describe("server command line", () => {
       port: 4173,
       codexHome: resolve(homedir(), ".codex"),
       tls: { enabled: false },
+      interactionEnabled: false,
     });
+  });
+
+  it("enables interaction only with the explicit flag", () => {
+    expect(runnable(["--enable-interaction"]).interactionEnabled).toBe(true);
+    expect(commandLineHelp()).toContain("--enable-interaction");
   });
 
   it("parses all server and mutual TLS options", () => {

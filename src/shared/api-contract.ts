@@ -79,6 +79,7 @@ export interface SessionDetailQuery {
 
 export interface SessionDetailResponse {
   context: SessionReadContext;
+  interaction: InteractionResponse;
 }
 
 export interface ItemPageQuery {
@@ -89,6 +90,7 @@ export interface ItemPageQuery {
 export interface ItemPageResponse {
   context: SessionReadContext;
   items: TimelineItem[];
+  interaction: InteractionResponse;
 }
 
 export interface ToolDetailResponse {
@@ -115,3 +117,21 @@ export interface DirectiveDetailResponse {
 export interface DirectiveDetailQuery {
   cursor: SessionReadCursor;
 }
+
+export type InteractionState =
+  | "unbound"
+  | "disconnected"
+  | "idle"
+  | "running"
+  | "awaiting_user_input";
+
+export type InteractionResponse =
+  | { supported: false }
+  | {
+      supported: true;
+      state: InteractionState;
+      activation: string;
+      canSendMessage: boolean;
+      canInterrupt: boolean;
+      canSendEscape: boolean;
+    };

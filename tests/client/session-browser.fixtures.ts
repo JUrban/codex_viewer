@@ -71,6 +71,7 @@ export function readContext(
 
 export const detailBody = {
   context: readContext(SESSION_REVISION, 0, true),
+  interaction: { supported: false as const },
 };
 
 export const toolItem: Tool = {
@@ -92,6 +93,7 @@ export const directiveItem: Directive = {
 
 export const firstPage: ItemPageResponse = {
   context: readContext(),
+  interaction: { supported: false },
   items: [
     { kind: "message", id: "message-1", ordinal: 1, timestamp: null, role: "user", phase: null, itemType: null, markdown: "Hello" },
     toolItem,

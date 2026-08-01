@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import type {
+  InteractionResponse,
   SessionReadContext,
   SessionReadCursor,
 } from "../../shared/api-contract";
@@ -15,10 +16,13 @@ import { EmptyState } from "./EmptyState";
 import { ErrorState } from "./ErrorState";
 import { SessionHeader } from "./SessionHeader";
 import { Timeline } from "./Timeline";
+import { InteractionPanel } from "./InteractionPanel";
+import { useSessionInteraction } from "../state/use-session-interaction";
 
 interface SessionReaderProps {
   context: SessionReadContext;
   items: TimelineItem[];
+  interaction: InteractionResponse | null;
   visibility: TimelineVisibility;
   onVisibilityChange: (key: TimelineVisibilityKey, visible: boolean) => void;
   loading: boolean;
@@ -32,7 +36,7 @@ interface SessionReaderProps {
   onConflict: () => void;
   prefixChanged: boolean;
   timelineGeneration: number;
-  onRefreshLatest: () => void;
+  onRefreshLatest: () => Promise<unknown>;
   error?: string | null;
   onDismissError?: () => void;
 }
@@ -40,6 +44,7 @@ interface SessionReaderProps {
 export function SessionReader({
   context,
   items,
+  interaction,
   visibility,
   onVisibilityChange,
   loading,
@@ -62,18 +67,10 @@ export function SessionReader({
     [items, visibility],
   );
   const hasMore = context.hasMore;
+  const interactionController = useSessionInteraction(context.session.id);
 
   return (
     <section className="reader" aria-labelledby="session-title">
-      {error && onDismissError
-        ? (
-            <ErrorState
-              title="Could not load session"
-              message={error}
-              onDismiss={onDismissError}
-            />
-          )
-        : null}
       <SessionHeader
         session={context.session}
         visibility={visibility}
@@ -83,19 +80,6 @@ export function SessionReader({
         refreshIntervalSeconds={refreshIntervalSeconds}
         onRefreshIntervalChange={onRefreshIntervalChange}
       />
-      {prefixChanged
-        ? (
-            <aside className="continuity-notice" role="alert">
-              <div>
-                <strong>Session 内容已变化</strong>
-                <p>已保留当前阅读位置。刷新到最新版本会从第一页重新载入。</p>
-              </div>
-              <button type="button" disabled={busy} onClick={onRefreshLatest}>
-                刷新到最新版本
-              </button>
-            </aside>
-          )
-        : null}
       <DiagnosticNotice
         diagnostics={context.session.diagnostics}
         label="Session diagnostics"
@@ -122,6 +106,41 @@ export function SessionReader({
               onContext={onContext}
               onConflict={onConflict}
             />
+          )
+        : null}
+      {autoRefreshEnabled && !context.session.archived
+        ? (
+            <InteractionPanel
+              interaction={interaction}
+              busy={interactionController.busy}
+              error={interactionController.error}
+              onDismissError={interactionController.clearError}
+              onSendMessage={interactionController.sendMessage}
+              onInterrupt={interactionController.interrupt}
+              onEscape={interactionController.sendEscape}
+            />
+          )
+        : null}
+      {error && onDismissError
+        ? (
+            <ErrorState
+              title="Could not load session"
+              message={error}
+              onDismiss={onDismissError}
+            />
+          )
+        : null}
+      {prefixChanged
+        ? (
+            <aside className="continuity-notice" role="alert">
+              <div>
+                <strong>Session 内容已变化</strong>
+                <p>已保留当前阅读位置。刷新到最新版本会从第一页重新载入。</p>
+              </div>
+              <button type="button" disabled={busy} onClick={onRefreshLatest}>
+                刷新到最新版本
+              </button>
+            </aside>
           )
         : null}
       <BackToTop />

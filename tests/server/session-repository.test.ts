@@ -62,10 +62,10 @@ describe("DefaultSessionRepository", () => {
     expect(discoveries).toBe(1);
     await repository.list({});
     expect(discoveries).toBe(1);
-    now = 1_999;
+    now = 1_499;
     await repository.list({});
     expect(discoveries).toBe(1);
-    now = 2_000;
+    now = 1_500;
     await repository.list({});
     expect(discoveries).toBe(2);
     await expect(repository.refresh()).resolves.toBeUndefined();

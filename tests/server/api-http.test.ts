@@ -41,6 +41,7 @@ async function startApi(maxScannedBytes?: number) {
     codexHome: home,
     clientDirectory,
     tls: { enabled: false },
+    interactionEnabled: false,
   };
   const server = createServer(config, createApiRouter(repository));
   servers.push(server);
@@ -99,6 +100,7 @@ describe("versioned session API", () => {
 
     const detailResponse = await fetch(`${base}/api/v1/sessions/${basic.session.id}`);
     const detail = await detailResponse.json();
+    expect(detail.interaction).toEqual({ supported: false });
     expect(detail.context.session.title).toBe("Synthetic trace");
     expect(detail.context.session.sourceId).toBe("basic-session");
     expect(detail.context.session.origin).toEqual(basic.session.origin);
@@ -111,6 +113,7 @@ describe("versioned session API", () => {
       `&${cursorQuery(detail.context.cursor)}`,
     );
     const firstPage = await firstPageResponse.json();
+    expect(firstPage.interaction).toEqual({ supported: false });
     expect(firstPage.items).toHaveLength(3);
     expect(firstPage.context.hasMore).toBe(true);
     expect(firstPage.context.cursor.throughOrdinal).toBe(firstPage.items.at(-1).ordinal);
@@ -125,6 +128,7 @@ describe("versioned session API", () => {
       `&${cursorQuery(firstPage.context.cursor)}`,
     );
     expect(secondPage.status).toBe(200);
+    expect((await secondPage.json()).interaction).toEqual({ supported: false });
 
     const allItems = await fetch(
       `${base}/api/v1/sessions/${basic.session.id}/items?limit=300` +

@@ -358,6 +358,41 @@
 }
 .empty-state { max-width: 30rem; padding: 2.5rem 0; color: var(--ink-soft); }
 .empty-state h2 { color: var(--ink); }
+.interaction-panel {
+  max-width: 52rem; margin-top: 2rem; padding: 1.15rem;
+  background: var(--paper-deep); border: 1px solid #bdcccf; border-left: 3px solid var(--current);
+}
+.interaction-heading { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+.interaction-heading .eyebrow { margin: 0 0 .2rem; }
+.interaction-heading h3 { margin: 0; font-family: var(--title-font); font-size: 1.25rem; font-weight: 500; }
+.interaction-state {
+  padding: .16rem .45rem; color: var(--current); background: var(--paper);
+  border: 1px solid #bdcccf; font-family: var(--mono-font); font-size: .64rem; text-transform: uppercase;
+}
+.interaction-state.running { color: #704727; border-color: #d6b995; }
+.interaction-state.awaiting_user_input { color: var(--human); border-color: #d3aaa0; }
+.interaction-panel textarea {
+  display: block; width: 100%; margin-top: 1rem; padding: .8rem;
+  resize: vertical; color: var(--ink); background: var(--paper); border: 1px solid #8fa6ab;
+  font: inherit; line-height: 1.5;
+}
+.interaction-panel textarea:disabled { color: var(--ink-soft); background: #e7eeee; }
+.interaction-actions { display: flex; justify-content: flex-end; gap: .55rem; margin-top: .7rem; }
+.interaction-actions button {
+  padding: .48rem .72rem; color: var(--current); background: transparent;
+  border: 1px solid var(--current); cursor: pointer;
+}
+.interaction-actions button:disabled { opacity: .42; cursor: default; }
+.interaction-activation p { color: var(--ink-soft); font-size: .86rem; }
+.interaction-activation pre {
+  max-width: 100%; overflow: auto; margin-bottom: 0; padding: .8rem;
+  color: #dce8e8; background: #213138; white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.interaction-error {
+  display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+  margin-top: .8rem; padding: .6rem .7rem; color: #74392e; background: #fff0ed;
+}
+.interaction-error button { color: currentColor; background: transparent; border: 0; font-size: 1.2rem; cursor: pointer; }
 .back-to-top {
   position: fixed; z-index: 30; right: clamp(.9rem, 2.2vw, 1.75rem); bottom: clamp(.9rem, 2.2vw, 1.75rem);
   min-height: 2.5rem; padding: .45rem .8rem;

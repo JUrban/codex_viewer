@@ -42,11 +42,11 @@ export class SessionApiMapper {
     };
   }
 
-  detail(result: SessionReadContextResult): SessionDetailResponse {
+  detail(result: SessionReadContextResult): Omit<SessionDetailResponse, "interaction"> {
     return { context: this.readContext(result) };
   }
 
-  itemPage(result: ItemPageResult): ItemPageResponse {
+  itemPage(result: ItemPageResult): Omit<ItemPageResponse, "interaction"> {
     return {
       context: this.readContext(result.context),
       items: result.items.map((item) => this.timelineItem(item)),

@@ -37,6 +37,7 @@ import {
   type AccumulatedUserInput,
   UserInputAccumulator,
 } from "./user-input-accumulator.js";
+import { codexInteraction } from "./interaction-parser.js";
 
 export interface SessionNormalizer {
   normalize(
@@ -110,6 +111,7 @@ export class DefaultSessionNormalizer implements SessionNormalizer {
       timeline: items,
       toolDetails,
       directiveDetails,
+      interaction: codexInteraction(decoded),
     };
   }
 }

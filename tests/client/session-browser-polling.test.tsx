@@ -20,7 +20,6 @@ import {
 
 describe("session polling and failures", () => {
   it("keeps polling off by default and starts and stops it manually", async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
     let sessionCalls = 0;
     vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => {
       const url = String(input);
@@ -35,16 +34,176 @@ describe("session polling and failures", () => {
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: /Reader work/ }));
     await screen.findByText("Hello");
+    expect(screen.getByRole("spinbutton", {
+      name: "Refresh interval in seconds",
+    })).toHaveValue(2);
+    vi.useFakeTimers();
     await act(async () => vi.advanceTimersByTimeAsync(10_000));
     expect(sessionCalls).toBe(1);
 
     fireEvent.click(screen.getByRole("switch", { name: "Live updates" }));
-    await act(async () => vi.advanceTimersByTimeAsync(5_000));
+    await act(async () => vi.advanceTimersByTimeAsync(1_999));
+    expect(sessionCalls).toBe(1);
+    await act(async () => vi.advanceTimersByTimeAsync(1));
     expect(sessionCalls).toBe(2);
 
     fireEvent.click(screen.getByRole("switch", { name: "Live updates" }));
     await act(async () => vi.advanceTimersByTimeAsync(10_000));
     expect(sessionCalls).toBe(2);
+  });
+
+  it("persists Live updates independently for each session and restores them", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const other = { ...baseSession, id: OTHER_ID, title: "Other session" };
+    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      const session = url.includes(OTHER_ID) ? other : baseSession;
+      if (url.includes("/items")) {
+        return Promise.resolve(json({
+          ...firstPage,
+          context: {
+            ...firstPage.context,
+            session: { ...firstPage.context.session, ...session },
+          },
+        }));
+      }
+      if (url.includes(SESSION_ID) || url.includes(OTHER_ID)) {
+        return Promise.resolve(json({
+          ...detailBody,
+          context: {
+            ...detailBody.context,
+            session: { ...detailBody.context.session, ...session },
+          },
+        }));
+      }
+      return Promise.resolve(json({
+        ...listBody,
+        sessions: [entry(baseSession), entry(other)],
+        total: 2,
+      }));
+    }));
+
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: /Reader work/ }));
+    await screen.findByText("Hello");
+    fireEvent.click(screen.getByRole("switch", { name: "Live updates" }));
+    expect(window.localStorage.getItem(
+      `codex-sessions-reader.live-updates.v1:${SESSION_ID}`,
+    )).toBe("1");
+
+    fireEvent.click(screen.getByRole("button", { name: /Other session/ }));
+    await screen.findByRole("heading", { name: "Other session" });
+    expect(screen.getByRole("switch", { name: "Live updates" }))
+      .toHaveAttribute("aria-checked", "false");
+
+    fireEvent.click(screen.getByRole("button", { name: /Reader work/ }));
+    await screen.findByRole("heading", { name: "Reader work" });
+    expect(screen.getByRole("switch", { name: "Live updates" }))
+      .toHaveAttribute("aria-checked", "true");
+    fireEvent.click(screen.getByRole("switch", { name: "Live updates" }));
+    expect(window.localStorage.getItem(
+      `codex-sessions-reader.live-updates.v1:${SESSION_ID}`,
+    )).toBeNull();
+  });
+
+  it("falls back safely when a stored Live updates value is invalid", async () => {
+    window.localStorage.setItem(
+      `codex-sessions-reader.live-updates.v1:${SESSION_ID}`,
+      "unexpected",
+    );
+    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/items")) return Promise.resolve(json(firstPage));
+      if (url.includes(SESSION_ID)) return Promise.resolve(json(detailBody));
+      return Promise.resolve(json(listBody));
+    }));
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: /Reader work/ }));
+    await screen.findByText("Hello");
+    expect(screen.getByRole("switch", { name: "Live updates" }))
+      .toHaveAttribute("aria-checked", "false");
+  });
+
+  it("keeps Live updates off when localStorage is unavailable", async () => {
+    const getItem = vi.spyOn(Storage.prototype, "getItem")
+      .mockImplementation(() => { throw new Error("storage blocked"); });
+    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/items")) return Promise.resolve(json(firstPage));
+      if (url.includes(SESSION_ID)) return Promise.resolve(json(detailBody));
+      return Promise.resolve(json(listBody));
+    }));
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: /Reader work/ }));
+    await screen.findByText("Hello");
+    expect(screen.getByRole("switch", { name: "Live updates" }))
+      .toHaveAttribute("aria-checked", "false");
+    getItem.mockRestore();
+  });
+
+  it("uses one standard Live update loop for timeline and interaction mutations", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    let sessionCalls = 0;
+    const urls: string[] = [];
+    const available = {
+      supported: true as const,
+      state: "idle" as const,
+      activation: "activate",
+      canSendMessage: true,
+      canInterrupt: true,
+      canSendEscape: true,
+    };
+    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      urls.push(url);
+      if (url.endsWith("/messages") || url.endsWith("/interrupt") || url.endsWith("/keys")) {
+        return Promise.resolve(new Response(null, { status: 204 }));
+      }
+      if (url.includes("/items")) {
+        return Promise.resolve(json({ ...firstPage, interaction: available }));
+      }
+      if (url.includes(SESSION_ID)) {
+        sessionCalls += 1;
+        return Promise.resolve(json({
+          ...detailBody,
+          interaction: sessionCalls === 1
+            ? available
+            : { ...available, state: "running", canSendMessage: false },
+        }));
+      }
+      return Promise.resolve(json(listBody));
+    }));
+
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: /Reader work/ }));
+    await screen.findByText("Hello");
+    expect(screen.queryByLabelText("Session interaction")).toBeNull();
+    fireEvent.change(screen.getByRole("spinbutton", {
+      name: "Refresh interval in seconds",
+    }), { target: { value: "20" } });
+    fireEvent.click(screen.getByRole("switch", { name: "Live updates" }));
+    expect(screen.getByLabelText("Session interaction")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Message to agent"), {
+      target: { value: "status?" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    await act(async () => Promise.resolve());
+    expect(urls.some((url) => url.endsWith("/messages"))).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "Interrupt" }));
+    await act(async () => Promise.resolve());
+    expect(urls.some((url) => url.endsWith("/interrupt"))).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "Esc" }));
+    await act(async () => Promise.resolve());
+    expect(urls.some((url) => url.endsWith("/keys"))).toBe(true);
+
+    expect(sessionCalls).toBe(1);
+    await act(async () => vi.advanceTimersByTimeAsync(5_000));
+    expect(sessionCalls).toBe(1);
+    await act(async () => vi.advanceTimersByTimeAsync(15_000));
+    expect(sessionCalls).toBe(2);
+    expect(screen.getByRole("heading", { name: "Agent is running" }))
+      .toBeInTheDocument();
+    expect(urls.every((url) => !url.endsWith("/interaction"))).toBe(true);
   });
 
   it("restores and applies a persisted refresh interval", async () => {
@@ -78,6 +237,8 @@ describe("session polling and failures", () => {
 
   it("does not poll an archived session", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
+    const liveUpdatesKey = `codex-sessions-reader.live-updates.v1:${SESSION_ID}`;
+    window.localStorage.setItem(liveUpdatesKey, "1");
     const archived = { ...baseSession, archived: true };
     const archivedContext = {
       ...readContext(SESSION_REVISION, 2, false),
@@ -113,8 +274,10 @@ describe("session polling and failures", () => {
     fireEvent.click(await screen.findByRole("button", { name: /Reader work/ }));
     await screen.findByText("Hello");
     expect(screen.queryByRole("switch", { name: "Live updates" })).toBeNull();
+    expect(screen.queryByLabelText("Session interaction")).toBeNull();
     await act(async () => vi.advanceTimersByTimeAsync(10_000));
     expect(sessionCalls).toBe(1);
+    expect(window.localStorage.getItem(liveUpdatesKey)).toBe("1");
   });
 
   it("loads an appended page when the confirmed prefix remains valid", async () => {
@@ -316,8 +479,12 @@ describe("session polling and failures", () => {
     await act(async () => vi.advanceTimersByTimeAsync(5_000));
     expect(screen.getByText("Hello")).toBeInTheDocument();
     expect(screen.getByText("Old tool detail")).toBeInTheDocument();
-    expect(screen.getByRole("alert")).toHaveTextContent("Session 内容已变化");
-    expect(screen.getByRole("button", { name: "Load more events" })).toBeDisabled();
+    const continuityAlert = screen.getByRole("alert");
+    const loadMore = screen.getByRole("button", { name: "Load more events" });
+    expect(continuityAlert).toHaveTextContent("Session 内容已变化");
+    expect(loadMore).toBeDisabled();
+    expect(loadMore.compareDocumentPosition(continuityAlert) & Node.DOCUMENT_POSITION_FOLLOWING)
+      .toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "刷新到最新版本" }));
     expect(await screen.findByText("Replacement timeline")).toBeInTheDocument();
@@ -325,6 +492,47 @@ describe("session polling and failures", () => {
     expect(screen.queryByText("Old tool detail")).toBeNull();
     expect(screen.getByRole("button", { name: "Show tool detail" }))
       .toBeInTheDocument();
+  });
+
+  it("keeps the continuity notice last when refreshing the changed session fails", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    let sessionCalls = 0;
+    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/items")) return Promise.resolve(json(firstPage));
+      if (url.includes(`/${SESSION_ID}?`)) {
+        return Promise.resolve(json({
+          error: {
+            code: "stale_timeline_prefix",
+            message: "prefix changed",
+          },
+        }, 409));
+      }
+      if (url.endsWith(SESSION_ID)) {
+        sessionCalls += 1;
+        if (sessionCalls === 1) return Promise.resolve(json(detailBody));
+        return Promise.resolve(json({
+          error: { code: "internal_error", message: "Refresh failed" },
+        }, 500));
+      }
+      return Promise.resolve(json(listBody));
+    }));
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: /Reader work/ }));
+    await screen.findByText("Hello");
+    fireEvent.click(screen.getByRole("switch", { name: "Live updates" }));
+    await act(async () => vi.advanceTimersByTimeAsync(5_000));
+
+    fireEvent.click(screen.getByRole("button", { name: "刷新到最新版本" }));
+
+    await screen.findByText("Refresh failed");
+    const alerts = screen.getAllByRole("alert");
+    const loadError = alerts.find((alert) => alert.textContent?.includes("Refresh failed"));
+    const continuityAlert = alerts.find((alert) => alert.textContent?.includes("Session 内容已变化"));
+    expect(loadError).toBeDefined();
+    expect(continuityAlert).toBeDefined();
+    expect(loadError!.compareDocumentPosition(continuityAlert!) & Node.DOCUMENT_POSITION_FOLLOWING)
+      .toBeTruthy();
   });
 
   it("preserves visible content when polling fails", async () => {
@@ -348,8 +556,37 @@ describe("session polling and failures", () => {
     await screen.findByText("Hello");
     fireEvent.click(screen.getByRole("switch", { name: "Live updates" }));
     await act(async () => vi.advanceTimersByTimeAsync(5_000));
+    const visibleContent = screen.getByText("Hello");
+    const alert = screen.getByRole("alert");
+    expect(visibleContent).toBeInTheDocument();
+    expect(alert).toHaveTextContent("Poll failed");
+    expect(visibleContent.compareDocumentPosition(alert) & Node.DOCUMENT_POSITION_FOLLOWING)
+      .toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+    expect(screen.queryByText("Poll failed")).toBeNull();
     expect(screen.getByText("Hello")).toBeInTheDocument();
-    expect(screen.getByRole("alert")).toHaveTextContent("Poll failed");
+  });
+
+  it("keeps the standalone error state when initially opening a session fails", async () => {
+    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes(`/${SESSION_ID}`)) {
+        return Promise.resolve(json({
+          error: { code: "internal_error", message: "Open failed" },
+        }, 500));
+      }
+      return Promise.resolve(json(listBody));
+    }));
+
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: /Reader work/ }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Could not load sessionOpen failed",
+    );
+    expect(screen.queryByRole("heading", { name: "Reader work" })).toBeNull();
+    expect(screen.queryByText("Hello")).toBeNull();
   });
 
   it("does not revive a disposed poll after navigation", async () => {

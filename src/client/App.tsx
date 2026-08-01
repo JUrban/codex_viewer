@@ -69,7 +69,7 @@ function SessionIndex({
       <header className="brand">
         <p className="eyebrow">Local trace notebook</p>
         <h1>Codex sessions</h1>
-        <p>Private to this machine · read only</p>
+        <p>Private to this machine · local viewer</p>
       </header>
       <SessionFilters
         filters={filters.applied}
@@ -190,6 +190,7 @@ function Reader({
       <SessionReader
         context={reader.context}
         items={reader.items}
+        interaction={reader.interaction}
         visibility={visibility}
         onVisibilityChange={onVisibilityChange}
         loading={reader.readerLoading}

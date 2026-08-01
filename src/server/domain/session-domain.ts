@@ -24,6 +24,29 @@ export interface DomainSessionOrigin {
   readonly formatVersion: string | null;
 }
 
+export type DomainAgentInteractionState =
+  | "idle"
+  | "running"
+  | "awaiting_user_input";
+
+export type InteractionBindingAttempt =
+  | {
+      readonly ordinal: number;
+      readonly valid: true;
+      readonly socketPath: string;
+      readonly paneId: string;
+    }
+  | {
+      readonly ordinal: number;
+      readonly valid: false;
+    };
+
+export interface DomainAgentInteraction {
+  readonly activation: string;
+  readonly bindingAttempt: InteractionBindingAttempt | null;
+  readonly state: DomainAgentInteractionState;
+}
+
 export interface DomainSession {
   readonly id: DomainSessionId;
   readonly sourceId: string | null;
@@ -195,4 +218,5 @@ export interface NormalizedSession {
   readonly timeline: readonly DomainTimelineRecord[];
   readonly toolDetails: ReadonlyMap<DomainItemId, DomainToolDetail>;
   readonly directiveDetails: ReadonlyMap<DomainItemId, DomainDirectiveDetail>;
+  readonly interaction?: DomainAgentInteraction | null;
 }
