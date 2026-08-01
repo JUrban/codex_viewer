@@ -3,6 +3,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { App } from "../../src/client/App";
+import { json } from "./session-browser.fixtures";
 
 describe("application shell", () => {
   it("provides labelled browse landmarks and an actionable empty state", async () => {
@@ -47,7 +48,3 @@ describe("application shell", () => {
       .toHaveTextContent("Could not load sessionsRequest failed (502)");
   });
 });
-
-function json(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
-}

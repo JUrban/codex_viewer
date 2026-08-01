@@ -40,6 +40,7 @@ async function startApi(maxScannedBytes?: number) {
     port: 0,
     codexHome: home,
     clientDirectory,
+    tls: { enabled: false },
   };
   const server = createServer(config, createApiRouter(repository));
   servers.push(server);

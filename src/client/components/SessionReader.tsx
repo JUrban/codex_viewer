@@ -9,6 +9,7 @@ import {
   type TimelineVisibility,
   type TimelineVisibilityKey,
 } from "../state/timeline-visibility";
+import { BackToTop } from "./BackToTop";
 import { DiagnosticNotice } from "./DiagnosticNotice";
 import { EmptyState } from "./EmptyState";
 import { ErrorState } from "./ErrorState";
@@ -123,6 +124,7 @@ export function SessionReader({
             />
           )
         : null}
+      <BackToTop />
     </section>
   );
 }

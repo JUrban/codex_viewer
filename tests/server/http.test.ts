@@ -1,13 +1,23 @@
-import { writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { request } from "node:http";
+import { request as secureRequest } from "node:https";
 import type { AddressInfo } from "node:net";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { loadConfig, LOOPBACK_HOST, type ServerConfig } from "../../src/server/config.js";
+import { LOOPBACK_HOST, type ServerConfig } from "../../src/server/config.js";
 import { createApiRouter } from "../../src/server/http/api-router.js";
 import { createServer } from "../../src/server/http/create-server.js";
 import type { SessionRepository } from "../../src/server/repository/session-repository.js";
 import { createTempDirectory } from "../helpers/temp-directories.js";
+import {
+  TEST_CA,
+  TEST_CLIENT_CERTIFICATE,
+  TEST_CLIENT_KEY,
+  TEST_SERVER_CERTIFICATE,
+  TEST_SERVER_KEY,
+  TEST_UNTRUSTED_CLIENT_CERTIFICATE,
+  TEST_UNTRUSTED_CLIENT_KEY,
+} from "./tls-fixtures.js";
 
 const servers: ReturnType<typeof createServer>[] = [];
 
@@ -23,6 +33,7 @@ async function start() {
     port: 0,
     codexHome: "/unused",
     clientDirectory,
+    tls: { enabled: false },
   };
   const server = createServer(config);
   servers.push(server);
@@ -41,6 +52,7 @@ async function startWithRepository(repository: SessionRepository, logger: {
     port: 0,
     codexHome: "/unused",
     clientDirectory,
+    tls: { enabled: false },
   };
   const server = createServer(
     config,
@@ -74,15 +86,62 @@ async function rawStatus(base: string, headers: Record<string, string>): Promise
   });
 }
 
-describe("secure HTTP foundation", () => {
-  it("uses loopback by default and accepts a configured listen host", () => {
-    expect(loadConfig({}).host).toBe(LOOPBACK_HOST);
-    expect(loadConfig({ CODEX_VIEWER_HOST: "0.0.0.0" }).host).toBe("0.0.0.0");
-    expect(() => loadConfig({ CODEX_VIEWER_HOST: " " })).toThrow(
-      "CODEX_VIEWER_HOST must not be empty",
+async function secureStatus(
+  base: string,
+  client?: { readonly certificate: string; readonly key: string },
+): Promise<number> {
+  return await new Promise<number>((resolve, reject) => {
+    const outgoing = secureRequest(
+      base,
+      {
+        ca: TEST_CA,
+        cert: client?.certificate,
+        key: client?.key,
+        agent: false,
+      },
+      (response) => {
+        response.resume();
+        response.once("end", () => resolve(response.statusCode ?? 0));
+      },
     );
+    outgoing.once("error", reject);
+    outgoing.end();
   });
+}
 
+async function startSecure(requireClientCertificate: boolean): Promise<string> {
+  const directory = await createTempDirectory("codex-reader-tls-");
+  const clientDirectory = join(directory, "client");
+  const certificatePath = join(directory, "server.pem");
+  const privateKeyPath = join(directory, "server-key.pem");
+  const certificateAuthorityPath = join(directory, "ca.pem");
+  await mkdir(clientDirectory);
+  await Promise.all([
+    writeFile(join(clientDirectory, "index.html"), "<h1>secure trace notebook</h1>"),
+    writeFile(certificatePath, TEST_SERVER_CERTIFICATE),
+    writeFile(privateKeyPath, TEST_SERVER_KEY),
+    writeFile(certificateAuthorityPath, TEST_CA),
+  ]);
+  const config: ServerConfig = {
+    host: LOOPBACK_HOST,
+    port: 0,
+    codexHome: "/unused",
+    clientDirectory,
+    tls: {
+      enabled: true,
+      certificatePath,
+      privateKeyPath,
+      ...(requireClientCertificate ? { certificateAuthorityPath } : {}),
+    },
+  };
+  const server = createServer(config);
+  servers.push(server);
+  await new Promise<void>((resolve) => server.listen(0, LOOPBACK_HOST, resolve));
+  const { port } = server.address() as AddressInfo;
+  return `https://${LOOPBACK_HOST}:${port}`;
+}
+
+describe("secure HTTP foundation", () => {
   it("serves the SPA with restrictive headers and no CORS", async () => {
     const base = await start();
     const response = await fetch(`${base}/session/fixture`);
@@ -96,6 +155,57 @@ describe("secure HTTP foundation", () => {
     expect(response.headers.get("x-content-type-options")).toBe("nosniff");
     expect(response.headers.get("referrer-policy")).toBe("no-referrer");
     expect(response.headers.has("access-control-allow-origin")).toBe(false);
+  });
+
+  it("serves HTTPS and does not accept plaintext HTTP on the TLS port", async () => {
+    const base = await startSecure(false);
+    expect(await secureStatus(base)).toBe(200);
+    await expect(rawStatus(base.replace("https:", "http:"), {})).rejects.toThrow();
+  });
+
+  it("fails startup when TLS credentials are missing or invalid", async () => {
+    const directory = await createTempDirectory("codex-reader-invalid-tls-");
+    const clientDirectory = join(directory, "client");
+    await mkdir(clientDirectory);
+    const baseConfig = {
+      host: LOOPBACK_HOST,
+      port: 0,
+      codexHome: "/unused",
+      clientDirectory,
+    };
+
+    expect(() => createServer({
+      ...baseConfig,
+      tls: {
+        enabled: true,
+        certificatePath: join(directory, "missing-cert.pem"),
+        privateKeyPath: join(directory, "missing-key.pem"),
+      },
+    })).toThrow();
+
+    const certificatePath = join(directory, "invalid-cert.pem");
+    const privateKeyPath = join(directory, "invalid-key.pem");
+    await Promise.all([
+      writeFile(certificatePath, "not a certificate"),
+      writeFile(privateKeyPath, "not a private key"),
+    ]);
+    expect(() => createServer({
+      ...baseConfig,
+      tls: { enabled: true, certificatePath, privateKeyPath },
+    })).toThrow();
+  });
+
+  it("requires a client certificate signed by the configured CA", async () => {
+    const base = await startSecure(true);
+    await expect(secureStatus(base)).rejects.toThrow();
+    await expect(secureStatus(base, {
+      certificate: TEST_UNTRUSTED_CLIENT_CERTIFICATE,
+      key: TEST_UNTRUSTED_CLIENT_KEY,
+    })).rejects.toThrow();
+    expect(await secureStatus(base, {
+      certificate: TEST_CLIENT_CERTIFICATE,
+      key: TEST_CLIENT_KEY,
+    })).toBe(200);
   });
 
   it("accepts forwarded Host and Origin headers but rejects mutation methods", async () => {

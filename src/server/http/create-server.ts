@@ -1,6 +1,7 @@
-import { createReadStream } from "node:fs";
+import { createReadStream, readFileSync } from "node:fs";
 import { stat } from "node:fs/promises";
-import { createServer as createNodeServer, type ServerResponse } from "node:http";
+import { createServer as createHttpServer, type RequestListener, type ServerResponse } from "node:http";
+import { createServer as createHttpsServer } from "node:https";
 import { extname, resolve, sep } from "node:path";
 import type { ServerConfig } from "../config.js";
 import { emptyApiRouter, sendJson, type ApiRouter } from "./router.js";
@@ -44,7 +45,7 @@ async function serveFile(
 }
 
 export function createServer(config: ServerConfig, apiRouter: ApiRouter = emptyApiRouter) {
-  return createNodeServer(async (request, response) => {
+  const requestListener: RequestListener = async (request, response) => {
     applySecurityHeaders(response);
     const headOnly = request.method === "HEAD";
 
@@ -73,5 +74,22 @@ export function createServer(config: ServerConfig, apiRouter: ApiRouter = emptyA
     } catch {
       sendJson(response, 400, { error: { code: "bad_request", message: "Malformed request" } }, headOnly);
     }
-  });
+  };
+
+  if (!config.tls.enabled) return createHttpServer(requestListener);
+
+  const requireClientCertificate = config.tls.certificateAuthorityPath !== undefined;
+  return createHttpsServer(
+    {
+      cert: readFileSync(config.tls.certificatePath),
+      key: readFileSync(config.tls.privateKeyPath),
+      ...(config.tls.certificateAuthorityPath
+        ? { ca: readFileSync(config.tls.certificateAuthorityPath) }
+        : {}),
+      minVersion: "TLSv1.2",
+      requestCert: requireClientCertificate,
+      rejectUnauthorized: requireClientCertificate,
+    },
+    requestListener,
+  );
 }

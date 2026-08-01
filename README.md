@@ -29,21 +29,56 @@ detects session changes without a restart. Press `Ctrl-C` to stop it.
 
 ## Configuration
 
-Set these environment variables before starting the server:
+Pass server options after `npm start --`:
 
-| Variable | Default | Description |
+| Option | Default | Description |
 | --- | --- | --- |
-| `CODEX_HOME` | `~/.codex` | Codex home containing `sessions/` and optionally `archived_sessions/` |
-| `CODEX_VIEWER_HOST` | `127.0.0.1` | Server host |
-| `CODEX_VIEWER_PORT` | `4173` | Server port; use `0` to select a free port automatically |
+| `--codex-home <path>` | `~/.codex` | Codex home containing `sessions/` and optionally `archived_sessions/` |
+| `--host <host>` | `127.0.0.1` | Server host |
+| `--port <port>` | `4173` | Server port; use `0` to select a free port automatically |
+| `--ssl` | disabled | Enable TLS and accept HTTPS only |
+| `--ssl-cert <path>` | none | PEM server certificate or certificate chain; required with `--ssl` |
+| `--ssl-key <path>` | none | PEM server private key; required with `--ssl` |
+| `--ssl-ca <path>` | none | PEM CA bundle; enables mandatory client-certificate verification |
+| `--help` | — | Print command-line help |
 
 Example:
 
 ```sh
-CODEX_HOME=/path/to/codex-home CODEX_VIEWER_PORT=4180 npm start
+npm start -- --codex-home /path/to/codex-home --port 4180
 ```
 
 Restart the server after changing configuration.
+
+### TLS and mTLS
+
+Enable TLS with a server certificate and matching private key:
+
+```sh
+npm start -- \
+  --host 0.0.0.0 \
+  --ssl \
+  --ssl-cert /path/to/server-fullchain.pem \
+  --ssl-key /path/to/server-key.pem
+```
+
+When `--ssl` is enabled, that port accepts HTTPS only. The viewer does not open
+a separate HTTP port or redirect plaintext requests.
+
+Add a trusted client CA to enable mutual TLS (mTLS):
+
+```sh
+npm start -- \
+  --host 0.0.0.0 \
+  --ssl \
+  --ssl-cert /path/to/server-fullchain.pem \
+  --ssl-key /path/to/server-key.pem \
+  --ssl-ca /path/to/client-ca.pem
+```
+
+With `--ssl-ca`, every connection must present a client certificate signed by
+one of the configured CAs. Certificate, key, and CA files are read at startup;
+restart the server after replacing them.
 
 ## Features and limits
 
@@ -129,7 +164,7 @@ Narrow the search with a project or date filter, or use a more specific phrase.
 Choose another port:
 
 ```sh
-CODEX_VIEWER_PORT=4180 npm start
+npm start -- --port 4180
 ```
 
 ## Uninstall
