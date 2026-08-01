@@ -98,6 +98,56 @@ export interface DomainToolOutputRecord extends DomainToolRecordBase {
 
 export type DomainToolRecord = DomainToolCallRecord | DomainToolOutputRecord;
 
+export interface DomainUserInputOption {
+  readonly label: string;
+  readonly description: string;
+}
+
+export interface DomainUserInputQuestion {
+  readonly id: string;
+  readonly header: string;
+  readonly question: string;
+  readonly options: readonly DomainUserInputOption[];
+}
+
+export interface DomainUserInputAnswer {
+  readonly questionId: string;
+  readonly answers: readonly string[];
+}
+
+interface DomainUserInputRecordBase extends DomainTimelineRecordBase {
+  readonly kind: "user_input";
+  readonly callId: string;
+}
+
+export interface DomainUserInputRequestRecord extends DomainUserInputRecordBase {
+  readonly stage: "request";
+  readonly questions: readonly DomainUserInputQuestion[];
+}
+
+export interface DomainAnsweredUserInputRecord extends DomainUserInputRecordBase {
+  readonly stage: "response";
+  readonly outcome: "answered";
+  readonly answers: readonly DomainUserInputAnswer[];
+}
+
+export interface DomainAbortedUserInputRecord extends DomainUserInputRecordBase {
+  readonly stage: "response";
+  readonly outcome: "aborted";
+}
+
+export interface DomainUnavailableUserInputRecord extends DomainUserInputRecordBase {
+  readonly stage: "response";
+  readonly outcome: "unavailable";
+  readonly summary: string;
+}
+
+export type DomainUserInputRecord =
+  | DomainUserInputRequestRecord
+  | DomainAnsweredUserInputRecord
+  | DomainAbortedUserInputRecord
+  | DomainUnavailableUserInputRecord;
+
 export interface DomainTokenUsageCounters {
   readonly totalTokens: number | null;
   readonly inputTokens: number | null;
@@ -125,6 +175,7 @@ export type DomainTimelineRecord =
   | DomainMessageRecord
   | DomainDirectiveRecord
   | DomainToolRecord
+  | DomainUserInputRecord
   | DomainTokenRecord
   | DomainInternalEventRecord;
 

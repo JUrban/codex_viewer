@@ -105,6 +105,56 @@ export interface ToolOutputItem extends ToolItemBase {
 
 export type ToolItem = ToolCallItem | ToolOutputItem;
 
+export interface UserInputOption {
+  label: string;
+  description: string;
+}
+
+export interface UserInputQuestion {
+  id: string;
+  header: string;
+  question: string;
+  options: UserInputOption[];
+}
+
+export interface UserInputAnswer {
+  questionId: string;
+  answers: string[];
+}
+
+interface UserInputItemBase extends TimelineItemBase {
+  kind: "user_input";
+  callId: string;
+}
+
+export interface UserInputRequestItem extends UserInputItemBase {
+  stage: "request";
+  questions: UserInputQuestion[];
+}
+
+export interface AnsweredUserInputItem extends UserInputItemBase {
+  stage: "response";
+  outcome: "answered";
+  answers: UserInputAnswer[];
+}
+
+export interface AbortedUserInputItem extends UserInputItemBase {
+  stage: "response";
+  outcome: "aborted";
+}
+
+export interface UnavailableUserInputItem extends UserInputItemBase {
+  stage: "response";
+  outcome: "unavailable";
+  summary: string;
+}
+
+export type UserInputItem =
+  | UserInputRequestItem
+  | AnsweredUserInputItem
+  | AbortedUserInputItem
+  | UnavailableUserInputItem;
+
 export interface TokenUsageCounters {
   totalTokens: number | null;
   inputTokens: number | null;
@@ -132,5 +182,6 @@ export type TimelineItem =
   | MessageItem
   | DirectiveItem
   | ToolItem
+  | UserInputItem
   | TokenItem
   | InternalEventItem;

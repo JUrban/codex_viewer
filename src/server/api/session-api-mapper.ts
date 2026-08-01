@@ -123,6 +123,26 @@ export class SessionApiMapper {
   }
 
   timelineItem(item: DomainTimelineRecord): TimelineItem {
+    if (item.kind === "user_input") {
+      if (item.stage === "request") {
+        return {
+          ...item,
+          questions: item.questions.map((question) => ({
+            ...question,
+            options: question.options.map((option) => ({ ...option })),
+          })),
+        };
+      }
+      return item.outcome === "answered"
+        ? {
+            ...item,
+            answers: item.answers.map((answer) => ({
+              ...answer,
+              answers: [...answer.answers],
+            })),
+          }
+        : { ...item };
+    }
     if (item.kind !== "token") return { ...item };
     return {
       ...item,

@@ -66,6 +66,26 @@ describe("timeline visibility", () => {
       "message-4",
     ]);
   });
+
+  it("always shows user input records without a technical-event toggle", () => {
+    const hiddenTechnicalEvents: TimelineVisibility = {
+      directive: false,
+      tools: false,
+      token: false,
+      internal: false,
+    };
+    const item: TimelineItem = {
+      kind: "user_input",
+      stage: "request",
+      id: "user-input-1",
+      ordinal: 1,
+      timestamp: null,
+      callId: "call-1",
+      questions: [],
+    };
+
+    expect(filterVisibleTimelineItems([item], hiddenTechnicalEvents)).toEqual([item]);
+  });
 });
 
 function directive(ordinal: number, text: string): TimelineItem {

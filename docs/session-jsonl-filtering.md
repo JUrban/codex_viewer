@@ -45,14 +45,18 @@ timeline items. Keep it synchronized with `rollout-decoder.ts`,
 - Recognized tool calls and outputs become separate append-stable tool items.
   An output links directly to its preceding call by `call_id` during the same
   forward scan.
+- A `request_user_input` function call and its recognized output become separate
+  append-stable `user_input` items linked by `call_id`. Requests retain their
+  questions and options. Outputs retain exact answers, an aborted outcome, or a
+  safe unavailable fallback when their shape is not recognized.
 - Other typed records become safe `internal` summaries. A record without a
   usable type becomes a diagnostic.
 
 ## Client visibility
 
 Timeline pages include every normalized item kind. The client always displays
-user and assistant messages, then independently filters `directive`, `tool`,
-`token`, and `internal` items. Those four technical
+user and assistant messages and `user_input` items, then independently filters
+`directive`, `tool`, `token`, and `internal` items. Those four technical
 event kinds are hidden by default and can be enabled without reloading the
 timeline. Directives up to 500 characters are shown inline as literal
 plain-text blocks; longer directives retain their lazy detail control. An
@@ -63,6 +67,12 @@ the matching neighborhood. Enabled kinds are stored in the page URL
 as one comma-separated `show` parameter. The session list uses an explicit
 `active | archived | all` archive scope. Active is the default; non-default
 scopes are stored in the page URL as `archiveScope`.
+
+Loaded `user_input` request and response items are projected into one card by
+`call_id`. The request is shown as waiting until its output is loaded; the same
+card then displays exact selected answers or an aborted state while retaining
+the original options. This projection does not rewrite the server timeline or
+its cursor prefix.
 
 ## Truncation and paging
 

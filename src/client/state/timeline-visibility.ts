@@ -22,6 +22,7 @@ export function isTimelineItemVisible(
 ): boolean {
   switch (item.kind) {
     case "message":
+    case "user_input":
       return true;
     case "directive":
       return visibility.directive;

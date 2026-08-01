@@ -33,6 +33,10 @@ import {
   type AccumulatedTool,
   ToolAccumulator,
 } from "./tool-accumulator.js";
+import {
+  type AccumulatedUserInput,
+  UserInputAccumulator,
+} from "./user-input-accumulator.js";
 
 export interface SessionNormalizer {
   normalize(
@@ -54,8 +58,17 @@ export class DefaultSessionNormalizer implements SessionNormalizer {
     const directiveDetails = new Map<string, DomainDirectiveDetail>();
     const toolDetails = new Map<string, DomainToolDetail>();
     const tools = new ToolAccumulator();
+    const userInputs = new UserInputAccumulator();
     for (const record of decoded.records) {
-      consumeRecord(record, items, directiveDetails, toolDetails, tools, diagnostics);
+      consumeRecord(
+        record,
+        items,
+        directiveDetails,
+        toolDetails,
+        tools,
+        userInputs,
+        diagnostics,
+      );
     }
 
     const firstMessage = items.find(
@@ -115,6 +128,7 @@ function consumeRecord(
   directiveDetails: Map<string, DomainDirectiveDetail>,
   toolDetails: Map<string, DomainToolDetail>,
   tools: ToolAccumulator,
+  userInputs: UserInputAccumulator,
   diagnostics: DomainDiagnostic[],
 ): void {
   const timestamp = string(record.value.timestamp);
@@ -126,6 +140,8 @@ function consumeRecord(
       directiveDetails,
       toolDetails,
       tools,
+      userInputs,
+      diagnostics,
     );
     return;
   }
@@ -168,6 +184,8 @@ function consumeParsedResponse(
   directiveDetails: Map<string, DomainDirectiveDetail>,
   toolDetails: Map<string, DomainToolDetail>,
   tools: ToolAccumulator,
+  userInputs: UserInputAccumulator,
+  diagnostics: DomainDiagnostic[],
 ): void {
   switch (parsed.kind) {
     case "directive":
@@ -183,10 +201,33 @@ function consumeParsedResponse(
       addTool(tools.addCall(parsed.value), items, toolDetails);
       break;
     case "tool_output":
-      addTool(tools.addOutput(parsed.value), items, toolDetails);
+      if (userInputs.hasRequest(parsed.value.callId)) {
+        addUserInput(userInputs.addResponse(parsed.value), items, diagnostics);
+      } else {
+        addTool(tools.addOutput(parsed.value), items, toolDetails);
+      }
+      break;
+    case "user_input_request":
+      addUserInput(userInputs.addRequest(parsed.value), items, diagnostics);
       break;
     case "ignored":
       break;
+  }
+}
+
+function addUserInput(
+  accumulated: AccumulatedUserInput,
+  items: DomainTimelineRecord[],
+  diagnostics: DomainDiagnostic[],
+): void {
+  items.push(accumulated.item);
+  if (accumulated.malformed) {
+    appendDiagnostic(diagnostics, {
+      code: "invalid_user_input",
+      severity: "warning",
+      message: "A request_user_input call or output had an unsupported payload shape.",
+      ordinal: accumulated.item.ordinal,
+    });
   }
 }
 

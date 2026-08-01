@@ -9,12 +9,17 @@ import {
 } from "./message-normalizer.js";
 import { isObject } from "./rollout-decoder.js";
 import type { ToolCall, ToolOutput } from "./tool-accumulator.js";
+import {
+  parseUserInputQuestions,
+  type UserInputRequest,
+} from "./user-input-accumulator.js";
 
 export type ParsedResponseItem =
   | { readonly kind: "directive"; readonly value: ParsedDirective }
   | { readonly kind: "timeline"; readonly value: DomainTimelineRecord }
   | { readonly kind: "tool_call"; readonly value: ToolCall }
   | { readonly kind: "tool_output"; readonly value: ToolOutput }
+  | { readonly kind: "user_input_request"; readonly value: UserInputRequest }
   | { readonly kind: "ignored" };
 
 export function parseResponseItem(
@@ -35,6 +40,8 @@ export function parseResponseItem(
       value: reasoningInternalItem(ordinal, timestamp, payload.summary),
     };
   }
+  const userInput = userInputRequest(ordinal, timestamp, payload);
+  if (userInput !== null) return { kind: "user_input_request", value: userInput };
   const call = toolCall(ordinal, timestamp, payload);
   if (call !== null) return { kind: "tool_call", value: call };
   const output = toolOutput(ordinal, timestamp, payload);
@@ -42,6 +49,24 @@ export function parseResponseItem(
   return {
     kind: "timeline",
     value: internalItem(ordinal, timestamp, type ?? "response_item"),
+  };
+}
+
+function userInputRequest(
+  ordinal: number,
+  timestamp: string | null,
+  payload: Record<string, unknown>,
+): UserInputRequest | null {
+  if (payload.type !== "function_call" || payload.name !== "request_user_input") return null;
+  const callId = string(payload.call_id);
+  if (callId === null) return null;
+  const questions = parseUserInputQuestions(payload.arguments);
+  return {
+    callId,
+    ordinal,
+    timestamp,
+    questions: questions ?? [],
+    malformed: questions === null,
   };
 }
 

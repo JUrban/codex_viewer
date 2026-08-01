@@ -261,6 +261,33 @@ function writeTimelineItem(
         },
       );
       return;
+    case "user_input":
+      writer.string("stage", item.stage);
+      writer.string("callId", item.callId);
+      if (item.stage === "request") {
+        writer.array("questions", item.questions, (entry, question) => {
+          entry.string("id", question.id);
+          entry.string("header", question.header);
+          entry.string("question", question.question);
+          entry.array("options", question.options, (optionEntry, option) => {
+            optionEntry.string("label", option.label);
+            optionEntry.string("description", option.description);
+          });
+        });
+        return;
+      }
+      writer.string("outcome", item.outcome);
+      if (item.outcome === "answered") {
+        writer.array("answers", item.answers, (entry, answer) => {
+          entry.string("questionId", answer.questionId);
+          entry.array("answers", answer.answers, (answerEntry, value) => {
+            answerEntry.valueString(value);
+          });
+        });
+      } else if (item.outcome === "unavailable") {
+        writer.string("summary", item.summary);
+      }
+      return;
     case "token":
       writer.nullableObject("tokenUsage.total", item.tokenUsage.total, writeTokenCounters);
       writer.nullableObject("tokenUsage.last", item.tokenUsage.last, writeTokenCounters);
