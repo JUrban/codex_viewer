@@ -1,4 +1,4 @@
-import { cp, mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { appendFile, cp, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
@@ -195,6 +195,107 @@ describe("DefaultSessionRepository", () => {
     })).rejects.toMatchObject<Partial<RepositoryQueryError>>({
       code: "stale_timeline_prefix",
     });
+  });
+
+  it("keeps a loaded call prefix stable when an output is appended", async () => {
+    const home = await createTempDirectory("codex-tool-append-");
+    const directory = join(home, "sessions");
+    await mkdir(directory, { recursive: true });
+    const rollout = join(directory, "rollout-tool-append.jsonl");
+    await writeFile(
+      rollout,
+      '{"timestamp":"2026-07-28T10:00:00Z","type":"session_meta","payload":{"id":"tool-append","title":"Tool append"}}\n' +
+      '{"timestamp":"2026-07-28T10:00:01Z","type":"response_item","payload":{"type":"function_call","name":"inspect","arguments":"input","call_id":"stable-call"}}\n',
+    );
+    const repository = await createCodexSessionRepository(home);
+    const listed = await repository.list({});
+    const sessionId = listed.sessions[0]!.session.id;
+    const initial = await repository.getSession(sessionId);
+    const callPage = await repository.getItems(sessionId, {
+      cursor: initial!.context.cursor,
+      limit: 1,
+    });
+    const call = callPage!.items[0]!;
+    expect(call).toMatchObject({
+      kind: "tool",
+      stage: "call",
+      callId: "stable-call",
+    });
+    const callDetailBefore = await repository.getToolDetail(sessionId, call.id, {
+      cursor: callPage!.context.cursor,
+    });
+
+    await appendFile(
+      rollout,
+      '{"timestamp":"2026-07-28T10:00:02Z","type":"response_item","payload":{"type":"function_call_output","call_id":"stable-call","output":"result"}}\n',
+    );
+    await repository.refresh();
+
+    const continuation = await repository.getItems(sessionId, {
+      cursor: callPage!.context.cursor,
+      limit: 1,
+    });
+    expect(continuation!.items).toEqual([
+      expect.objectContaining({
+        kind: "tool",
+        stage: "output",
+        callId: "stable-call",
+        status: "completed",
+        preview: "result",
+      }),
+    ]);
+    expect(continuation!.context.session).toMatchObject({
+      toolCount: 1,
+      itemCount: 2,
+    });
+    const callDetailAfter = await repository.getToolDetail(sessionId, call.id, {
+      cursor: callPage!.context.cursor,
+    });
+    expect({
+      input: callDetailAfter!.input,
+      output: callDetailAfter!.output,
+      truncated: callDetailAfter!.truncated,
+    }).toEqual({
+      input: callDetailBefore!.input,
+      output: callDetailBefore!.output,
+      truncated: callDetailBefore!.truncated,
+    });
+    expect(callDetailAfter).toMatchObject({
+      input: "input",
+      output: null,
+      truncated: false,
+    });
+  });
+
+  it("does not revise a session until an appended JSONL tail is terminated", async () => {
+    const home = await createTempDirectory("codex-silent-tail-");
+    const directory = join(home, "sessions");
+    await mkdir(directory, { recursive: true });
+    const rollout = join(directory, "rollout-silent-tail.jsonl");
+    await writeFile(
+      rollout,
+      '{"timestamp":"2026-07-28T10:00:00Z","type":"session_meta","payload":{"id":"silent-tail","title":"Silent tail"}}\n',
+    );
+    const repository = await createCodexSessionRepository(home);
+    const sessionId = (await repository.list({})).sessions[0]!.session.id;
+    const before = await repository.getSession(sessionId);
+
+    await appendFile(
+      rollout,
+      '{"timestamp":"2026-07-28T10:00:01Z","type":"response_item","payload":{"type":"function_call","name":"pending","arguments":"input","call_id":"tail-call"}}',
+    );
+    await repository.refresh();
+    const pending = await repository.getSession(sessionId);
+    expect(pending!.context.cursor.sessionRevision)
+      .toBe(before!.context.cursor.sessionRevision);
+    expect(pending!.context.session).toEqual(before!.context.session);
+
+    await appendFile(rollout, "\n");
+    await repository.refresh();
+    const committed = await repository.getSession(sessionId);
+    expect(committed!.context.cursor.sessionRevision)
+      .not.toBe(before!.context.cursor.sessionRevision);
+    expect(committed!.context.session).toMatchObject({ toolCount: 1, itemCount: 1 });
   });
 
   it("keeps session A reader requests valid while only session B changes", async () => {
@@ -615,7 +716,9 @@ function normalizedSession(
       childIds: [],
       agent: null,
       messageCount: timeline.filter((item) => item.kind === "message").length,
-      toolCount: timeline.filter((item) => item.kind === "tool").length,
+      toolCount: timeline.filter(
+        (item) => item.kind === "tool" && item.stage === "call",
+      ).length,
       warningCount: 0,
       diagnostics: [],
       itemCount: timeline.length,

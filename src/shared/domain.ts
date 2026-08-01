@@ -74,14 +74,25 @@ export interface DirectiveItem extends TimelineItemBase {
   hasDetail: true;
 }
 
-export interface ToolItem extends TimelineItemBase {
+interface ToolItemBase extends TimelineItemBase {
   kind: "tool";
+  callId: string;
   toolName: string;
-  status: "pending" | "completed" | "failed";
   preview: string | null;
   truncated: boolean;
   hasDetail: boolean;
 }
+
+export interface ToolCallItem extends ToolItemBase {
+  stage: "call";
+}
+
+export interface ToolOutputItem extends ToolItemBase {
+  stage: "output";
+  status: "completed" | "failed";
+}
+
+export type ToolItem = ToolCallItem | ToolOutputItem;
 
 export interface TokenUsageCounters {
   totalTokens: number | null;

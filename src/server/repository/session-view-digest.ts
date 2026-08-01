@@ -239,8 +239,10 @@ function writeTimelineItem(
       );
       return;
     case "tool":
+      writer.string("stage", item.stage);
+      writer.string("callId", item.callId);
       writer.string("toolName", item.toolName);
-      writer.string("status", item.status);
+      if (item.stage === "output") writer.string("status", item.status);
       writer.nullableString("preview", item.preview);
       writer.boolean("truncated", item.truncated);
       writer.boolean("hasDetail", item.hasDetail);

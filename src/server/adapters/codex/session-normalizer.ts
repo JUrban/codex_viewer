@@ -46,14 +46,6 @@ export class DefaultSessionNormalizer implements SessionNormalizer {
     origin: DomainSessionOrigin = DEFAULT_SESSION_ORIGIN,
   ): NormalizedSession {
     const diagnostics = decoded.diagnostics.slice(0, MAX_SESSION_DIAGNOSTICS);
-    if (decoded.incompleteTail) {
-      appendDiagnostic(diagnostics, {
-        code: "incomplete_tail",
-        severity: "info",
-        message: "The final unterminated rollout fragment is pending and was not decoded.",
-        ordinal: null,
-      });
-    }
 
     const responseMessages: MessageCandidate[] = [];
     const eventMessages: MessageCandidate[] = [];
@@ -74,7 +66,9 @@ export class DefaultSessionNormalizer implements SessionNormalizer {
       (item): item is DomainMessageRecord => item.kind === "message",
     );
     const messageCount = items.filter((item) => item.kind === "message").length;
-    const toolCount = accumulatedTools.length;
+    const toolCount = accumulatedTools.filter(
+      (tool) => tool.item.stage === "call",
+    ).length;
     const warningCount = diagnostics.filter(
       (diagnostic) => diagnostic.severity !== "info",
     ).length;

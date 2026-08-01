@@ -279,6 +279,8 @@
   border: 1px solid var(--current); cursor: pointer;
 }
 .tool-detail { margin-top: .8rem; }
+.tool-call-id { color: var(--ink-soft); font-size: .72rem; }
+.tool-call-id code { font-family: var(--mono-font); overflow-wrap: anywhere; }
 .tool-detail h4, .token-usage h4 {
   font-family: var(--mono-font); font-size: .72rem; text-transform: uppercase;
 }

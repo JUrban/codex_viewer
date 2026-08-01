@@ -65,14 +65,25 @@ export interface DomainDirectiveRecord extends DomainTimelineRecordBase {
   readonly hasDetail: true;
 }
 
-export interface DomainToolRecord extends DomainTimelineRecordBase {
+interface DomainToolRecordBase extends DomainTimelineRecordBase {
   readonly kind: "tool";
+  readonly callId: string;
   readonly toolName: string;
-  readonly status: "pending" | "completed" | "failed";
   readonly preview: string | null;
   readonly truncated: boolean;
   readonly hasDetail: boolean;
 }
+
+export interface DomainToolCallRecord extends DomainToolRecordBase {
+  readonly stage: "call";
+}
+
+export interface DomainToolOutputRecord extends DomainToolRecordBase {
+  readonly stage: "output";
+  readonly status: "completed" | "failed";
+}
+
+export type DomainToolRecord = DomainToolCallRecord | DomainToolOutputRecord;
 
 export interface DomainTokenUsageCounters {
   readonly totalTokens: number | null;

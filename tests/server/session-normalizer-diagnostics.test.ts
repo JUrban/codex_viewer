@@ -7,13 +7,12 @@ import {
 } from "./session-normalizer.fixtures.js";
 
 describe("session normalizer diagnostics", () => {
-  it("does not append tail or unknown-record diagnostics after the decoder reaches the limit", () => {
+  it("does not append unknown-record diagnostics after the decoder reaches the limit", () => {
     const decoded = decodedRollout("full-diagnostics", [{
       ordinal: 51,
       value: {},
     }]);
     decoded.diagnostics = diagnostics(50);
-    decoded.incompleteTail = true;
 
     const normalized = new DefaultSessionNormalizer().normalize(
       decoded,
@@ -22,9 +21,6 @@ describe("session normalizer diagnostics", () => {
 
     expect(normalized.session.diagnostics).toEqual(decoded.diagnostics);
     expect(normalized.session.warningCount).toBe(50);
-    expect(normalized.session.diagnostics).not.toContainEqual(
-      expect.objectContaining({ code: "incomplete_tail" }),
-    );
     expect(normalized.session.diagnostics).not.toContainEqual(
       expect.objectContaining({ code: "unknown_record" }),
     );
@@ -51,7 +47,6 @@ describe("session normalizer diagnostics", () => {
       value: {},
     }]);
     decoded.diagnostics = diagnostics(1);
-    decoded.incompleteTail = true;
 
     const normalized = new DefaultSessionNormalizer().normalize(
       decoded,
@@ -60,11 +55,6 @@ describe("session normalizer diagnostics", () => {
 
     expect(normalized.session.diagnostics).toEqual([
       decoded.diagnostics[0],
-      expect.objectContaining({
-        code: "incomplete_tail",
-        severity: "info",
-        ordinal: null,
-      }),
       expect.objectContaining({
         code: "unknown_record",
         severity: "info",

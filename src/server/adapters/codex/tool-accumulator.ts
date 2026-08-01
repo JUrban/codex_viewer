@@ -18,6 +18,8 @@ export interface ToolCall {
 
 export interface ToolOutput {
   callId: string;
+  ordinal: number;
+  timestamp: string | null;
   output: string | null;
   failed: boolean;
 }
@@ -28,48 +30,75 @@ export interface AccumulatedTool {
 }
 
 export class ToolAccumulator {
-  readonly #calls: ToolCall[] = [];
-  readonly #outputs = new Map<string, ToolOutput>();
+  readonly #items: AccumulatedTool[] = [];
+  readonly #latestCalls = new Map<string, ToolCall>();
 
   addCall(call: ToolCall): void {
-    this.#calls.push(call);
+    this.#latestCalls.set(call.callId, call);
+    const input = truncateNullable(call.input);
+    const preview = previewText(call.input);
+    const detailTruncated = input.truncated;
+    const itemTruncated = detailTruncated || preview.truncated;
+    this.#items.push({
+      item: {
+        kind: "tool",
+        stage: "call",
+        id: `tool-${call.ordinal}`,
+        ordinal: call.ordinal,
+        timestamp: call.timestamp,
+        callId: call.callId,
+        toolName: call.toolName,
+        preview: preview.text,
+        truncated: itemTruncated,
+        hasDetail: call.input !== null,
+      },
+      detail: { input: input.text, output: null, truncated: detailTruncated },
+    });
   }
 
   addOutput(output: ToolOutput): void {
-    this.#outputs.set(output.callId, output);
+    const call = this.#latestCalls.get(output.callId);
+    const input = truncateNullable(call?.input ?? null);
+    const result = truncateNullable(output.output);
+    const preview = previewText(
+      output.output !== null && output.output.length > 0
+        ? output.output
+        : call?.input ?? null,
+    );
+    const detailTruncated = input.truncated || result.truncated;
+    const itemTruncated = detailTruncated || preview.truncated;
+    this.#items.push({
+      item: {
+        kind: "tool",
+        stage: "output",
+        id: `tool-${output.ordinal}`,
+        ordinal: output.ordinal,
+        timestamp: output.timestamp,
+        callId: output.callId,
+        toolName: call?.toolName ?? "unknown tool",
+        status: output.failed ? "failed" : "completed",
+        preview: preview.text,
+        truncated: itemTruncated,
+        hasDetail: (call?.input !== null && call?.input !== undefined) ||
+          output.output !== null,
+      },
+      detail: {
+        input: input.text,
+        output: result.text,
+        truncated: detailTruncated,
+      },
+    });
   }
 
   finish(): AccumulatedTool[] {
-    return this.#calls.map((call) => {
-      const output = this.#outputs.get(call.callId);
-      const input = truncateNullable(call.input);
-      const result = truncateNullable(output?.output ?? null);
-      const previewSource = output?.output ?? call.input;
-      const preview = previewSource === null
-        ? { text: null, truncated: false }
-        : truncateText(previewSource, MAX_PREVIEW_CHARS);
-      const truncated = input.truncated || result.truncated || preview.truncated;
-      return {
-        item: {
-          kind: "tool",
-          id: `tool-${call.ordinal}`,
-          ordinal: call.ordinal,
-          timestamp: call.timestamp,
-          toolName: call.toolName,
-          status: toolStatus(output),
-          preview: preview.text,
-          truncated,
-          hasDetail: call.input !== null || output?.output != null,
-        },
-        detail: { input: input.text, output: result.text, truncated },
-      };
-    });
+    return this.#items;
   }
 }
 
-function toolStatus(output: ToolOutput | undefined): ToolItem["status"] {
-  if (output === undefined) return "pending";
-  return output.failed ? "failed" : "completed";
+function previewText(value: string | null): { text: string | null; truncated: boolean } {
+  return value === null
+    ? { text: null, truncated: false }
+    : truncateText(value, MAX_PREVIEW_CHARS);
 }
 
 function truncateNullable(value: string | null): { text: string | null; truncated: boolean } {

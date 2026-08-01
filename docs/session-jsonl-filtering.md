@@ -12,7 +12,7 @@ timeline items. Keep it synchronized with `rollout-decoder.ts`,
   diagnostic.
 - Lines larger than 8 MiB are skipped with a diagnostic.
 - A final line without a newline is treated as an incomplete live-write
-  fragment and is not decoded until it is terminated.
+  fragment and is not decoded or reported until it is terminated.
 - Codex session diagnostics retain only the first 50 entries in production
   order. Additional diagnostics are silently discarded.
 
@@ -44,8 +44,9 @@ timeline items. Keep it synchronized with `rollout-decoder.ts`,
   `reasoning`. A supported non-blank summary is retained as bounded plain text;
   otherwise the item uses the safe `Internal event: reasoning` placeholder.
   Encrypted reasoning content is never retained.
-- Recognized tool calls become tool items. Outputs are attached by `call_id`;
-  an output without a corresponding call does not become a timeline item.
+- Recognized tool calls and outputs become separate append-stable tool items.
+  Outputs link to the nearest preceding call with the same `call_id`; orphan
+  outputs remain visible as `unknown tool` items and are never backfilled.
 - Other typed records become safe `internal` summaries. A record without a
   usable type becomes a diagnostic.
 

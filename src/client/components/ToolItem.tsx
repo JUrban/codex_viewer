@@ -40,8 +40,13 @@ export function ToolItem({
 
   return (
     <article className="tool-body">
-      <p className="event-label">Tool · {item.ordinal} · {item.status}</p>
+      <p className="event-label">
+        {item.stage === "call"
+          ? `Tool call · ${item.ordinal}`
+          : `Tool output · ${item.status} · ${item.ordinal}`}
+      </p>
       <p><strong>{item.toolName}</strong>{item.preview ? ` — ${item.preview}` : ""}</p>
+      <p className="tool-call-id">Call ID · <code>{item.callId}</code></p>
       {item.hasDetail
         ? (
             <button type="button" aria-expanded={open} onClick={() => setOpen((value) => !value)}>
@@ -58,8 +63,10 @@ export function ToolItem({
                 ? (
                     <>
                       {detail.input !== null ? <><h4>Input</h4><pre>{detail.input}</pre></> : null}
-                      {detail.output !== null ? <><h4>Output</h4><pre>{detail.output}</pre></> : null}
-                      {detail.truncated || item.truncated
+                      {item.stage === "output" && detail.output !== null
+                        ? <><h4>Output</h4><pre>{detail.output}</pre></>
+                        : null}
+                      {detail.truncated
                         ? <p className="truncated">Detail was truncated for safe display.</p>
                         : null}
                     </>

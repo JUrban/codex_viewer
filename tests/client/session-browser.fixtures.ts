@@ -78,7 +78,8 @@ export const detailBody = {
 };
 
 export const toolItem: Tool = {
-  kind: "tool", id: "tool-2", ordinal: 2, timestamp: null, toolName: "exec",
+  kind: "tool", stage: "output", id: "tool-2", ordinal: 2, timestamp: null,
+  callId: "call-reader", toolName: "exec",
   status: "completed", preview: "inspect", truncated: false, hasDetail: true,
 };
 

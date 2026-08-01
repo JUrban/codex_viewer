@@ -161,7 +161,26 @@ describe("versioned session API", () => {
       kind: "directive",
       summary: "DEVELOPER_DIRECTIVE_CANARY",
     }));
-    const tool = allItems.items.find((item: { kind: string }) => item.kind === "tool");
+    const tool = allItems.items.find(
+      (item: { kind: string; stage?: string }) =>
+        item.kind === "tool" && item.stage === "output",
+    );
+    const toolCall = allItems.items.find(
+      (item: { kind: string; stage?: string }) =>
+        item.kind === "tool" && item.stage === "call",
+    );
+    expect(toolCall).toEqual(expect.objectContaining({
+      callId: "call-complete",
+      stage: "call",
+      toolName: "inspect_widget",
+    }));
+    expect(toolCall).not.toHaveProperty("status");
+    expect(tool).toEqual(expect.objectContaining({
+      callId: "call-complete",
+      stage: "output",
+      status: "completed",
+      toolName: "inspect_widget",
+    }));
     const missingRevision = await fetch(
       `${base}/api/v1/sessions/${basic.session.id}/items/${tool.id}/tool`,
     );

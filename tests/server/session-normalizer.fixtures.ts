@@ -43,7 +43,6 @@ export function decodedRollout(id: string, records: DecodedRecord[]): DecodedRol
       mtimeMs: 1,
     },
     diagnostics: [],
-    incompleteTail: false,
     records,
   };
 }

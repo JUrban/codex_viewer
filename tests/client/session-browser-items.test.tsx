@@ -35,6 +35,79 @@ afterEach(() => {
 });
 
 describe("session timeline interactions", () => {
+  it("labels tool stages, exposes call IDs, and renders stage-specific detail", async () => {
+    const call = {
+      kind: "tool" as const,
+      stage: "call" as const,
+      id: "tool-10",
+      ordinal: 10,
+      timestamp: null,
+      callId: "visible-call-id",
+      toolName: "inspect",
+      preview: "input preview",
+      truncated: true,
+      hasDetail: true,
+    };
+    const orphan = {
+      kind: "tool" as const,
+      stage: "output" as const,
+      id: "tool-11",
+      ordinal: 11,
+      timestamp: null,
+      callId: "orphan-call-id",
+      toolName: "unknown tool",
+      status: "failed" as const,
+      preview: "failure",
+      truncated: false,
+      hasDetail: true,
+    };
+    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => {
+      const isCall = String(input).includes("tool-10");
+      return Promise.resolve(json({
+        context: readContext(),
+        sessionId: SESSION_ID,
+        itemId: isCall ? call.id : orphan.id,
+        input: isCall ? "full input" : null,
+        output: isCall ? null : "full output",
+        truncated: false,
+      }));
+    }));
+    render(
+      <>
+        <ToolItem
+          item={call}
+          sessionId={SESSION_ID}
+          cursor={firstPage.context.cursor}
+          onContext={vi.fn()}
+          onConflict={vi.fn()}
+        />
+        <ToolItem
+          item={orphan}
+          sessionId={SESSION_ID}
+          cursor={firstPage.context.cursor}
+          onContext={vi.fn()}
+          onConflict={vi.fn()}
+        />
+      </>,
+    );
+
+    expect(screen.getByText("Tool call · 10")).toBeInTheDocument();
+    expect(screen.getByText("Tool output · failed · 11")).toBeInTheDocument();
+    expect(screen.getByText("visible-call-id")).toBeInTheDocument();
+    expect(screen.getByText("orphan-call-id")).toBeInTheDocument();
+    expect(screen.getByText("unknown tool")).toBeInTheDocument();
+
+    const buttons = screen.getAllByRole("button", { name: "Show tool detail" });
+    fireEvent.click(buttons[0]!);
+    expect(await screen.findByText("full input")).toBeInTheDocument();
+    expect(screen.getAllByRole("heading", { name: "Input" })).toHaveLength(1);
+    expect(screen.queryByRole("heading", { name: "Output" })).toBeNull();
+    expect(screen.queryByText("Detail was truncated for safe display.")).toBeNull();
+    fireEvent.click(buttons[1]!);
+    expect(await screen.findByText("full output")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Output" })).toBeInTheDocument();
+  });
+
   it("opens an initially selected session under React StrictMode", async () => {
     window.history.replaceState(null, "", `/?session=${SESSION_ID}`);
     const fetchMock = vi.fn((input: RequestInfo | URL) => {

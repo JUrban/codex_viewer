@@ -16,7 +16,6 @@ export interface DecodedRollout {
   descriptor: RolloutDescriptor;
   records: DecodedRecord[];
   diagnostics: Diagnostic[];
-  incompleteTail: boolean;
 }
 
 export interface RolloutDecoder {
@@ -38,6 +37,7 @@ export class WholeFileRolloutDecoder implements RolloutDecoder {
         const newline = text.indexOf("\n");
         if (newline < 0) continue;
         ordinal += 1;
+        appendDiagnostic(diagnostics, lineTooLargeDiagnostic(ordinal));
         droppingOversizedLine = false;
         text = text.slice(newline + 1);
       }
@@ -51,18 +51,17 @@ export class WholeFileRolloutDecoder implements RolloutDecoder {
         newline = buffered.indexOf("\n");
       }
       if (Buffer.byteLength(buffered, "utf8") > MAX_JSONL_LINE_BYTES) {
-        appendDiagnostic(diagnostics, lineTooLargeDiagnostic(ordinal + 1));
         buffered = "";
         droppingOversizedLine = true;
       }
     }
-    const finalText = decoder.end();
-    if (!droppingOversizedLine) buffered += finalText;
+    // Flush the decoder without consuming the final fragment: JSONL records are
+    // committed only by a physical newline, including oversized records.
+    decoder.end();
     return {
       descriptor,
       records,
       diagnostics,
-      incompleteTail: buffered.length > 0,
     };
   }
 }

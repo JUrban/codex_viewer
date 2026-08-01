@@ -37,7 +37,7 @@ export function parseResponseItem(
   }
   const call = toolCall(ordinal, timestamp, payload);
   if (call !== null) return { kind: "tool_call", value: call };
-  const output = toolOutput(payload);
+  const output = toolOutput(ordinal, timestamp, payload);
   if (output !== null) return { kind: "tool_output", value: output };
   return {
     kind: "timeline",
@@ -63,13 +63,19 @@ function toolCall(
   };
 }
 
-function toolOutput(payload: Record<string, unknown>): ToolOutput | null {
+function toolOutput(
+  ordinal: number,
+  timestamp: string | null,
+  payload: Record<string, unknown>,
+): ToolOutput | null {
   const type = string(payload.type);
   if (type !== "function_call_output" && type !== "custom_tool_call_output") return null;
   const callId = string(payload.call_id);
   if (callId === null) return null;
   return {
     callId,
+    ordinal,
+    timestamp,
     output: toolOutputText(payload.output),
     failed: payload.success === false || payload.status === "failed",
   };

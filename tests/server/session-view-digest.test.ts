@@ -333,9 +333,11 @@ function view(): MutableView {
       },
       {
         kind: "tool",
+        stage: "output",
         id: "tool-3",
         ordinal: 3,
         timestamp: null,
+        callId: "call-3",
         toolName: "exec",
         status: "completed",
         preview: "preview",
