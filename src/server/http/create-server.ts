@@ -60,16 +60,17 @@ export function createServer(config: ServerConfig, apiRouter: ApiRouter = emptyA
       }
       const url = new URL(request.url ?? "/", "http://localhost");
       const decodedPath = decodeURIComponent(url.pathname);
-      const relativePath = decodedPath === "/" ? "index.html" : decodedPath.slice(1);
+      const sessionPage = /^\/sessions\/[A-Za-z0-9_-]{20,100}\/?$/.test(decodedPath);
+      const relativePath = decodedPath === "/"
+        ? "index.html"
+        : sessionPage
+        ? "session.html"
+        : decodedPath.slice(1);
       const requestedPath = resolve(config.clientDirectory, relativePath);
       const rootPrefix = `${resolve(config.clientDirectory)}${sep}`;
 
       if (requestedPath.startsWith(rootPrefix) && (await serveFile(response, requestedPath, headOnly))) {
         return;
-      }
-      if (!url.pathname.startsWith("/api/")) {
-        const indexPath = resolve(config.clientDirectory, "index.html");
-        if (await serveFile(response, indexPath, headOnly)) return;
       }
       sendText(response, 404, "Not found", headOnly);
     } catch {

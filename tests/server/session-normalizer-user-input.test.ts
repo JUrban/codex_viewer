@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { digestSessionView } from "../../src/server/repository/session-view-digest.js";
 import { normalizeRecords } from "./session-normalizer.fixtures.js";
 
 const QUESTIONS = {
@@ -102,22 +101,6 @@ describe("request_user_input normalization", () => {
     });
   });
 
-  it("includes nested questions and answers in the session digest", () => {
-    const left = normalizeRecords("user-input-digest", [
-      userInputRequest(1, "digest", QUESTIONS),
-      userInputOutput(2, "digest", JSON.stringify({
-        answers: { choice: { answers: ["First"] } },
-      })),
-    ]);
-    const right = normalizeRecords("user-input-digest", [
-      userInputRequest(1, "digest", QUESTIONS),
-      userInputOutput(2, "digest", JSON.stringify({
-        answers: { choice: { answers: ["Second"] } },
-      })),
-    ]);
-
-    expect(digestSessionView(right)).not.toBe(digestSessionView(left));
-  });
 });
 
 function userInputRequest(ordinal: number, callId: string, argumentsValue: unknown) {

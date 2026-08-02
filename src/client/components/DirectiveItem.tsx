@@ -1,8 +1,7 @@
 import { useCallback, useState } from "react";
 import type {
   DirectiveDetailResponse,
-  SessionReadContext,
-  SessionReadCursor,
+  TimelineCursor,
 } from "../../shared/api-contract";
 import type { DirectiveItem as Directive } from "../../shared/domain";
 import { api } from "../api/client";
@@ -11,8 +10,7 @@ import { useLazyDetail } from "../state/use-lazy-detail";
 interface DirectiveItemProps {
   item: Directive;
   sessionId: string;
-  cursor: SessionReadCursor;
-  onContext: (expected: SessionReadCursor, context: SessionReadContext) => void;
+  cursor: TimelineCursor;
   onConflict: () => void;
 }
 
@@ -20,7 +18,6 @@ export function DirectiveItem({
   item,
   sessionId,
   cursor,
-  onContext,
   onConflict,
 }: DirectiveItemProps) {
   if (!item.hasDetail) {
@@ -31,7 +28,6 @@ export function DirectiveItem({
       item={item}
       sessionId={sessionId}
       cursor={cursor}
-      onContext={onContext}
       onConflict={onConflict}
     />
   );
@@ -50,21 +46,19 @@ function LazyDirective({
   item,
   sessionId,
   cursor,
-  onContext,
   onConflict,
 }: DirectiveItemProps & { item: Extract<Directive, { hasDetail: true }> }) {
   const [open, setOpen] = useState(false);
   const loadDetail = useCallback(
-    (signal: AbortSignal): Promise<DirectiveDetailResponse> =>
-      api.directive(sessionId, item.id, { cursor }, signal),
-    [cursor, item.id, sessionId],
+    (requestCursor: TimelineCursor, signal: AbortSignal): Promise<DirectiveDetailResponse> =>
+      api.directive(sessionId, item.id, { cursor: requestCursor }, signal),
+    [item.id, sessionId],
   );
   const { detail, error } = useLazyDetail({
     enabled: open,
     cursor,
     load: loadDetail,
     unavailableMessage: "Directive unavailable",
-    onContext,
     onConflict,
   });
 

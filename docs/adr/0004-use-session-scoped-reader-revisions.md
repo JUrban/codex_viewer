@@ -1,9 +1,11 @@
 ---
-status: accepted
+status: superseded by ADR-0009
 date: 2026-07-30
 ---
 
 # Use session-scoped revisions for reader consistency
+
+Superseded by [ADR-0009](0009-use-opaque-single-writer-timeline-cursors.md).
 
 ## Context and Problem Statement
 

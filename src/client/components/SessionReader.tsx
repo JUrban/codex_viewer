@@ -1,8 +1,6 @@
 import { useMemo } from "react";
 import type {
   InteractionResponse,
-  SessionReadContext,
-  SessionReadCursor,
 } from "../../shared/api-contract";
 import type { TimelineItem } from "../../shared/domain";
 import {
@@ -10,7 +8,7 @@ import {
   type TimelineVisibility,
   type TimelineVisibilityKey,
 } from "../state/timeline-visibility";
-import { BackToTop } from "./BackToTop";
+import { PageJumpControls } from "./PageJumpControls";
 import { DiagnosticNotice } from "./DiagnosticNotice";
 import { EmptyState } from "./EmptyState";
 import { ErrorState } from "./ErrorState";
@@ -18,9 +16,10 @@ import { SessionHeader } from "./SessionHeader";
 import { Timeline } from "./Timeline";
 import { InteractionPanel } from "./InteractionPanel";
 import { useSessionInteraction } from "../state/use-session-interaction";
+import type { ReaderContext } from "../state/session-reader-state";
 
 interface SessionReaderProps {
-  context: SessionReadContext;
+  context: ReaderContext;
   items: TimelineItem[];
   interaction: InteractionResponse | null;
   visibility: TimelineVisibility;
@@ -32,7 +31,6 @@ interface SessionReaderProps {
   refreshIntervalSeconds: number;
   onRefreshIntervalChange: (seconds: number) => void;
   onLoadMore: () => void;
-  onContext: (expected: SessionReadCursor, context: SessionReadContext) => void;
   onConflict: () => void;
   prefixChanged: boolean;
   timelineGeneration: number;
@@ -54,7 +52,6 @@ export function SessionReader({
   refreshIntervalSeconds,
   onRefreshIntervalChange,
   onLoadMore,
-  onContext,
   onConflict,
   prefixChanged,
   timelineGeneration,
@@ -103,7 +100,6 @@ export function SessionReader({
               busy={busy}
               paginationFrozen={prefixChanged}
               onLoadMore={onLoadMore}
-              onContext={onContext}
               onConflict={onConflict}
             />
           )
@@ -135,15 +131,15 @@ export function SessionReader({
             <aside className="continuity-notice" role="alert">
               <div>
                 <strong>Session 内容已变化</strong>
-                <p>已保留当前阅读位置。刷新到最新版本会从第一页重新载入。</p>
+                <p>已保留当前阅读位置。重新载入会从第一页读取最新版本。</p>
               </div>
               <button type="button" disabled={busy} onClick={onRefreshLatest}>
-                刷新到最新版本
+                重新载入最新版本
               </button>
             </aside>
           )
         : null}
-      <BackToTop />
+      <PageJumpControls />
     </section>
   );
 }

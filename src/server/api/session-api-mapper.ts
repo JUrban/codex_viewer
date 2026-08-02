@@ -1,7 +1,6 @@
 import type {
   DirectiveDetailResponse,
   ItemPageResponse,
-  SessionReadContext,
   SessionDetailResponse,
   SessionListResponse,
   ToolDetailResponse,
@@ -20,7 +19,6 @@ import type {
 import type {
   DirectiveDetailResult,
   ItemPageResult,
-  SessionReadContextResult,
   SessionListResult,
   ToolDetailResult,
 } from "../repository/session-query-service.js";
@@ -28,40 +26,28 @@ import type {
 export class SessionApiMapper {
   list(result: SessionListResult): SessionListResponse {
     return {
-      listRevision: result.listRevision,
       sessions: result.sessions.map((entry) => ({
         session: this.summary(entry.session),
         matches: entry.matches.map((match) => ({ ...match })),
       })),
       projects: result.projects.map((facet) => ({ ...facet })),
       total: result.total,
-      nextOffset: result.nextOffset,
-      hasMore: result.hasMore,
+      nextCursor: result.nextCursor,
       partial: result.partial,
       warnings: result.warnings.map((warning) => ({ ...warning })),
     };
   }
 
-  detail(result: SessionReadContextResult): Omit<SessionDetailResponse, "interaction"> {
-    return { context: this.readContext(result) };
+  detail(result: DomainSession): Omit<SessionDetailResponse, "interaction"> {
+    return { session: this.sessionDetail(result) };
   }
 
   itemPage(result: ItemPageResult): Omit<ItemPageResponse, "interaction"> {
     return {
-      context: this.readContext(result.context),
+      session: this.sessionDetail(result.context.session),
+      cursor: result.context.cursor,
+      hasMore: result.context.hasMore,
       items: result.items.map((item) => this.timelineItem(item)),
-    };
-  }
-
-  readContext(result: SessionReadContextResult): SessionReadContext {
-    return {
-      cursor: {
-        sessionRevision: result.sessionRevision,
-        throughOrdinal: result.throughOrdinal,
-        timelinePrefixRevision: result.timelinePrefixRevision,
-      },
-      session: this.sessionDetail(result.session),
-      hasMore: result.hasMore,
     };
   }
 
@@ -71,8 +57,6 @@ export class SessionApiMapper {
     result: ToolDetailResult,
   ): ToolDetailResponse {
     return {
-      context: this.readContext(result.context),
-      sessionId,
       itemId,
       input: result.detail.input,
       output: result.detail.output,
@@ -86,8 +70,6 @@ export class SessionApiMapper {
     result: DirectiveDetailResult,
   ): DirectiveDetailResponse {
     return {
-      context: this.readContext(result.context),
-      sessionId,
       itemId,
       text: result.detail.text,
       truncated: result.detail.truncated,

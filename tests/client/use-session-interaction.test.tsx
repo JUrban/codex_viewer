@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { act, renderHook } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { api } from "../../src/client/api/client";
 import { useSessionInteraction } from "../../src/client/state/use-session-interaction";
 
@@ -14,8 +14,6 @@ function deferred() {
   });
   return { promise, resolve, reject };
 }
-
-afterEach(() => vi.restoreAllMocks());
 
 describe("session interaction state", () => {
   it("ignores completion from the session that was active before a switch", async () => {

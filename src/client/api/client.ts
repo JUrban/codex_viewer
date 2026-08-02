@@ -4,11 +4,8 @@ import type {
   DirectiveDetailResponse,
   ItemPageQuery,
   ItemPageResponse,
-  SessionDetailQuery,
-  SessionDetailResponse,
   SessionListQuery,
   SessionListResponse,
-  SessionReadCursor,
   ToolDetailQuery,
   ToolDetailResponse,
 } from "../../shared/api-contract";
@@ -79,20 +76,6 @@ function queryString(values: Record<string, string | number | boolean | undefine
   return query ? `?${query}` : "";
 }
 
-function cursorValues(cursor: SessionReadCursor | undefined) {
-  return cursor === undefined
-    ? {}
-    : {
-        sessionRevision: cursor.sessionRevision,
-        throughOrdinal: cursor.throughOrdinal,
-        timelinePrefixRevision: cursor.timelinePrefixRevision,
-      };
-}
-
-function cursorQuery(cursor: SessionReadCursor | undefined): string {
-  return queryString(cursorValues(cursor));
-}
-
 export const api = {
   sessions: (query: SessionListQuery, signal?: AbortSignal) =>
     request<SessionListResponse>(
@@ -102,26 +85,17 @@ export const api = {
         from: query.from,
         to: query.to,
         archiveScope: query.archiveScope,
-        offset: query.offset,
         limit: query.limit,
-        listRevision: query.listRevision,
+        cursor: query.cursor,
+        fresh: query.fresh,
       })}`,
-      signal,
-    ),
-  session: (
-    id: string,
-    query: SessionDetailQuery = {},
-    signal?: AbortSignal,
-  ) =>
-    request<SessionDetailResponse>(
-      `/api/v1/sessions/${encodeURIComponent(id)}${cursorQuery(query.cursor)}`,
       signal,
     ),
   items: (id: string, query: ItemPageQuery, signal?: AbortSignal) =>
     request<ItemPageResponse>(
       `/api/v1/sessions/${encodeURIComponent(id)}/items${queryString({
         limit: query.limit,
-        ...cursorValues(query.cursor),
+        cursor: query.cursor,
       })}`,
       signal,
     ),
@@ -132,7 +106,7 @@ export const api = {
     signal?: AbortSignal,
   ) =>
     request<ToolDetailResponse>(
-      `/api/v1/sessions/${encodeURIComponent(sessionId)}/items/${encodeURIComponent(itemId)}/tool${cursorQuery(query.cursor)}`,
+      `/api/v1/sessions/${encodeURIComponent(sessionId)}/items/${encodeURIComponent(itemId)}/tool${queryString({ cursor: query.cursor })}`,
       signal,
     ),
   directive: (
@@ -142,7 +116,7 @@ export const api = {
     signal?: AbortSignal,
   ) =>
     request<DirectiveDetailResponse>(
-      `/api/v1/sessions/${encodeURIComponent(sessionId)}/items/${encodeURIComponent(itemId)}/directive${cursorQuery(query.cursor)}`,
+      `/api/v1/sessions/${encodeURIComponent(sessionId)}/items/${encodeURIComponent(itemId)}/directive${queryString({ cursor: query.cursor })}`,
       signal,
     ),
   sendMessage: (sessionId: string, message: string, signal?: AbortSignal) =>

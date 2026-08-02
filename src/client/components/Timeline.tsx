@@ -1,7 +1,4 @@
-import type {
-  SessionReadContext,
-  SessionReadCursor,
-} from "../../shared/api-contract";
+import type { TimelineCursor } from "../../shared/api-contract";
 import type { TimelineItem } from "../../shared/domain";
 import type { UserInputItem as UserInputTimelineItem } from "../../shared/domain";
 import { DirectiveItem } from "./DirectiveItem";
@@ -18,13 +15,12 @@ import { TraceGutter } from "./TraceGutter";
 interface TimelineProps {
   items: TimelineItem[];
   sessionId: string;
-  cursor: SessionReadCursor;
+  cursor: TimelineCursor;
   hasMore: boolean;
   loading: boolean;
   busy?: boolean;
   paginationFrozen?: boolean;
   onLoadMore: () => void;
-  onContext: (expected: SessionReadCursor, context: SessionReadContext) => void;
   onConflict: () => void;
 }
 
@@ -37,7 +33,6 @@ export function Timeline({
   busy = loading,
   paginationFrozen = false,
   onLoadMore,
-  onContext,
   onConflict,
 }: TimelineProps) {
   const entries = projectUserInputCards(items);
@@ -54,7 +49,6 @@ export function Timeline({
               item={item}
               sessionId={sessionId}
               cursor={cursor}
-              onContext={onContext}
               onConflict={onConflict}
             />
           </li>
@@ -80,9 +74,8 @@ function TimelineContent({
   item,
   sessionId,
   cursor,
-  onContext,
   onConflict,
-}: Pick<TimelineProps, "sessionId" | "cursor" | "onContext" | "onConflict"> & {
+}: Pick<TimelineProps, "sessionId" | "cursor" | "onConflict"> & {
   item: TimelineEntry;
 }) {
   switch (item.kind) {
@@ -94,7 +87,6 @@ function TimelineContent({
           item={item}
           sessionId={sessionId}
           cursor={cursor}
-          onContext={onContext}
           onConflict={onConflict}
         />
       );
@@ -104,7 +96,6 @@ function TimelineContent({
           item={item}
           sessionId={sessionId}
           cursor={cursor}
-          onContext={onContext}
           onConflict={onConflict}
         />
       );

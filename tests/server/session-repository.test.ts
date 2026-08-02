@@ -57,7 +57,7 @@ describe("DefaultSessionRepository", () => {
     const firstList = repository.list({});
     const secondList = repository.list({});
     release();
-    expect((await firstList).listRevision).toMatch(/^[A-Za-z0-9_-]{32}$/);
+    expect((await firstList).nextCursor).toBeNull();
     expect((await secondList).sessions).toEqual([]);
     expect(discoveries).toBe(1);
     await repository.list({});
@@ -72,7 +72,7 @@ describe("DefaultSessionRepository", () => {
     expect(discoveries).toBe(3);
   });
 
-  it("keeps the list revision stable when only source diagnostics change", async () => {
+  it("keeps catalog contents stable when only source diagnostics change", async () => {
     let signature = "warning";
     let diagnostics = [{
       code: "temporary_source_warning",
@@ -100,7 +100,9 @@ describe("DefaultSessionRepository", () => {
     diagnostics = [];
     await repository.refresh();
 
-    expect((await repository.list({})).listRevision).toBe(first.listRevision);
+    const recovered = await repository.list({});
+    expect(recovered.sessions).toEqual(first.sessions);
+    expect(recovered.warnings).toEqual([]);
   });
 
   it("publishes linked summaries, pages one immutable revision, and replaces it after append", async () => {
@@ -117,26 +119,22 @@ describe("DefaultSessionRepository", () => {
     expect(child.session.parentId).toBe(parent.session.id);
     expect(parent.session.childIds).toContain(child.session.id);
 
-    const initialDetail = await repository.getSession(parent.session.id);
     const page = await repository.getItems(parent.session.id, {
-      cursor: initialDetail!.context.cursor,
       limit: 2,
     });
-    expect(page?.context.hasMore).toBe(true);
+    expect(page?.hasMore).toBe(true);
     await expect(repository.getItems(parent.session.id, {
-      cursor: page!.context.cursor,
+      cursor: page!.cursor,
       limit: 2,
     })).resolves.not.toBeNull();
     const allItems = await repository.getItems(parent.session.id, {
-      cursor: initialDetail!.context.cursor,
       limit: 200,
     });
     const directive = allItems!.items.find((item) => item.id === "directive-4")!;
     expect(JSON.stringify(allItems)).not.toContain("DIRECTIVE_DETAIL_CANARY");
     expect(await repository.getDirectiveDetail(parent.session.id, directive.id, {
-      cursor: allItems!.context.cursor,
+      cursor: allItems!.cursor,
     })).toEqual(expect.objectContaining({
-      sessionId: parent.session.id,
       itemId: directive.id,
       text: expect.stringContaining("DIRECTIVE_DETAIL_CANARY"),
       truncated: false,
@@ -152,30 +150,21 @@ describe("DefaultSessionRepository", () => {
       `${previous}{"timestamp":"2026-07-28T10:00:10.000Z","type":"response_item","payload":{"type":"message","role":"assistant","phase":"final","content":[{"type":"output_text","text":"Appended revision"}]}}\n`,
     );
     await repository.refresh();
-    const second = await repository.getSession(parent.session.id, {
-      cursor: page!.context.cursor,
+    const second = await repository.getItems(parent.session.id, {
+      cursor: page!.cursor,
+      limit: 2,
     });
-    expect(second!.context.cursor.sessionRevision)
-      .not.toBe(initialDetail!.context.cursor.sessionRevision);
-    expect(second!.context.session.messageCount)
+    expect(second!.session.messageCount)
       .toBe(parent.session.messageCount);
-    expect(second!.context.cursor.throughOrdinal)
-      .toBe(page!.context.cursor.throughOrdinal);
-    expect(second!.context.hasMore).toBe(true);
+    expect(second!.hasMore).toBe(true);
     expect(first.sessions.find((entry) => entry.session.id === parent.session.id)?.session.messageCount)
       .toBe(parent.session.messageCount);
     await expect(repository.getItems(parent.session.id, {
-      cursor: page!.context.cursor,
+      cursor: page!.cursor,
     })).resolves.not.toBeNull();
     await expect(repository.getDirectiveDetail(parent.session.id, directive.id, {
-      cursor: allItems!.context.cursor,
-    })).resolves.toEqual(expect.objectContaining({
-      context: expect.objectContaining({
-        cursor: expect.objectContaining({
-          sessionRevision: second!.context.cursor.sessionRevision,
-        }),
-      }),
-    }));
+      cursor: allItems!.cursor,
+    })).resolves.toEqual(expect.objectContaining({ itemId: directive.id }));
 
     const replacement = `${rollout}.replacement`;
     await writeFile(
@@ -186,14 +175,12 @@ describe("DefaultSessionRepository", () => {
     await rename(replacement, rollout);
     await repository.refresh();
     const third = await repository.getSession(parent.session.id);
-    expect(third!.context.cursor.sessionRevision)
-      .not.toBe(second!.context.cursor.sessionRevision);
-    expect(third!.context.session.title).toBe("Replacement trace");
-    expect(third!.context.session.messageCount).toBe(0);
-    await expect(repository.getSession(parent.session.id, {
-      cursor: page!.context.cursor,
+    expect(third!.session.title).toBe("Replacement trace");
+    expect(third!.session.messageCount).toBe(0);
+    await expect(repository.getItems(parent.session.id, {
+      cursor: page!.cursor,
     })).rejects.toMatchObject<Partial<RepositoryQueryError>>({
-      code: "stale_timeline_prefix",
+      code: "timeline_changed",
     });
   });
 
@@ -210,9 +197,7 @@ describe("DefaultSessionRepository", () => {
     const repository = await createCodexSessionRepository(home);
     const listed = await repository.list({});
     const sessionId = listed.sessions[0]!.session.id;
-    const initial = await repository.getSession(sessionId);
     const callPage = await repository.getItems(sessionId, {
-      cursor: initial!.context.cursor,
       limit: 1,
     });
     const call = callPage!.items[0]!;
@@ -222,7 +207,7 @@ describe("DefaultSessionRepository", () => {
       callId: "stable-call",
     });
     const callDetailBefore = await repository.getToolDetail(sessionId, call.id, {
-      cursor: callPage!.context.cursor,
+      cursor: callPage!.cursor,
     });
 
     await appendFile(
@@ -232,7 +217,7 @@ describe("DefaultSessionRepository", () => {
     await repository.refresh();
 
     const continuation = await repository.getItems(sessionId, {
-      cursor: callPage!.context.cursor,
+      cursor: callPage!.cursor,
       limit: 1,
     });
     expect(continuation!.items).toEqual([
@@ -244,12 +229,12 @@ describe("DefaultSessionRepository", () => {
         preview: "result",
       }),
     ]);
-    expect(continuation!.context.session).toMatchObject({
+    expect(continuation!.session).toMatchObject({
       toolCount: 1,
       itemCount: 2,
     });
     const callDetailAfter = await repository.getToolDetail(sessionId, call.id, {
-      cursor: callPage!.context.cursor,
+      cursor: callPage!.cursor,
     });
     expect({
       input: callDetailAfter!.input,
@@ -279,6 +264,7 @@ describe("DefaultSessionRepository", () => {
     const repository = await createCodexSessionRepository(home);
     const sessionId = (await repository.list({})).sessions[0]!.session.id;
     const before = await repository.getSession(sessionId);
+    const beforePage = await repository.getItems(sessionId, {});
 
     await appendFile(
       rollout,
@@ -286,16 +272,18 @@ describe("DefaultSessionRepository", () => {
     );
     await repository.refresh();
     const pending = await repository.getSession(sessionId);
-    expect(pending!.context.cursor.sessionRevision)
-      .toBe(before!.context.cursor.sessionRevision);
-    expect(pending!.context.session).toEqual(before!.context.session);
+    expect(pending!.session).toEqual(before!.session);
+    await expect(repository.getItems(sessionId, { cursor: beforePage!.cursor }))
+      .resolves.toEqual(expect.objectContaining({ items: [] }));
 
     await appendFile(rollout, "\n");
     await repository.refresh();
     const committed = await repository.getSession(sessionId);
-    expect(committed!.context.cursor.sessionRevision)
-      .not.toBe(before!.context.cursor.sessionRevision);
-    expect(committed!.context.session).toMatchObject({ toolCount: 1, itemCount: 1 });
+    expect(committed!.session).toMatchObject({ toolCount: 1, itemCount: 1 });
+    await expect(repository.getItems(sessionId, { cursor: beforePage!.cursor }))
+      .resolves.toEqual(expect.objectContaining({
+        items: [expect.objectContaining({ kind: "tool" })],
+      }));
   });
 
   it("keeps session A reader requests valid while only session B changes", async () => {
@@ -354,40 +342,34 @@ describe("DefaultSessionRepository", () => {
     const repository = new DefaultSessionRepository([source]);
     const list = await repository.list({});
     const sessionAId = list.sessions.find((entry) => entry.session.title === "Session A")!.session.id;
-    const detail = await repository.getSession(sessionAId);
     const first = await repository.getItems(sessionAId, {
-      cursor: detail!.context.cursor,
       limit: 2,
     });
     const directive = first!.items.find((item) => item.kind === "directive")!;
 
-    let latestListRevision = list.listRevision;
     for (const change of ["changed-once", "changed-twice"]) {
       sourceSignature = `session-b-${change}`;
       sessionB = normalizedSession("session-b", `Session B ${change}`, null, []);
       await repository.refresh();
-      const nextListRevision = (await repository.list({})).listRevision;
-      expect(nextListRevision).toBe(latestListRevision);
-      latestListRevision = nextListRevision;
-      expect((await repository.getSession(sessionAId))?.context.cursor.sessionRevision)
-        .toBe(detail!.context.cursor.sessionRevision);
+      expect((await repository.getSession(sessionAId))?.session.title)
+        .toBe("Session A");
     }
 
     await expect(repository.getItems(sessionAId, {
-      cursor: first!.context.cursor,
+      cursor: first!.cursor,
       limit: 2,
     })).resolves.toEqual(expect.objectContaining({
       items: [expect.objectContaining({ id: "message-3" })],
     }));
     await expect(repository.getDirectiveDetail(sessionAId, directive.id, {
-      cursor: first!.context.cursor,
+      cursor: first!.cursor,
     })).resolves.toEqual(expect.objectContaining({ text: "secret" }));
 
     const currentList = await repository.list({});
     const sessionBId = currentList.sessions.find(
       (entry) => entry.session.title === "Session B changed-twice",
     )!.session.id;
-    const sessionBDetail = await repository.getSession(sessionBId);
+    const sessionBPage = await repository.getItems(sessionBId, {});
     sessionAWithDetail = {
       ...sessionAWithDetail,
       session: { ...sessionAWithDetail.session, title: "Session A changed" },
@@ -396,15 +378,13 @@ describe("DefaultSessionRepository", () => {
     await repository.refresh();
 
     await expect(repository.getItems(sessionAId, {
-      cursor: first!.context.cursor,
+      cursor: first!.cursor,
       limit: 2,
     })).resolves.toEqual(expect.objectContaining({
-      context: expect.objectContaining({
-        session: expect.objectContaining({ title: "Session A changed" }),
-      }),
+      session: expect.objectContaining({ title: "Session A changed" }),
     }));
     await expect(repository.getItems(sessionBId, {
-      cursor: sessionBDetail!.context.cursor,
+      cursor: sessionBPage!.cursor,
       limit: 2,
     })).resolves.toEqual(expect.objectContaining({ items: [] }));
   });
@@ -441,8 +421,8 @@ describe("DefaultSessionRepository", () => {
     )!.session.id;
     const first = await repository.getSession(parentId);
 
-    expect(first?.context.session.childIds).toEqual(
-      [...first!.context.session.childIds].sort(),
+    expect(first?.session.childIds).toEqual(
+      [...first!.session.childIds].sort(),
     );
 
     sourceSignature = "children-a-z";
@@ -450,20 +430,14 @@ describe("DefaultSessionRepository", () => {
     await repository.refresh();
     const second = await repository.getSession(parentId);
 
-    expect((await repository.list({})).listRevision).toBe(firstList.listRevision);
-    expect(second?.context.session.childIds)
-      .toEqual(first?.context.session.childIds);
-    expect(second?.context.cursor.sessionRevision)
-      .toBe(first?.context.cursor.sessionRevision);
+    expect(second?.session.childIds).toEqual(first?.session.childIds);
   });
 
   it("returns every timeline event type in one unfiltered view", async () => {
     const { repository } = await fixtureRepository();
     const list = await repository.list({});
     const session = list.sessions.find((entry) => entry.session.title === "Synthetic trace")!;
-    const detail = await repository.getSession(session.session.id);
     const page = await repository.getItems(session.session.id, {
-      cursor: detail!.context.cursor,
       limit: 200,
     });
     expect(new Set(page?.items.map((item) => item.kind))).toEqual(new Set([
@@ -487,14 +461,11 @@ describe("DefaultSessionRepository", () => {
     const { repository } = await fixtureRepository();
     const list = await repository.list({});
     const session = list.sessions.find((entry) => entry.session.title === "Synthetic trace")!;
-    const detail = await repository.getSession(session.session.id);
     await expect(repository.getItems(session.session.id, {
-      cursor: detail!.context.cursor,
       limit: 300,
     }))
       .resolves.not.toBeNull();
     await expect(repository.getItems(session.session.id, {
-      cursor: detail!.context.cursor,
       limit: 301,
     }))
       .rejects.toMatchObject<Partial<RepositoryQueryError>>({ code: "invalid_query" });
@@ -522,13 +493,10 @@ describe("DefaultSessionRepository", () => {
       ])],
     );
     const session = (await repository.list({})).sessions[0]!.session;
-    const detail = await repository.getSession(session.id);
-    const page = await repository.getItems(session.id, {
-      cursor: detail!.context.cursor,
-    });
+    const page = await repository.getItems(session.id, {});
 
     expect(page?.items).toHaveLength(100);
-    expect(page?.context.hasMore).toBe(true);
+    expect(page?.hasMore).toBe(true);
   });
 
   it("searches only permitted fields and reports bounded partial results", async () => {
@@ -666,16 +634,14 @@ describe("DefaultSessionRepository", () => {
     );
 
     const first = await repository.list({});
-    expect(first).toMatchObject({ total: 305, hasMore: true, nextOffset: 100 });
+    expect(first).toMatchObject({ total: 305 });
+    expect(first.nextCursor).not.toBeNull();
     expect(first.sessions).toHaveLength(100);
-    await expect(repository.list({ offset: 100, limit: 300 }))
-      .rejects.toMatchObject<Partial<RepositoryQueryError>>({ code: "invalid_query" });
     const second = await repository.list({
-      offset: first.nextOffset!,
+      cursor: first.nextCursor!,
       limit: 300,
-      listRevision: first.listRevision,
     });
-    expect(second).toMatchObject({ total: 305, hasMore: false, nextOffset: null });
+    expect(second).toMatchObject({ total: 305, nextCursor: null });
     expect(second.sessions).toHaveLength(205);
     expect(new Set([...first.sessions, ...second.sessions].map((entry) => entry.session.id)).size)
       .toBe(305);
@@ -707,14 +673,11 @@ describe("DefaultSessionRepository", () => {
     );
 
     const list = await repository.list({});
-    const detail = await repository.getSession(list.sessions[0]!.session.id);
     const page = await repository.getItems(list.sessions[0]!.session.id, {
-      cursor: detail!.context.cursor,
       limit: 200,
     });
-    expect(page?.context.hasMore).toBe(true);
-    expect(page?.context.cursor.throughOrdinal)
-      .toBe(page?.items.at(-1)?.ordinal);
+    expect(page?.hasMore).toBe(true);
+    expect(page?.cursor).toEqual(expect.any(String));
     expect(Buffer.byteLength(JSON.stringify(page?.items), "utf8"))
       .toBeLessThanOrEqual(MAX_ITEM_PAGE_BYTES + 2);
   });

@@ -15,7 +15,7 @@ import {
   RepositoryQueryError,
   SessionQueryService,
 } from "../../src/server/repository/session-query-service.js";
-import { deriveSessionView } from "../../src/server/repository/session-view-digest.js";
+import { deriveTimelinePrefixIndex } from "../../src/server/repository/timeline-prefix-index.js";
 import type {
   SessionSource,
   SourceSessionEntry,
@@ -136,29 +136,21 @@ describe("server architecture boundaries", () => {
     });
     expect(summary).not.toHaveProperty("sourceId");
     expect(detail).toEqual({
-      context: {
-        cursor: {
-          sessionRevision: "r".repeat(32),
-          throughOrdinal: 0,
-          timelinePrefixRevision: expect.stringMatching(/^[A-Za-z0-9_-]{32}$/),
-        },
-        hasMore: true,
-        session: {
-          ...summary,
-          sourceId: "private-source-id",
-          diagnostics: [{
-            code: "partial",
-            severity: "warning",
-            message: "Partial",
-            ordinal: 2,
-          }],
-          itemCount: 1,
-        },
+      session: {
+        ...summary,
+        sourceId: "private-source-id",
+        diagnostics: [{
+          code: "partial",
+          severity: "warning",
+          message: "Partial",
+          ordinal: 2,
+        }],
+        itemCount: 1,
       },
     });
 
     summary.childIds.push("mutated");
-    detail.context.session.diagnostics[0]!.message = "mutated";
+    detail.session.diagnostics[0]!.message = "mutated";
     if (item.kind === "token" && item.tokenUsage.total) {
       item.tokenUsage.total.totalTokens = 99;
     }
@@ -176,41 +168,25 @@ describe("server architecture boundaries", () => {
     const snapshot = snapshotOf(normalized);
     const first = queries.list(snapshot, { project: "/project", limit: 1 });
     expect(first).toMatchObject({
-      listRevision: expect.stringMatching(/^[A-Za-z0-9_-]{32}$/),
       total: 1,
-      hasMore: false,
+      nextCursor: null,
       projects: [{ project: "/project", count: 1 }],
     });
-    const read = queries.session(snapshot, "session-one")!;
-    expect(queries.items(snapshot, "session-one", {
-      cursor: {
-        sessionRevision: read.sessionRevision,
-        throughOrdinal: read.throughOrdinal,
-        timelinePrefixRevision: read.timelinePrefixRevision,
-      },
-    })?.items).toEqual(timeline);
+    expect(queries.items(snapshot, "session-one", {})?.items).toEqual(timeline);
   });
 
-  it("rejects cursors whose through ordinal is not an actual timeline boundary", () => {
-    const gapped: NormalizedSession = {
+  it("rejects a cursor after its confirmed timeline prefix changes", () => {
+    const queries = new SessionQueryService();
+    const first = queries.items(snapshotOf(normalized), session.id, {})!;
+    const changed: NormalizedSession = {
       ...normalized,
-      timeline: [{ ...timeline[0]!, ordinal: 5 }],
+      timeline: [{ ...timeline[0]!, timestamp: "2026-07-28T02:00:00Z" }],
     };
-    const snapshot = snapshotOf(gapped);
-    const versioned = snapshot.sessions.get(session.id)!;
-    const boundary = versioned.timelinePrefixIndex.boundaryAt(
-      gapped.timeline,
-      5,
-    )!;
 
-    expect(() => new SessionQueryService().session(snapshot, session.id, {
-      cursor: {
-        sessionRevision: versioned.revision,
-        throughOrdinal: 8,
-        timelinePrefixRevision: boundary.timelinePrefixRevision,
-      },
+    expect(() => queries.items(snapshotOf(changed), session.id, {
+      cursor: first.context.cursor,
     })).toThrowError(expect.objectContaining<Partial<RepositoryQueryError>>({
-      code: "stale_timeline_prefix",
+      code: "timeline_changed",
     }));
   });
 
@@ -260,9 +236,8 @@ describe("server architecture boundaries", () => {
     expect(first.signature).toBe(reorderedEntries.signature);
     expect(first.orderedIds).toEqual(reordered.orderedIds);
     const queries = new SessionQueryService();
-    expect(queries.list(first, { archiveScope: "all" }).listRevision).toBe(
-      queries.list(reordered, { archiveScope: "all" }).listRevision,
-    );
+    expect(queries.list(first, { archiveScope: "all" }).sessions)
+      .toEqual(queries.list(reordered, { archiveScope: "all" }).sessions);
     expect([...first.sessions.keys()].sort()).toEqual(
       [...reordered.sessions.keys()].sort(),
     );
@@ -306,7 +281,7 @@ describe("server architecture boundaries", () => {
     expect(firstResult.sessions.map(({ session: value }) => value.id)).toEqual(
       reversedResult.sessions.map(({ session: value }) => value.id),
     );
-    expect(firstResult.listRevision).toBe(reversedResult.listRevision);
+    expect(firstResult.total).toBe(reversedResult.total);
   });
 });
 
@@ -323,17 +298,13 @@ async function typescriptFiles(directory: string): Promise<string[]> {
 }
 
 function snapshotOf(value: NormalizedSession): CatalogSnapshot {
-  const { timelinePrefixIndex } = deriveSessionView(
-    value,
-    Buffer.alloc(32, 7),
-  );
+  const timelinePrefixIndex = deriveTimelinePrefixIndex(value, Buffer.alloc(32, 7));
   return {
     signature: "snapshot",
     diagnostics: [],
     sessions: new Map([[
       value.session.id,
       {
-        revision: "r".repeat(32),
         normalized: value,
         timelinePrefixIndex,
       },

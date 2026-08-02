@@ -1,9 +1,11 @@
 ---
-status: accepted
+status: superseded by ADR-0009
 date: 2026-07-31
 ---
 
 # Use conditional read cursors for session resources
+
+Superseded by [ADR-0009](0009-use-opaque-single-writer-timeline-cursors.md).
 
 ## Context and Problem Statement
 

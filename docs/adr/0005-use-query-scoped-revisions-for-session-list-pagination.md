@@ -1,9 +1,11 @@
 ---
-status: accepted
+status: superseded by ADR-0010
 date: 2026-07-30
 ---
 
 # Use query-scoped revisions for session-list pagination
+
+Superseded by [ADR-0010](0010-use-opaque-session-list-cursors.md).
 
 ## Context and Problem Statement
 

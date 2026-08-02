@@ -2,49 +2,97 @@
 
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { BackToTop } from "../../src/client/components/BackToTop";
+import { PageJumpControls } from "../../src/client/components/PageJumpControls";
 
-describe("back to top", () => {
+describe("page jump controls", () => {
   afterEach(() => {
-    vi.unstubAllGlobals();
-    setScrollY(0);
+    setPageMetrics({ scrollY: 0, innerHeight: 768, scrollHeight: 768 });
   });
 
-  it("becomes available after scrolling down and returns to the top", () => {
+  it("shows only the controls that move away from the nearest edge", () => {
+    setPageMetrics({ scrollY: 0, innerHeight: 800, scrollHeight: 3_000 });
+    render(<PageJumpControls />);
+
+    expect(screen.queryByRole("button", { name: "Back to top" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Jump to bottom" })).toBeVisible();
+
+    act(() => {
+      setPageMetrics({ scrollY: 1_100, innerHeight: 800, scrollHeight: 3_000 });
+      fireEvent.scroll(window);
+    });
+    expect(screen.getByRole("button", { name: "Back to top" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Jump to bottom" })).toBeVisible();
+
+    act(() => {
+      setPageMetrics({ scrollY: 2_200, innerHeight: 800, scrollHeight: 3_000 });
+      fireEvent.scroll(window);
+    });
+    expect(screen.getByRole("button", { name: "Back to top" })).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Jump to bottom" })).toBeNull();
+  });
+
+  it("jumps to either page edge", () => {
     const scrollTo = vi.fn();
     vi.stubGlobal("scrollTo", scrollTo);
     vi.stubGlobal("matchMedia", vi.fn().mockReturnValue({ matches: false }));
-    const { container } = render(<BackToTop />);
+    setPageMetrics({ scrollY: 1_000, innerHeight: 800, scrollHeight: 3_000 });
+    render(<PageJumpControls />);
 
-    const button = container.querySelector("button");
-    expect(button).not.toBeNull();
-    expect(button).toHaveAttribute("aria-hidden", "true");
-    expect(button).toHaveAttribute("tabindex", "-1");
-
-    act(() => {
-      setScrollY(600);
-      fireEvent.scroll(window);
-    });
-
-    const visibleButton = screen.getByRole("button", { name: "Back to top" });
-    expect(visibleButton).toHaveClass("is-visible");
-    expect(visibleButton).toHaveAttribute("aria-hidden", "false");
-    fireEvent.click(visibleButton);
+    fireEvent.click(screen.getByRole("button", { name: "Back to top" }));
     expect(scrollTo).toHaveBeenCalledWith({ top: 0, behavior: "smooth" });
+    fireEvent.click(screen.getByRole("button", { name: "Jump to bottom" }));
+    expect(scrollTo).toHaveBeenCalledWith({ top: 3_000, behavior: "smooth" });
   });
 
   it("avoids smooth scrolling when reduced motion is requested", () => {
     const scrollTo = vi.fn();
     vi.stubGlobal("scrollTo", scrollTo);
     vi.stubGlobal("matchMedia", vi.fn().mockReturnValue({ matches: true }));
-    setScrollY(600);
-    render(<BackToTop />);
+    setPageMetrics({ scrollY: 1_000, innerHeight: 800, scrollHeight: 3_000 });
+    render(<PageJumpControls />);
 
     fireEvent.click(screen.getByRole("button", { name: "Back to top" }));
     expect(scrollTo).toHaveBeenCalledWith({ top: 0, behavior: "auto" });
+    fireEvent.click(screen.getByRole("button", { name: "Jump to bottom" }));
+    expect(scrollTo).toHaveBeenCalledWith({ top: 3_000, behavior: "auto" });
+  });
+
+  it("updates when the document height changes and disconnects its observer", () => {
+    let notifyResize!: ResizeObserverCallback;
+    const disconnect = vi.fn();
+    vi.stubGlobal("ResizeObserver", class {
+      constructor(callback: ResizeObserverCallback) {
+        notifyResize = callback;
+      }
+      observe() {}
+      disconnect() {
+        disconnect();
+      }
+    });
+    setPageMetrics({ scrollY: 0, innerHeight: 800, scrollHeight: 800 });
+    const view = render(<PageJumpControls />);
+    expect(screen.queryByRole("button", { name: "Jump to bottom" })).toBeNull();
+
+    act(() => {
+      setPageMetrics({ scrollY: 0, innerHeight: 800, scrollHeight: 2_000 });
+      notifyResize([], {} as ResizeObserver);
+    });
+    expect(screen.getByRole("button", { name: "Jump to bottom" })).toBeVisible();
+
+    view.unmount();
+    expect(disconnect).toHaveBeenCalledOnce();
   });
 });
 
-function setScrollY(value: number) {
-  Object.defineProperty(window, "scrollY", { configurable: true, value });
+function setPageMetrics(metrics: {
+  scrollY: number;
+  innerHeight: number;
+  scrollHeight: number;
+}) {
+  Object.defineProperty(window, "scrollY", { configurable: true, value: metrics.scrollY });
+  Object.defineProperty(window, "innerHeight", { configurable: true, value: metrics.innerHeight });
+  Object.defineProperty(document.documentElement, "scrollHeight", {
+    configurable: true,
+    value: metrics.scrollHeight,
+  });
 }

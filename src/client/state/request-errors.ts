@@ -9,10 +9,10 @@ export function isAbort(reason: unknown): boolean {
   return reason instanceof Error && reason.name === "AbortError";
 }
 
-export function isStaleListRevision(reason: unknown): reason is ApiClientError {
-  return reason instanceof ApiClientError && reason.code === "stale_list_revision";
+export function isStaleListCursor(reason: unknown): reason is ApiClientError {
+  return reason instanceof ApiClientError && reason.code === "stale_list_cursor";
 }
 
-export function isStaleTimelinePrefix(reason: unknown): reason is ApiClientError {
-  return reason instanceof ApiClientError && reason.code === "stale_timeline_prefix";
+export function isTimelineChanged(reason: unknown): reason is ApiClientError {
+  return reason instanceof ApiClientError && reason.code === "timeline_changed";
 }

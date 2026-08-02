@@ -58,21 +58,17 @@ export function groupSessions(entries: SessionListEntry[]): SessionGroup[] {
 
 interface SessionTreeProps {
   entries: SessionListEntry[];
-  selectedId: string | null;
-  onSelect: (id: string) => void;
   revealMatches?: boolean;
 }
 
 export function SessionTree({
   entries,
-  selectedId,
-  onSelect,
   revealMatches = false,
 }: SessionTreeProps) {
   const groups = useMemo(() => groupSessions(entries), [entries]);
   const selectedAncestors = useMemo(
-    () => ancestorIds(entries, selectedId),
-    [entries, selectedId],
+    () => new Set<string>(),
+    [],
   );
   const [expansion, setExpansion] = useState<ExpansionOverrides>(() => ({
     expanded: new Set(),
@@ -108,12 +104,10 @@ export function SessionTree({
           <SessionBranch
             key={group.root.session.id}
             group={group}
-            selectedId={selectedId}
             selectedAncestors={selectedAncestors}
             expanded={expansion.expanded}
             collapsed={expansion.collapsed}
             revealMatches={revealMatches}
-            onSelect={onSelect}
             onToggle={onToggle}
           />
         ))}
@@ -124,24 +118,20 @@ export function SessionTree({
 
 interface SessionBranchProps {
   group: SessionGroup;
-  selectedId: string | null;
   selectedAncestors: ReadonlySet<string>;
   expanded: ReadonlySet<string>;
   collapsed: ReadonlySet<string>;
   revealMatches: boolean;
-  onSelect: (id: string) => void;
   onToggle: (id: string, open: boolean) => void;
   child?: boolean;
 }
 
 function SessionBranch({
   group,
-  selectedId,
   selectedAncestors,
   expanded,
   collapsed,
   revealMatches,
-  onSelect,
   onToggle,
   child = false,
 }: SessionBranchProps) {
@@ -172,8 +162,6 @@ function SessionBranch({
           : <span className="session-disclosure-spacer" aria-hidden="true" />}
         <SessionButton
           entry={group.root}
-          selected={selectedId === id}
-          onSelect={onSelect}
           child={child}
         />
       </div>
@@ -184,12 +172,10 @@ function SessionBranch({
                 <SessionBranch
                   key={nested.root.session.id}
                   group={nested}
-                  selectedId={selectedId}
                   selectedAncestors={selectedAncestors}
                   expanded={expanded}
                   collapsed={collapsed}
                   revealMatches={revealMatches}
-                  onSelect={onSelect}
                   onToggle={onToggle}
                   child
                 />
@@ -203,12 +189,10 @@ function SessionBranch({
 
 interface SessionButtonProps {
   entry: SessionListEntry;
-  selected: boolean;
-  onSelect: (id: string) => void;
   child?: boolean;
 }
 
-function SessionButton({ entry, selected, onSelect, child = false }: SessionButtonProps) {
+function SessionButton({ entry, child = false }: SessionButtonProps) {
   const { session, matches } = entry;
   const taskName = child ? session.agent?.taskName ?? null : null;
   const displayTitle = taskName ?? session.title;
@@ -221,11 +205,9 @@ function SessionButton({ entry, selected, onSelect, child = false }: SessionButt
     : [];
 
   return (
-    <button
-      className={`session${selected ? " selected" : ""}${child ? " child" : ""}`}
-      type="button"
-      aria-current={selected ? "page" : undefined}
-      onClick={() => onSelect(session.id)}
+    <a
+      className={`session${child ? " child" : ""}`}
+      href={`/sessions/${encodeURIComponent(session.id)}`}
     >
       <span className={taskName === null ? "session-title" : "session-title task-name"}>
         {displayTitle}
@@ -247,25 +229,8 @@ function SessionButton({ entry, selected, onSelect, child = false }: SessionButt
             </small>
           )}
       {matches[0] ? <small className="match">{matches[0].excerpt}</small> : null}
-    </button>
+    </a>
   );
-}
-
-function ancestorIds(
-  entries: readonly SessionListEntry[],
-  selectedId: string | null,
-): ReadonlySet<string> {
-  if (selectedId === null) return new Set();
-  const parents = new Map(entries.map((entry) => [entry.session.id, entry.session.parentId]));
-  const ancestors = new Set<string>();
-  const visited = new Set([selectedId]);
-  let parent = parents.get(selectedId) ?? null;
-  while (parent !== null && parents.has(parent) && !visited.has(parent)) {
-    ancestors.add(parent);
-    visited.add(parent);
-    parent = parents.get(parent) ?? null;
-  }
-  return ancestors;
 }
 
 function updateMembership(values: Set<string>, value: string, included: boolean): void {

@@ -21,6 +21,7 @@ export function InteractionPanel({
   onEscape,
 }: InteractionPanelProps) {
   const [message, setMessage] = useState("");
+  const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
   if (interaction == null || !interaction.supported) return null;
 
   const send = async () => {
@@ -35,6 +36,14 @@ export function InteractionPanel({
   };
   const disconnected = interaction.state === "disconnected";
   const unbound = interaction.state === "unbound";
+  const copyActivation = async () => {
+    try {
+      await navigator.clipboard.writeText(interaction.activation);
+      setCopyState("copied");
+    } catch {
+      setCopyState("failed");
+    }
+  };
 
   return (
     <section className="interaction-panel" aria-label="Session interaction">
@@ -61,7 +70,16 @@ export function InteractionPanel({
               <p>{disconnected
                 ? "The previous tmux target is unavailable. Run the activation command again in the agent pane."
                 : "Run this command in the agent to connect its current tmux pane:"}</p>
-              <pre><code>{interaction.activation}</code></pre>
+              <div className="activation-command">
+                <pre><code>{interaction.activation}</code></pre>
+                <button
+                  type="button"
+                  className="copy-activation"
+                  onClick={() => void copyActivation()}
+                >
+                  {copyState === "copied" ? "Copied" : copyState === "failed" ? "Copy failed" : "Copy"}
+                </button>
+              </div>
             </div>
           )
         : (

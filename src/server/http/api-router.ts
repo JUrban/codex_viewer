@@ -3,18 +3,14 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import type {
   DirectiveDetailQuery,
   ItemPageQuery,
-  SessionDetailQuery,
   SessionListQuery,
-  SessionReadCursor,
+  TimelineCursor,
   ToolDetailQuery,
 } from "../../shared/api-contract.js";
 import {
   RepositoryQueryError,
   type SessionRepository,
 } from "../repository/session-repository.js";
-import { isSessionRevision } from "../repository/session-revision-registry.js";
-import { isTimelinePrefixRevision } from "../repository/session-view-digest.js";
-import { isListRevision } from "../repository/list-revision.js";
 import { sendJson, type ApiRouter } from "./router.js";
 import {
   SessionInteractionError,
@@ -84,10 +80,8 @@ export function createApiRouter(
       const itemId = segments[1] ?? "";
       if (segments.length === 0) {
         if (!readMethod) return false;
-        const result = await repository.getSession(
-          id,
-          parseSessionQuery(url.searchParams),
-        );
+        if ([...url.searchParams].length > 0) invalid("session metadata does not accept query parameters");
+        const result = await repository.getSession(id);
         if (result === null) return notFound(response, headOnly, "session_not_found");
         sendJson(response, 200, {
           ...result,
@@ -168,8 +162,8 @@ export function createApiRouter(
       return notFound(response, headOnly);
     } catch (error) {
       if (error instanceof RepositoryQueryError) {
-        const status = error.code === "stale_list_revision" ||
-            error.code === "stale_timeline_prefix"
+        const status = error.code === "stale_list_cursor" ||
+            error.code === "timeline_changed"
           ? 409
           : 400;
         sendJson(response, status, { error: { code: error.code, message: error.message } }, headOnly);
@@ -297,15 +291,16 @@ function interactionUnavailable(response: ServerResponse): true {
 }
 
 function parseListQuery(params: URLSearchParams): SessionListQuery {
+  only(params, ["q", "project", "from", "to", "archiveScope", "limit", "cursor", "fresh"]);
   const query: SessionListQuery = {};
   const q = optional(params, "q");
   const project = optional(params, "project");
   const from = optional(params, "from");
   const to = optional(params, "to");
   const archiveScope = optional(params, "archiveScope");
-  const offset = optional(params, "offset");
   const limit = optional(params, "limit");
-  const listRevision = optional(params, "listRevision");
+  const cursor = optional(params, "cursor");
+  const fresh = optional(params, "fresh");
   if (q !== undefined) query.q = q;
   if (project !== undefined) query.project = project;
   if (from !== undefined) query.from = from;
@@ -320,75 +315,56 @@ function parseListQuery(params: URLSearchParams): SessionListQuery {
     }
     query.archiveScope = archiveScope;
   }
-  if (offset !== undefined) query.offset = integer(offset, "offset");
   if (limit !== undefined) query.limit = integer(limit, "limit");
-  if (listRevision !== undefined) {
-    if (!isListRevision(listRevision)) invalid("listRevision is invalid");
-    query.listRevision = listRevision;
+  if (cursor !== undefined) query.cursor = cursor as import("../../shared/api-contract.js").ListCursor;
+  if (fresh !== undefined) {
+    if (fresh !== "true") invalid("fresh must be true when provided");
+    query.fresh = true;
   }
+  if (query.fresh && query.cursor !== undefined) invalid("fresh cannot be used with cursor");
   return query;
 }
 
-function parseSessionQuery(params: URLSearchParams): SessionDetailQuery {
-  const cursor = optionalReadCursor(params, "session");
-  return cursor === undefined ? {} : { cursor };
-}
-
 function parseItemQuery(params: URLSearchParams): ItemPageQuery {
-  const query: ItemPageQuery = {
-    cursor: requiredReadCursor(params, "items"),
-  };
+  only(params, ["limit", "cursor"]);
+  const query: ItemPageQuery = {};
+  const cursor = optional(params, "cursor");
+  if (cursor !== undefined) query.cursor = cursor as TimelineCursor;
   const limit = optional(params, "limit");
   if (limit !== undefined) query.limit = integer(limit, "limit");
   return query;
 }
 
 function parseToolQuery(params: URLSearchParams): ToolDetailQuery {
-  return { cursor: requiredReadCursor(params, "tool detail") };
+  only(params, ["cursor"]);
+  return { cursor: requiredCursor(params, "tool detail") };
 }
 
 function parseDirectiveQuery(params: URLSearchParams): DirectiveDetailQuery {
-  return { cursor: requiredReadCursor(params, "directive detail") };
+  only(params, ["cursor"]);
+  return { cursor: requiredCursor(params, "directive detail") };
 }
 
-function requiredReadCursor(
+function requiredCursor(
   params: URLSearchParams,
   resource: string,
-): SessionReadCursor {
-  const cursor = optionalReadCursor(params, resource);
-  if (cursor === undefined) invalid(`read cursor is required for ${resource}`);
-  return cursor;
-}
-
-function optionalReadCursor(
-  params: URLSearchParams,
-  resource: string,
-): SessionReadCursor | undefined {
-  const revision = optional(params, "sessionRevision");
-  const throughOrdinal = optional(params, "throughOrdinal");
-  const prefix = optional(params, "timelinePrefixRevision");
-  const provided = [revision, throughOrdinal, prefix].filter(
-    (value) => value !== undefined,
-  ).length;
-  if (provided === 0) return undefined;
-  if (provided !== 3) {
-    invalid(`sessionRevision, throughOrdinal, and timelinePrefixRevision must appear together for ${resource}`);
-  }
-  if (!isSessionRevision(revision!)) invalid("sessionRevision is invalid");
-  if (!isTimelinePrefixRevision(prefix!)) {
-    invalid("timelinePrefixRevision is invalid");
-  }
-  return {
-    sessionRevision: revision!,
-    throughOrdinal: integer(throughOrdinal!, "throughOrdinal"),
-    timelinePrefixRevision: prefix,
-  };
+): TimelineCursor {
+  const cursor = optional(params, "cursor");
+  if (cursor === undefined) invalid(`cursor is required for ${resource}`);
+  return cursor as TimelineCursor;
 }
 
 function optional(params: URLSearchParams, name: string): string | undefined {
   const values = params.getAll(name);
   if (values.length > 1) invalid(`${name} must appear once`);
   return values[0];
+}
+
+function only(params: URLSearchParams, allowed: readonly string[]): void {
+  const accepted = new Set(allowed);
+  for (const name of params.keys()) {
+    if (!accepted.has(name)) invalid(`${name} is not supported`);
+  }
 }
 
 function integer(value: string, name: string): number {

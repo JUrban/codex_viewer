@@ -50,6 +50,17 @@ describe("interaction panel", () => {
     expect(screen.getByText(/previous tmux target is unavailable/i)).toBeInTheDocument();
   });
 
+  it("copies the activation command", async () => {
+    const user = userEvent.setup();
+    const writeText = vi.spyOn(navigator.clipboard, "writeText").mockResolvedValue(undefined);
+    render(<InteractionPanel {...props(interaction("unbound"))} />);
+
+    await user.click(screen.getByRole("button", { name: "Copy" }));
+
+    expect(writeText).toHaveBeenCalledWith(activation);
+    expect(screen.getByRole("button", { name: "Copied" })).toBeInTheDocument();
+  });
+
   it("inserts a newline on Enter, sends on Shift+Enter, and clears after success", async () => {
     const handlers = props(interaction("idle"));
     const user = userEvent.setup();

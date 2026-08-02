@@ -1,7 +1,6 @@
 import { useCallback, useState } from "react";
 import type {
-  SessionReadContext,
-  SessionReadCursor,
+  TimelineCursor,
   ToolDetailResponse,
 } from "../../shared/api-contract";
 import type { ToolItem as Tool } from "../../shared/domain";
@@ -11,8 +10,7 @@ import { useLazyDetail } from "../state/use-lazy-detail";
 interface ToolItemProps {
   item: Tool;
   sessionId: string;
-  cursor: SessionReadCursor;
-  onContext: (expected: SessionReadCursor, context: SessionReadContext) => void;
+  cursor: TimelineCursor;
   onConflict: () => void;
 }
 
@@ -20,21 +18,19 @@ export function ToolItem({
   item,
   sessionId,
   cursor,
-  onContext,
   onConflict,
 }: ToolItemProps) {
   const [open, setOpen] = useState(false);
   const loadDetail = useCallback(
-    (signal: AbortSignal): Promise<ToolDetailResponse> =>
-      api.tool(sessionId, item.id, { cursor }, signal),
-    [cursor, item.id, sessionId],
+    (requestCursor: TimelineCursor, signal: AbortSignal): Promise<ToolDetailResponse> =>
+      api.tool(sessionId, item.id, { cursor: requestCursor }, signal),
+    [item.id, sessionId],
   );
   const { detail, error } = useLazyDetail({
     enabled: open && item.hasDetail,
     cursor,
     load: loadDetail,
     unavailableMessage: "Tool detail unavailable",
-    onContext,
     onConflict,
   });
 

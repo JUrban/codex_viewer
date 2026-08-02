@@ -19,18 +19,17 @@ import type {
 } from "../source/session-source.js";
 import { RefreshCoordinator } from "./refresh-coordinator.js";
 import {
-  SessionRevisionRegistry,
-  type SessionRevisionFactory,
-  type SessionViewDeriver,
-  type VersionedSession,
-} from "./session-revision-registry.js";
+  TimelinePrefixRegistry,
+  type TimelinePrefixIndexBuilder,
+  type IndexedSession,
+} from "./timeline-prefix-registry.js";
 
 export const DEFAULT_CATALOG_FRESHNESS_MS = 1_500;
 
 export interface CatalogSnapshot {
   readonly signature: string;
   readonly diagnostics: readonly DomainDiagnostic[];
-  readonly sessions: ReadonlyMap<DomainSessionId, VersionedSession>;
+  readonly sessions: ReadonlyMap<DomainSessionId, IndexedSession>;
   readonly documents: readonly SearchDocument[];
   readonly orderedIds: readonly DomainSessionId[];
 }
@@ -40,14 +39,13 @@ export type SearchDocumentBuilder = (
 ) => SearchDocument;
 
 export interface CatalogSnapshotStoreDependencies {
-  readonly revisionFactory?: SessionRevisionFactory;
-  readonly sessionDeriver?: SessionViewDeriver;
+  readonly timelinePrefixIndexBuilder?: TimelinePrefixIndexBuilder;
   readonly searchDocumentBuilder?: SearchDocumentBuilder;
 }
 
 export class CatalogSnapshotStore {
   readonly #coordinator = new RefreshCoordinator<CatalogSnapshot>();
-  readonly #revisions: SessionRevisionRegistry;
+  readonly #prefixes: TimelinePrefixRegistry;
   readonly #sources: readonly SessionSource[];
   readonly #buildSearchDocument: SearchDocumentBuilder;
   #snapshot: CatalogSnapshot | null = null;
@@ -58,18 +56,12 @@ export class CatalogSnapshotStore {
     sources: readonly SessionSource[],
     private readonly freshnessMs = DEFAULT_CATALOG_FRESHNESS_MS,
     private readonly now: () => number = performance.now.bind(performance),
-    revisionFactoryOrDependencies?:
-      | SessionRevisionFactory
-      | CatalogSnapshotStoreDependencies,
+    dependencies: CatalogSnapshotStoreDependencies = {},
   ) {
     assertUniqueSources(sources);
     this.#sources = [...sources];
-    const dependencies = typeof revisionFactoryOrDependencies === "function"
-      ? { revisionFactory: revisionFactoryOrDependencies }
-      : revisionFactoryOrDependencies ?? {};
-    this.#revisions = new SessionRevisionRegistry(
-      dependencies.revisionFactory,
-      dependencies.sessionDeriver,
+    this.#prefixes = new TimelinePrefixRegistry(
+      dependencies.timelinePrefixIndexBuilder,
     );
     this.#buildSearchDocument =
       dependencies.searchDocumentBuilder ?? buildSearchDocument;
@@ -124,18 +116,18 @@ export class CatalogSnapshotStore {
       );
     }
     const documents = orderedIds.map((id) => documentCache.get(id)!);
-    const preparedRevisions = this.#revisions.prepare(
+    const preparedPrefixes = this.#prefixes.prepare(
       normalizedSessions,
       linked.dirtyIds,
     );
     const snapshot: CatalogSnapshot = {
       signature,
       diagnostics,
-      sessions: preparedRevisions.sessions,
+      sessions: preparedPrefixes.sessions,
       documents,
       orderedIds,
     };
-    preparedRevisions.commit();
+    preparedPrefixes.commit();
     this.#aggregate = {
       inputs: linked.inputs,
       nativeBuckets: linked.nativeBuckets,

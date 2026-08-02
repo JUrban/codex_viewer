@@ -4,10 +4,10 @@ import { render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { Timeline } from "../../src/client/components/Timeline";
 import type {
-  TimelinePrefixRevision,
   UserInputItem,
   UserInputRequestItem,
 } from "../../src/shared/domain";
+import type { TimelineCursor } from "../../src/shared/api-contract";
 
 const REQUEST: UserInputRequestItem = {
   kind: "user_input",
@@ -94,16 +94,10 @@ function timeline(items: UserInputItem[]) {
     <Timeline
       items={items}
       sessionId="session"
-      cursor={{
-        sessionRevision: "revision",
-        throughOrdinal: 0,
-        timelinePrefixRevision:
-          "pppppppppppppppppppppppppppppppp" as TimelinePrefixRevision,
-      }}
+      cursor={"opaque.timeline.cursor" as TimelineCursor}
       hasMore={false}
       loading={false}
       onLoadMore={vi.fn()}
-      onContext={vi.fn()}
       onConflict={vi.fn()}
     />
   );

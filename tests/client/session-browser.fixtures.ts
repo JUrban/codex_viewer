@@ -1,25 +1,19 @@
 import type {
   ItemPageResponse,
   SessionListEntry,
-  SessionReadContext,
+  TimelineCursor,
 } from "../../src/shared/api-contract";
 import type {
   DirectiveItem as Directive,
   SessionSummary,
-  TimelinePrefixRevision,
   ToolItem as Tool,
 } from "../../src/shared/domain";
 
 export const SESSION_ID = "abcdefghijklmnopqrstuvwx";
 export const CHILD_ID = "zyxwvutsrqponmlkjihgfedc";
 export const OTHER_ID = "otherabcdefghijklmnopqrs";
-export const SESSION_REVISION = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-export const NEXT_SESSION_REVISION = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
-const LIST_REVISION = "llllllllllllllllllllllllllllllll";
-const TIMELINE_PREFIX_REVISION =
-  "pppppppppppppppppppppppppppppppp" as TimelinePrefixRevision;
-const EMPTY_TIMELINE_PREFIX_REVISION =
-  "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee" as TimelinePrefixRevision;
+export const TIMELINE_CURSOR = "opaque.timeline.cursor" as TimelineCursor;
+export const NEXT_TIMELINE_CURSOR = "opaque.timeline.next" as TimelineCursor;
 
 export const baseSession: SessionSummary = {
   id: SESSION_ID, title: "Reader work", preview: "preview", cwd: "/project/reader",
@@ -37,10 +31,9 @@ export const baseSession: SessionSummary = {
 };
 
 export const listBody = {
-  listRevision: LIST_REVISION,
   sessions: [{ session: baseSession, matches: [] }],
   projects: [{ project: "/project/reader", count: 1 }],
-  total: 1, nextOffset: null, hasMore: false,
+  total: 1, nextCursor: null,
   partial: false, warnings: [],
 };
 
@@ -52,25 +45,18 @@ const sessionDetail = {
 };
 
 export function readContext(
-  sessionRevision = SESSION_REVISION,
-  throughOrdinal = 2,
+  cursor: TimelineCursor = TIMELINE_CURSOR,
   hasMore = true,
-): SessionReadContext {
+) {
   return {
-    cursor: {
-      sessionRevision,
-      throughOrdinal,
-      timelinePrefixRevision: throughOrdinal === 0
-        ? EMPTY_TIMELINE_PREFIX_REVISION
-        : TIMELINE_PREFIX_REVISION,
-    },
+    cursor,
     session: sessionDetail,
     hasMore,
   };
 }
 
 export const detailBody = {
-  context: readContext(SESSION_REVISION, 0, true),
+  session: sessionDetail,
   interaction: { supported: false as const },
 };
 
@@ -92,7 +78,7 @@ export const directiveItem: Directive = {
 };
 
 export const firstPage: ItemPageResponse = {
-  context: readContext(),
+  ...readContext(),
   interaction: { supported: false },
   items: [
     { kind: "message", id: "message-1", ordinal: 1, timestamp: null, role: "user", phase: null, itemType: null, markdown: "Hello" },

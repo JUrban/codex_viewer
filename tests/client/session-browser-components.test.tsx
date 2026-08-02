@@ -28,11 +28,10 @@ describe("session browser components", () => {
         summary: "Visible reasoning summary",
       }]}
       sessionId={SESSION_ID}
-      cursor={firstPage.context.cursor}
+      cursor={firstPage.cursor}
       hasMore={false}
       loading={false}
       onLoadMore={vi.fn()}
-      onContext={vi.fn()}
       onConflict={vi.fn()}
     />);
   
@@ -68,11 +67,10 @@ describe("session browser components", () => {
         },
       }]}
       sessionId={SESSION_ID}
-      cursor={firstPage.context.cursor}
+      cursor={firstPage.cursor}
       hasMore={false}
       loading={false}
       onLoadMore={vi.fn()}
-      onContext={vi.fn()}
       onConflict={vi.fn()}
     />);
   
@@ -107,11 +105,10 @@ describe("session browser components", () => {
         },
       ]}
       sessionId={SESSION_ID}
-      cursor={firstPage.context.cursor}
+      cursor={firstPage.cursor}
       hasMore={false}
       loading={false}
       onLoadMore={vi.fn()}
-      onContext={vi.fn()}
       onConflict={vi.fn()}
     />);
   
@@ -148,8 +145,6 @@ describe("session browser components", () => {
     const { unmount } = render(
       <SessionTree
         entries={[entry(versioned)]}
-        selectedId={null}
-        onSelect={vi.fn()}
       />,
     );
     expect(screen.getByText("Codex", { selector: ".source-label" })).toBeInTheDocument();
@@ -220,24 +215,24 @@ describe("session browser components", () => {
     const entries = [entry({ ...baseSession, childIds: [CHILD_ID] }), child];
     const user = userEvent.setup();
     const { rerender } = render(
-      <SessionTree entries={entries} selectedId={null} onSelect={vi.fn()} />,
+      <SessionTree entries={entries} />,
     );
   
-    expect(screen.queryByRole("button", { name: /repository_review/ })).toBeNull();
+    expect(screen.queryByRole("link", { name: /repository_review/ })).toBeNull();
     const disclosure = screen.getByRole("button", { name: /Expand 1 child sessions/ });
     expect(disclosure).toHaveAttribute("aria-expanded", "false");
     await user.click(disclosure);
-    expect(screen.getByRole("button", { name: /repository_review/ })).toHaveTextContent(
+    expect(screen.getByRole("link", { name: /repository_review/ })).toHaveTextContent(
       "Inspect the repository implementation",
     );
     expect(screen.getByText("reviewer")).toBeInTheDocument();
     expect(screen.getByText("Sagan")).toBeInTheDocument();
   
-    rerender(<SessionTree entries={[...entries]} selectedId={null} onSelect={vi.fn()} />);
-    expect(screen.getByRole("button", { name: /repository_review/ })).toBeInTheDocument();
+    rerender(<SessionTree entries={[...entries]} />);
+    expect(screen.getByRole("link", { name: /repository_review/ })).toBeInTheDocument();
   });
 
-  it("reveals selected descendants and search results through nested branches", () => {
+  it("reveals nested branches for search results", () => {
     const child = entry({ ...baseSession, id: CHILD_ID, parentId: SESSION_ID, title: "Child" });
     const grandchild = entry({
       ...baseSession,
@@ -246,14 +241,8 @@ describe("session browser components", () => {
       title: "Grandchild",
     });
     const entries = [entry(baseSession), child, grandchild];
-    const { rerender } = render(
-      <SessionTree entries={entries} selectedId={grandchild.session.id} onSelect={vi.fn()} />,
-    );
-    expect(screen.getByRole("button", { name: /Grandchild/ })).toBeInTheDocument();
-    rerender(
-      <SessionTree entries={entries} selectedId={null} revealMatches onSelect={vi.fn()} />,
-    );
-    expect(screen.getByRole("button", { name: /Grandchild/ })).toBeInTheDocument();
+    render(<SessionTree entries={entries} revealMatches />);
+    expect(screen.getByRole("link", { name: /Grandchild/ })).toBeInTheDocument();
   });
 
   it("renders Markdown without raw HTML, external images, or dangerous links", () => {

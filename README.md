@@ -6,7 +6,9 @@ and can optionally send input to an existing tmux-hosted Codex session.
 It reads session history from your Codex home and serves a responsive local
 interface. It does not edit, delete, export, or upload session files.
 
-![Codex Sessions Reader interface](docs/images/codex-sessions-reader.png)
+![Codex session catalog](docs/images/codex-sessions-catalog.png)
+
+![Codex session reader](docs/images/codex-session-reader.png)
 
 ## Quick start
 
@@ -84,6 +86,7 @@ restart the server after replacing them.
 ## Features and limits
 
 - Browse active and archived Codex sessions.
+- Open each session at a stable `/sessions/:id` URL using ordinary page navigation.
 - Search session titles, project paths, and visible user and assistant messages.
 - Render Markdown, GitHub-flavored Markdown, and KaTeX math.
 - Continue reading rollout files while Codex is writing them.
@@ -106,8 +109,8 @@ for the detailed decoding and visibility policy.
 ## Security
 
 The server listens on loopback by default. It rejects path traversal and symlink
-escapes, does not enable permissive CORS, and does not expose raw filesystem
-paths or Codex records. Mutation requests are authorized only when the process
+escapes, does not enable permissive CORS, and does not expose rollout file paths
+or raw Codex records. Mutation requests are authorized only when the process
 is started with `--enable-interaction`; they use the same network trust boundary as
 the read API.
 
@@ -127,10 +130,13 @@ Accepted architecture decisions are recorded under [`docs/adr`](docs/adr):
 - [ADR-0001: Generation-based whole-file session snapshots](docs/adr/0001-use-generation-based-session-snapshots.md)
 - [ADR-0002: JSONL-only session discovery](docs/adr/0002-use-jsonl-only-session-discovery.md)
 - [ADR-0003: Session source adapters](docs/adr/0003-use-session-source-adapters.md)
-- [ADR-0004: Session-scoped reader revisions](docs/adr/0004-use-session-scoped-reader-revisions.md)
-- [ADR-0005: Query-scoped revisions for session-list pagination](docs/adr/0005-use-query-scoped-revisions-for-session-list-pagination.md)
-- [ADR-0006: Conditional read cursors for session resources](docs/adr/0006-use-timeline-prefix-continuity.md)
+- [ADR-0004: Session-scoped reader revisions (superseded)](docs/adr/0004-use-session-scoped-reader-revisions.md)
+- [ADR-0005: Query-scoped revisions for session-list pagination (superseded)](docs/adr/0005-use-query-scoped-revisions-for-session-list-pagination.md)
+- [ADR-0006: Conditional read cursors for session resources (superseded)](docs/adr/0006-use-timeline-prefix-continuity.md)
 - [ADR-0007: Adapter-discovered tmux interaction](docs/adr/0007-use-adapter-discovered-tmux-interaction.md)
+- [ADR-0008: Multi-page catalog and reader](docs/adr/0008-split-session-catalog-and-reader-into-an-mpa.md)
+- [ADR-0009: Opaque single-writer timeline cursors](docs/adr/0009-use-opaque-single-writer-timeline-cursors.md)
+- [ADR-0010: Opaque session-list cursors](docs/adr/0010-use-opaque-session-list-cursors.md)
 
 ## Development
 
@@ -161,7 +167,7 @@ npm run benchmark:scale
 
 **No sessions appear**
 
-Point `CODEX_HOME` to the directory containing `sessions/`, not to `sessions/`
+Pass `--codex-home` with the directory containing `sessions/`, not `sessions/`
 itself. Session files must be regular files named `rollout-*.jsonl`.
 
 **A session shows diagnostics**

@@ -12,7 +12,7 @@ describe("session filters", () => {
   it("orders filters by state, project, date, then query", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(json(listBody)));
     render(<App />);
-    await screen.findByRole("button", { name: /Reader work/ });
+    await screen.findByRole("link", { name: /Reader work/ });
 
     const form = screen.getByRole("search");
     expect(Array.from(form.children)).toEqual([
@@ -31,7 +31,7 @@ describe("session filters", () => {
     }));
     const user = userEvent.setup();
     render(<App />);
-    await screen.findByRole("button", { name: /Reader work/ });
+    await screen.findByRole("link", { name: /Reader work/ });
     const search = screen.getByRole("searchbox");
 
     await user.type(search, "  reader  ");
@@ -58,7 +58,7 @@ describe("session filters", () => {
     }));
     const user = userEvent.setup();
     render(<App />);
-    await screen.findByRole("button", { name: /Reader work/ });
+    await screen.findByRole("link", { name: /Reader work/ });
     const dateTrigger = screen.getByRole("button", { name: "Date range" });
     await user.click(dateTrigger);
     const from = screen.getByLabelText("From");
@@ -118,7 +118,7 @@ describe("session filters", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(json(listBody)));
     const user = userEvent.setup();
     render(<App />);
-    await screen.findByRole("button", { name: /Reader work/ });
+    await screen.findByRole("link", { name: /Reader work/ });
     const trigger = screen.getByRole("button", { name: "Date range" });
 
     expect(trigger).toHaveAttribute("aria-expanded", "false");
@@ -194,20 +194,20 @@ describe("session filters", () => {
     expect(screen.getByRole("radio", { name: "Active" })).toBeChecked();
   });
 
-  it("removes unsupported URL parameters while retaining timeline visibility", () => {
+  it("does not treat legacy list URL parameters as applied filters", () => {
     window.history.replaceState(
       null,
       "",
       "/?q=legacy&from=2020-01-01&archiveScope=all&show=internal",
     );
-    const replaceState = vi.spyOn(window.history, "replaceState");
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(json(listBody)));
 
     render(<App />);
 
-    expect(window.location.search).toBe("?show=internal");
+    expect(window.location.search).toBe(
+      "?q=legacy&from=2020-01-01&archiveScope=all&show=internal",
+    );
     expect(screen.getByRole("searchbox")).toHaveValue("");
     expect(screen.getByRole("radio", { name: "Active" })).toBeChecked();
-    expect(replaceState).toHaveBeenCalledWith(null, "", "/?show=internal");
   });
 });

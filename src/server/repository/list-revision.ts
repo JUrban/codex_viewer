@@ -1,6 +1,5 @@
 import { createHmac, randomBytes } from "node:crypto";
 import type { SessionListQuery } from "../../shared/api-contract.js";
-import type { ListRevision } from "../../shared/domain.js";
 import { normalizeSearchText } from "../search/search-document.js";
 
 export interface CanonicalListQuery {
@@ -14,7 +13,7 @@ export interface CanonicalListQuery {
 export type ListRevisionFactory = (
   query: CanonicalListQuery,
   orderedIds: readonly string[],
-) => ListRevision;
+) => string;
 
 export function canonicalListQuery(query: SessionListQuery): CanonicalListQuery {
   return {
@@ -41,10 +40,6 @@ export function createProcessListRevisionFactory(): ListRevisionFactory {
     for (const id of orderedIds) frame(hmac, id);
     return hmac.digest().subarray(0, 24).toString("base64url");
   };
-}
-
-export function isListRevision(value: string): value is ListRevision {
-  return /^[A-Za-z0-9_-]{32}$/.test(value);
 }
 
 interface FramedHash {

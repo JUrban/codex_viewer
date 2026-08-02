@@ -3,7 +3,6 @@ import type {
   DirectiveDetailResponse,
   ItemPageQuery,
   ItemPageResponse,
-  SessionDetailQuery,
   SessionDetailResponse,
   SessionListQuery,
   SessionListResponse,
@@ -39,7 +38,6 @@ export interface SessionRepository {
   list(query: SessionListQuery): Promise<SessionListResponse>;
   getSession(
     id: SessionId,
-    query?: SessionDetailQuery,
   ): Promise<RepositorySessionDetailResponse | null>;
   getItems(id: SessionId, query: ItemPageQuery): Promise<RepositoryItemPageResponse | null>;
   getToolDetail(
@@ -90,16 +88,15 @@ export class DefaultSessionRepository implements SessionRepository {
   }
 
   async list(query: SessionListQuery): Promise<SessionListResponse> {
-    const snapshot = await this.#store.current();
+    const snapshot = query.fresh ? await this.#store.refresh() : await this.#store.current();
     return this.#mapper.list(this.#queries.list(snapshot, query));
   }
 
   async getSession(
     id: SessionId,
-    query: SessionDetailQuery = {},
   ): Promise<RepositorySessionDetailResponse | null> {
     const snapshot = await this.#store.current();
-    const result = this.#queries.session(snapshot, id, query);
+    const result = this.#queries.session(snapshot, id);
     return result === null
       ? null
       : this.#mapper.detail(result);

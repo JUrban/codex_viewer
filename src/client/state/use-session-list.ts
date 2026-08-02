@@ -4,7 +4,7 @@ import type {
   SessionListResponse,
 } from "../../shared/api-contract";
 import { api } from "../api/client";
-import { isStaleListRevision, messageFor } from "./request-errors";
+import { isStaleListCursor, messageFor } from "./request-errors";
 import type { BrowserFilters } from "./use-session-filters";
 
 const LIST_PAGE_SIZE = 300;
@@ -87,7 +87,7 @@ export function useSessionList(filters: BrowserFilters) {
   const loadMoreSessions = useCallback(async () => {
     if (active.current !== null) return;
     const current = stateRef.current.data;
-    if (!current?.hasMore || current.nextOffset === null) return;
+    if (current?.nextCursor === null || current === null) return;
     const request: ActiveRequest = {
       operation: "page",
       controller: new AbortController(),
@@ -97,21 +97,22 @@ export function useSessionList(filters: BrowserFilters) {
     dispatch({ type: "page-start" });
     try {
       let next: SessionListResponse;
+      let restarted = false;
       try {
         next = await api.sessions({
           ...listQuery(filtersRef.current),
-          offset: current.nextOffset,
-          listRevision: current.listRevision,
+          cursor: current.nextCursor,
         }, request.controller.signal);
       } catch (reason) {
-        if (!isCurrent(request) || !isStaleListRevision(reason)) throw reason;
+        if (!isCurrent(request) || !isStaleListCursor(reason)) throw reason;
+        restarted = true;
         next = await api.sessions(
           listQuery(filtersRef.current),
           request.controller.signal,
         );
       }
       if (isCurrent(request)) {
-        dispatch({ type: "page-success", data: mergePage(current, next) });
+        dispatch({ type: "page-success", data: restarted ? next : mergePage(current, next) });
       }
     } catch (reason) {
       if (isCurrent(request)) {
@@ -133,7 +134,7 @@ export function useSessionList(filters: BrowserFilters) {
     dispatch({ type: "refresh-start" });
     try {
       const data = await api.sessions(
-        listQuery(filtersRef.current),
+        { ...listQuery(filtersRef.current), fresh: true },
         request.controller.signal,
       );
       if (!isCurrent(request)) return null;
@@ -234,7 +235,6 @@ function mergePage(
   current: SessionListResponse,
   next: SessionListResponse,
 ): SessionListResponse {
-  if (current.listRevision !== next.listRevision) return next;
   const seen = new Set(current.sessions.map((entry) => entry.session.id));
   return {
     ...next,

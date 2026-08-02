@@ -1,97 +1,55 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   DEFAULT_TIMELINE_VISIBILITY,
   type TimelineVisibility,
   type TimelineVisibilityKey,
 } from "./timeline-visibility";
-export interface BrowserLocation {
-  selectedId: string | null;
-  visibility: TimelineVisibility;
-}
 
 export function useBrowserLocation() {
-  const [location, setLocation] = useState<BrowserLocation>(readUrl);
-  const locationRef = useRef(location);
-  locationRef.current = location;
-
-  const commit = useCallback((next: BrowserLocation, replace = false) => {
-    writeUrl(next, replace);
-    setLocation(next);
-  }, []);
-
-  const selectSession = useCallback((selectedId: string | null) => {
-    if (selectedId === locationRef.current.selectedId) return;
-    commit({ ...locationRef.current, selectedId });
-  }, [commit]);
+  const [visibility, setVisibilityState] = useState<TimelineVisibility>(readVisibility);
 
   const setVisibility = useCallback((key: TimelineVisibilityKey, visible: boolean) => {
-    if (visible === locationRef.current.visibility[key]) return;
-    commit({
-      ...locationRef.current,
-      visibility: { ...locationRef.current.visibility, [key]: visible },
+    setVisibilityState((current) => {
+      if (current[key] === visible) return current;
+      const next = { ...current, [key]: visible };
+      writeVisibility(next);
+      return next;
     });
-  }, [commit]);
-
-  const clearMissingSession = useCallback(() => {
-    commit({ ...locationRef.current, selectedId: null }, true);
-  }, [commit]);
+  }, []);
 
   useEffect(() => {
-    const onPopState = () => {
-      setLocation(readUrl());
-    };
+    const onPopState = () => setVisibilityState(readVisibility());
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
   }, []);
 
+  return { visibility, setVisibility };
+}
+
+function readVisibility(): TimelineVisibility {
+  const shown = new Set(
+    (new URLSearchParams(window.location.search).get("show") ?? "")
+      .split(",")
+      .filter(Boolean),
+  );
   return {
-    ...location,
-    selectSession,
-    setVisibility,
-    clearMissingSession,
+    ...DEFAULT_TIMELINE_VISIBILITY,
+    directive: shown.has("directive"),
+    tools: shown.has("tool"),
+    token: shown.has("token"),
+    internal: shown.has("internal"),
   };
 }
 
-function readUrl(): BrowserLocation {
-  const params = new URLSearchParams(window.location.search);
-  const shown = new Set((params.get("show") ?? "").split(",").filter(Boolean));
-  const location = {
-    selectedId: params.get("session") || null,
-    visibility: {
-      ...DEFAULT_TIMELINE_VISIBILITY,
-      directive: shown.has("directive"),
-      tools: shown.has("tool"),
-      token: shown.has("token"),
-      internal: shown.has("internal"),
-    },
-  };
-  normalizeUrl(location);
-  return location;
-}
-
-function writeUrl(location: BrowserLocation, replace: boolean): void {
-  const next = locationUrl(location);
-  if (replace) window.history.replaceState(null, "", next);
-  else window.history.pushState(null, "", next);
-}
-
-function normalizeUrl(location: BrowserLocation): void {
-  const canonical = locationUrl(location);
-  const current = `${window.location.pathname}${window.location.search}`;
-  if (canonical !== current) window.history.replaceState(null, "", canonical);
-}
-
-function locationUrl(location: BrowserLocation): string {
-  const { selectedId, visibility } = location;
-  const params = new URLSearchParams();
-  if (selectedId) params.set("session", selectedId);
+function writeVisibility(visibility: TimelineVisibility): void {
   const shown = VISIBILITY_URL_VALUES
     .filter(({ key }) => visibility[key])
     .map(({ value }) => value);
-  const queryParts = [params.toString()];
-  if (shown.length > 0) queryParts.push(`show=${shown.join(",")}`);
-  const query = queryParts.filter(Boolean).join("&");
-  return `${window.location.pathname}${query ? `?${query}` : ""}`;
+  const params = new URLSearchParams(window.location.search);
+  if (shown.length === 0) params.delete("show");
+  else params.set("show", shown.join(","));
+  const query = params.toString();
+  window.history.pushState(null, "", `${window.location.pathname}${query ? `?${query}` : ""}`);
 }
 
 const VISIBILITY_URL_VALUES: ReadonlyArray<{

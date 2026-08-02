@@ -27,7 +27,10 @@ afterEach(async () => {
 
 async function start() {
   const clientDirectory = await createTempDirectory("codex-reader-client-");
-  await writeFile(join(clientDirectory, "index.html"), "<h1>trace notebook</h1>");
+  await Promise.all([
+    writeFile(join(clientDirectory, "index.html"), "<h1>trace notebook</h1>"),
+    writeFile(join(clientDirectory, "session.html"), "<h1>session notebook</h1>"),
+  ]);
   const config: ServerConfig = {
     host: LOOPBACK_HOST,
     port: 0,
@@ -145,11 +148,11 @@ async function startSecure(requireClientCertificate: boolean): Promise<string> {
 }
 
 describe("secure HTTP foundation", () => {
-  it("serves the SPA with restrictive headers and no CORS", async () => {
+  it("serves both MPA pages with restrictive headers and no CORS", async () => {
     const base = await start();
-    const response = await fetch(`${base}/session/fixture`);
+    const response = await fetch(`${base}/sessions/abcdefghijklmnopqrstuvwx`);
     expect(response.status).toBe(200);
-    expect(await response.text()).toContain("trace notebook");
+    expect(await response.text()).toContain("session notebook");
     const contentSecurityPolicy = response.headers.get("content-security-policy");
     expect(contentSecurityPolicy).toContain("default-src 'self'");
     expect(contentSecurityPolicy).toContain("font-src 'self' data:");
@@ -158,6 +161,7 @@ describe("secure HTTP foundation", () => {
     expect(response.headers.get("x-content-type-options")).toBe("nosniff");
     expect(response.headers.get("referrer-policy")).toBe("no-referrer");
     expect(response.headers.has("access-control-allow-origin")).toBe(false);
+    expect((await fetch(`${base}/unknown`)).status).toBe(404);
   });
 
   it("serves HTTPS and does not accept plaintext HTTP on the TLS port", async () => {

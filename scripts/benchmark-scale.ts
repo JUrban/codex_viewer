@@ -15,7 +15,7 @@ import {
   DEFAULT_CATALOG_FRESHNESS_MS,
   DefaultSessionRepository,
 } from "../src/server/repository/session-repository.js";
-import { deriveSessionView } from "../src/server/repository/session-view-digest.js";
+import { deriveTimelinePrefixIndex } from "../src/server/repository/timeline-prefix-index.js";
 import { buildSearchDocument } from "../src/server/search/search-document.js";
 
 const SESSION_COUNT = 3_000;
@@ -39,8 +39,8 @@ try {
     throw new Error(`Synthetic corpus was only ${totalBytes} bytes`);
   }
 
-  const derivationCalls = { sessionView: 0, searchDocument: 0 };
-  let sessionViewAndPrefixIndexBuildMs = 0;
+  const derivationCalls = { prefixIndex: 0, searchDocument: 0 };
+  let prefixIndexBuildMs = 0;
   const prefixIndexBytesBySession = new Map<string, number>();
   const timelineItemsBySession = new Map<string, number>();
   const repository = new DefaultSessionRepository(
@@ -49,21 +49,21 @@ try {
     DEFAULT_CATALOG_FRESHNESS_MS,
     performance.now.bind(performance),
     {
-      sessionDeriver(normalized, prefixKey) {
-        derivationCalls.sessionView += 1;
+      timelinePrefixIndexBuilder(normalized, prefixKey) {
+        derivationCalls.prefixIndex += 1;
         const startedAt = performance.now();
-        const result = deriveSessionView(normalized, prefixKey);
-        sessionViewAndPrefixIndexBuildMs += performance.now() - startedAt;
+        const result = deriveTimelinePrefixIndex(normalized, prefixKey);
+        prefixIndexBuildMs += performance.now() - startedAt;
         const expectedPrefixBytes = (normalized.timeline.length + 1) * 24;
-        if (result.timelinePrefixIndex.byteLength !== expectedPrefixBytes) {
+        if (result.byteLength !== expectedPrefixBytes) {
           throw new Error(
-            `Prefix index used ${result.timelinePrefixIndex.byteLength} bytes; ` +
+            `Prefix index used ${result.byteLength} bytes; ` +
               `expected ${expectedPrefixBytes}`,
           );
         }
         prefixIndexBytesBySession.set(
           normalized.session.id,
-          result.timelinePrefixIndex.byteLength,
+          result.byteLength,
         );
         timelineItemsBySession.set(
           normalized.session.id,
@@ -80,7 +80,7 @@ try {
   const coldCatalog = await measure(() => repository.list({ limit: 200 }));
   assertDerivationDelta(
     "cold catalog",
-    { sessionView: 0, searchDocument: 0 },
+    { prefixIndex: 0, searchDocument: 0 },
     derivationCalls,
     SESSION_COUNT,
   );
@@ -94,8 +94,8 @@ try {
     0,
   );
   const afterNoChangeList = await repository.list({ limit: 200 });
-  if (afterNoChangeList.listRevision !== firstList.listRevision) {
-    throw new Error("A no-change refresh changed listRevision");
+  if (afterNoChangeList.nextCursor !== firstList.nextCursor) {
+    throw new Error("A no-change refresh changed the opaque list cursor");
   }
   const search = await measure(() =>
     repository.list({
@@ -121,36 +121,31 @@ try {
   const unrelated = firstList.sessions.find((entry) => entry.session.id !== selected.session.id);
   if (unrelated === undefined) throw new Error("Scale catalog did not contain an unrelated session");
   const detailFirstPage = await measure(async () => {
-    const detail = await repository.getSession(selected.session.id);
-    if (detail === null) throw new Error("Scale session detail disappeared");
     const items = await repository.getItems(selected.session.id, {
-      cursor: detail.context.cursor,
       limit: 50,
     });
     if (items === null) throw new Error("Scale session item page disappeared");
-    return { detail, items };
+    return items;
   });
-  const unrelatedDetail = await repository.getSession(unrelated.session.id);
-  if (unrelatedDetail === null) throw new Error("Unrelated scale session detail disappeared");
-  const tool = detailFirstPage.value.items.items.find((item) => item.kind === "tool");
+  const unrelatedPage = await repository.getItems(unrelated.session.id, { limit: 1 });
+  if (unrelatedPage === null) throw new Error("Unrelated scale session disappeared");
+  const tool = detailFirstPage.value.items.find((item) => item.kind === "tool");
   if (tool?.kind !== "tool") throw new Error("Large tool was not normalized");
   const toolDetail = await repository.getToolDetail(
     selected.session.id,
     tool.id,
-    { cursor: detailFirstPage.value.items.context.cursor },
+    { cursor: detailFirstPage.value.cursor },
   );
   if (!toolDetail?.truncated) throw new Error("Large tool detail was not truncated");
-  const message = detailFirstPage.value.items.items.find((item) => item.kind === "message");
+  const message = detailFirstPage.value.items.find((item) => item.kind === "message");
   if (message?.kind !== "message" || message.markdown.length !== 1_000_000) {
     throw new Error("Long message limit was not exercised");
   }
 
   const specialPath = paths[0]!;
-  const beforeMutationListRevision = firstList.listRevision;
-  const beforeMutatedRevision =
-    detailFirstPage.value.detail.context.cursor.sessionRevision;
-  const unrelatedCursor = unrelatedDetail.context.cursor;
-  const unrelatedRevision = unrelatedCursor.sessionRevision;
+  const beforeMutationListCursor = firstList.nextCursor;
+  const beforeMutatedCursor = detailFirstPage.value.cursor;
+  const unrelatedCursor = unrelatedPage.cursor;
   await appendFile(
     specialPath,
     `${JSON.stringify({
@@ -173,18 +168,7 @@ try {
     1,
   );
   const afterAppendList = await repository.list({ limit: 200 });
-  const afterAppendDetail = await requiredDetail(repository, selected.session.id);
-  const afterAppendUnrelated = await requiredDetail(repository, unrelated.session.id);
-  assertMutationIsolation({
-    label: "append",
-    previousListRevision: beforeMutationListRevision,
-    currentListRevision: afterAppendList.listRevision,
-    expectListRevisionChange: false,
-    previousMutatedRevision: beforeMutatedRevision,
-    currentMutatedRevision: afterAppendDetail.context.cursor.sessionRevision,
-    unrelatedRevision,
-    currentUnrelatedRevision: afterAppendUnrelated.context.cursor.sessionRevision,
-  });
+  await assertCursorReadable(repository, selected.session.id, beforeMutatedCursor);
   await assertCursorReadable(
     repository,
     unrelated.session.id,
@@ -203,18 +187,14 @@ try {
     1,
   );
   const afterReplaceList = await repository.list({ limit: 200 });
-  const afterReplaceDetail = await requiredDetail(repository, selected.session.id);
-  const afterReplaceUnrelated = await requiredDetail(repository, unrelated.session.id);
-  assertMutationIsolation({
-    label: "replacement",
-    previousListRevision: afterAppendList.listRevision,
-    currentListRevision: afterReplaceList.listRevision,
-    expectListRevisionChange: true,
-    previousMutatedRevision: afterAppendDetail.context.cursor.sessionRevision,
-    currentMutatedRevision: afterReplaceDetail.context.cursor.sessionRevision,
-    unrelatedRevision,
-    currentUnrelatedRevision: afterReplaceUnrelated.context.cursor.sessionRevision,
-  });
+  let replacementConflict = false;
+  try {
+    await repository.getItems(selected.session.id, { cursor: beforeMutatedCursor, limit: 1 });
+  } catch (error) {
+    replacementConflict = error instanceof Error &&
+      "code" in error && error.code === "timeline_changed";
+  }
+  if (!replacementConflict) throw new Error("Replacement did not reject the old timeline cursor");
   await assertCursorReadable(
     repository,
     unrelated.session.id,
@@ -245,8 +225,7 @@ try {
       search: round(search.measurement.milliseconds),
       boundedAbsentSearch: round(absentSearch.measurement.milliseconds),
       detailFirstPage: round(detailFirstPage.measurement.milliseconds),
-      sessionViewAndPrefixIndexBuild:
-        round(sessionViewAndPrefixIndexBuildMs),
+      prefixIndexBuild: round(prefixIndexBuildMs),
     },
     baselineComparison: {
       priorSingleSessionAppendMs: PRIOR_SINGLE_APPEND_BASELINE_MS,
@@ -295,11 +274,10 @@ try {
     responseBytes: {
       firstList: jsonBytes(firstList),
       search: jsonBytes(search.value),
-      detail: jsonBytes(detailFirstPage.value.detail),
-      firstItemPage: jsonBytes(detailFirstPage.value.items),
+      firstItemPage: jsonBytes(detailFirstPage.value),
     },
     bounds: {
-      catalogHasMore: firstList.hasMore,
+      catalogHasMore: firstList.nextCursor !== null,
       catalogTotal: firstList.total,
       searchPartial: search.value.partial,
       absentSearchPartial: absentSearch.value.partial,
@@ -309,25 +287,14 @@ try {
       permissionProbe,
     },
     mutations: {
-      listRevision: {
+      opaqueListCursor: {
         unchangedAfterContentAppend:
-          beforeMutationListRevision === afterAppendList.listRevision,
+          beforeMutationListCursor === afterAppendList.nextCursor,
         changedAfterReplacementReorder:
-          afterAppendList.listRevision !== afterReplaceList.listRevision,
+          afterAppendList.nextCursor !== afterReplaceList.nextCursor,
       },
-      mutatedSessionRevisionChanged: {
-        afterAppend:
-          beforeMutatedRevision !==
-          afterAppendDetail.context.cursor.sessionRevision,
-        afterReplace:
-          afterAppendDetail.context.cursor.sessionRevision !==
-          afterReplaceDetail.context.cursor.sessionRevision,
-      },
-      unrelatedSessionRevisionStable:
-        unrelatedRevision ===
-          afterAppendUnrelated.context.cursor.sessionRevision &&
-        unrelatedRevision ===
-          afterReplaceUnrelated.context.cursor.sessionRevision,
+      appendCursorReadable: true,
+      replacementConflict,
       unrelatedCursorReadable: true,
     },
     derivationCalls: {
@@ -347,16 +314,16 @@ try {
 
 function assertDerivationDelta(
   label: string,
-  before: Readonly<{ sessionView: number; searchDocument: number }>,
-  after: Readonly<{ sessionView: number; searchDocument: number }>,
+  before: Readonly<{ prefixIndex: number; searchDocument: number }>,
+  after: Readonly<{ prefixIndex: number; searchDocument: number }>,
   expected: number,
 ): void {
-  const sessionView = after.sessionView - before.sessionView;
+  const prefixIndex = after.prefixIndex - before.prefixIndex;
   const searchDocument = after.searchDocument - before.searchDocument;
-  if (sessionView !== expected || searchDocument !== expected) {
+  if (prefixIndex !== expected || searchDocument !== expected) {
     throw new Error(
       `${label} derivation calls: expected ${expected}, got ` +
-        `sessionView=${sessionView}, searchDocument=${searchDocument}`,
+        `prefixIndex=${prefixIndex}, searchDocument=${searchDocument}`,
     );
   }
 }
@@ -379,7 +346,7 @@ async function generateCorpus(directory: string): Promise<string[]> {
         `rollout-2026-07-28T12-00-00-${id}.jsonl`,
       );
       const records = [
-        rollout(index, index === 0 ? "needle-scale" : filler, index === 0 ? 1_000_000 : FILLER_CHARS),
+        await rollout(index, index === 0 ? "needle-scale" : filler, index === 0 ? 1_000_000 : FILLER_CHARS),
       ];
       if (index === 0) {
         records.push(JSON.stringify({
@@ -475,52 +442,17 @@ function round(value: number): number {
 
 type Repository = DefaultSessionRepository;
 
-async function requiredDetail(repository: Repository, sessionId: string) {
-  const detail = await repository.getSession(sessionId);
-  if (detail === null) throw new Error(`Scale session disappeared: ${sessionId}`);
-  return detail;
-}
-
-function assertMutationIsolation(input: {
-  label: string;
-  previousListRevision: string;
-  currentListRevision: string;
-  expectListRevisionChange: boolean;
-  previousMutatedRevision: string;
-  currentMutatedRevision: string;
-  unrelatedRevision: string;
-  currentUnrelatedRevision: string;
-}): void {
-  if (
-    (input.currentListRevision !== input.previousListRevision) !==
-      input.expectListRevisionChange
-  ) {
-    throw new Error(`${input.label} produced the wrong listRevision behavior`);
-  }
-  if (input.currentMutatedRevision === input.previousMutatedRevision) {
-    throw new Error(`${input.label} did not change the mutated sessionRevision`);
-  }
-  if (input.currentUnrelatedRevision !== input.unrelatedRevision) {
-    throw new Error(`${input.label} changed an unrelated sessionRevision`);
-  }
-}
-
 async function assertCursorReadable(
   repository: Repository,
   sessionId: string,
-  cursor: {
-    sessionRevision: string;
-    throughOrdinal: number;
-    timelinePrefixRevision: string;
-  },
+  cursor: import("../src/shared/api-contract.js").TimelineCursor,
 ): Promise<void> {
   const page = await repository.getItems(sessionId, {
     cursor,
     limit: 1,
   });
   if (
-    page === null ||
-    page.context.cursor.sessionRevision !== cursor.sessionRevision
+    page === null
   ) {
     throw new Error("An unrelated session cursor was not readable");
   }

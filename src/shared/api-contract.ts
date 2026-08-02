@@ -1,13 +1,14 @@
 import type {
   ItemId,
-  ListRevision,
   SessionDetail,
-  SessionId,
-  SessionRevision,
   SessionSummary,
-  TimelinePrefixRevision,
   TimelineItem,
 } from "./domain.js";
+
+declare const listCursorBrand: unique symbol;
+export type ListCursor = string & { readonly [listCursorBrand]: true };
+declare const timelineCursorBrand: unique symbol;
+export type TimelineCursor = string & { readonly [timelineCursorBrand]: true };
 
 export interface ApiWarning {
   code: string;
@@ -30,9 +31,9 @@ export interface SessionListQuery {
   from?: string;
   to?: string;
   archiveScope?: ArchiveScope;
-  offset?: number;
   limit?: number;
-  listRevision?: ListRevision;
+  cursor?: ListCursor;
+  fresh?: boolean;
 }
 
 export interface SearchMatch {
@@ -51,51 +52,33 @@ export interface ProjectFacet {
 }
 
 export interface SessionListResponse {
-  listRevision: ListRevision;
   sessions: SessionListEntry[];
   projects: ProjectFacet[];
   total: number;
-  nextOffset: number | null;
-  hasMore: boolean;
+  nextCursor: ListCursor | null;
   partial: boolean;
   warnings: ApiWarning[];
 }
 
-export interface SessionReadCursor {
-  sessionRevision: SessionRevision;
-  throughOrdinal: number;
-  timelinePrefixRevision: TimelinePrefixRevision;
-}
-
-export interface SessionReadContext {
-  cursor: SessionReadCursor;
-  session: SessionDetail;
-  hasMore: boolean;
-}
-
-export interface SessionDetailQuery {
-  cursor?: SessionReadCursor;
-}
-
 export interface SessionDetailResponse {
-  context: SessionReadContext;
+  session: SessionDetail;
   interaction: InteractionResponse;
 }
 
 export interface ItemPageQuery {
   limit?: number;
-  cursor: SessionReadCursor;
+  cursor?: TimelineCursor;
 }
 
 export interface ItemPageResponse {
-  context: SessionReadContext;
+  session: SessionDetail;
+  cursor: TimelineCursor;
+  hasMore: boolean;
   items: TimelineItem[];
   interaction: InteractionResponse;
 }
 
 export interface ToolDetailResponse {
-  context: SessionReadContext;
-  sessionId: SessionId;
   itemId: ItemId;
   input: string | null;
   output: string | null;
@@ -103,19 +86,17 @@ export interface ToolDetailResponse {
 }
 
 export interface ToolDetailQuery {
-  cursor: SessionReadCursor;
+  cursor: TimelineCursor;
 }
 
 export interface DirectiveDetailResponse {
-  context: SessionReadContext;
-  sessionId: SessionId;
   itemId: ItemId;
   text: string;
   truncated: boolean;
 }
 
 export interface DirectiveDetailQuery {
-  cursor: SessionReadCursor;
+  cursor: TimelineCursor;
 }
 
 export type InteractionState =

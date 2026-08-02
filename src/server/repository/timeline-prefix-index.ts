@@ -1,32 +1,17 @@
-import { createHash, createHmac, timingSafeEqual } from "node:crypto";
-import type { TimelinePrefixRevision } from "../../shared/domain.js";
+import { createHmac, timingSafeEqual } from "node:crypto";
 import type {
-  DomainAgentIdentity,
-  DomainDiagnostic,
-  DomainSession,
   DomainTimelineRecord,
   DomainTokenUsageCounters,
   NormalizedSession,
 } from "../domain/session-domain.js";
 
-export function digestSessionView(normalized: NormalizedSession): string {
-  return deriveSessionView(normalized, Buffer.alloc(32)).viewDigest;
-}
-
-export interface DerivedSessionView {
-  readonly viewDigest: string;
-  readonly timelinePrefixIndex: TimelinePrefixIndex;
-}
-
 const PREFIX_BYTES = 24;
 const PREFIX_PROTOCOL = "timeline-prefix-v1";
 
-export function deriveSessionView(
+export function deriveTimelinePrefixIndex(
   normalized: NormalizedSession,
   prefixKey: Uint8Array,
-): DerivedSessionView {
-  const hash = createHash("sha256");
-  const writer = new DigestWriter((chunk) => hash.update(chunk));
+): TimelinePrefixIndex {
   const states = new Uint8Array((normalized.timeline.length + 1) * PREFIX_BYTES);
   let previousOrdinal: number | undefined;
   let itemIndex = 0;
@@ -37,12 +22,12 @@ export function deriveSessionView(
     .digest()
     .subarray(0, PREFIX_BYTES);
   states.set(state, 0);
-  writeSession(writer, normalized.session);
-  writer.arrayEncoded(
-    "timeline",
-    normalized.timeline,
-    (entry, item) => writeTimelineItem(entry, item, normalized),
-    (item, encoded) => {
+  for (const item of normalized.timeline) {
+      const chunks: Buffer[] = [];
+      writeTimelineItem(new DigestWriter((chunk) => {
+        chunks.push(typeof chunk === "string" ? Buffer.from(chunk, "utf8") : Buffer.from(chunk));
+      }), item, normalized);
+      const encoded = Buffer.concat(chunks);
       if (
         !Number.isSafeInteger(item.ordinal) ||
         item.ordinal < 1 ||
@@ -58,17 +43,13 @@ export function deriveSessionView(
         .digest()
         .subarray(0, PREFIX_BYTES);
       states.set(state, itemIndex * PREFIX_BYTES);
-    },
-  );
-  return {
-    viewDigest: hash.digest("hex"),
-    timelinePrefixIndex: new TimelinePrefixIndex(itemIndex, states),
-  };
+  }
+  return new TimelinePrefixIndex(itemIndex, states);
 }
 
 export interface TimelinePrefixBoundary {
   readonly throughOrdinal: number;
-  readonly timelinePrefixRevision: TimelinePrefixRevision;
+  readonly timelinePrefixRevision: string;
 }
 
 export class TimelinePrefixIndex {
@@ -115,7 +96,7 @@ export class TimelinePrefixIndex {
   matches(
     timeline: readonly DomainTimelineRecord[],
     boundary: TimelinePrefixBoundary,
-    candidate: TimelinePrefixRevision,
+    candidate: string,
   ): boolean {
     const encoded = Buffer.from(candidate, "base64url");
     if (encoded.byteLength !== PREFIX_BYTES) return false;
@@ -136,7 +117,7 @@ export class TimelinePrefixIndex {
     return {
       throughOrdinal: slot === 0 ? 0 : timeline[slot - 1]!.ordinal,
       timelinePrefixRevision: Buffer.from(this.#slot(slot))
-        .toString("base64url") as TimelinePrefixRevision,
+        .toString("base64url"),
     };
   }
 
@@ -158,55 +139,6 @@ function upperBound(
     else high = middle;
   }
   return low;
-}
-
-export function isTimelinePrefixRevision(
-  value: string,
-): value is TimelinePrefixRevision {
-  return /^[A-Za-z0-9_-]{32}$/.test(value);
-}
-
-function writeSession(writer: DigestWriter, session: DomainSession): void {
-  writer.string("session.id", session.id);
-  writer.nullableString("session.sourceId", session.sourceId);
-  writer.object("session.origin", (entry) => {
-    entry.string("sourceType", session.origin.sourceType);
-    entry.string("sourceInstanceId", session.origin.sourceInstanceId);
-    entry.string("agentName", session.origin.agentName);
-    entry.nullableString("agentVersion", session.origin.agentVersion);
-    entry.nullableString("formatVersion", session.origin.formatVersion);
-  });
-  writer.string("session.title", session.title);
-  writer.nullableString("session.preview", session.preview);
-  writer.nullableString("session.cwd", session.cwd);
-  writer.nullableString("session.createdAt", session.createdAt);
-  writer.nullableString("session.updatedAt", session.updatedAt);
-  writer.boolean("session.archived", session.archived);
-  writer.nullableString("session.parentId", session.parentId);
-  writer.array(
-    "session.childIds",
-    session.childIds,
-    (entry, childId) => entry.valueString(childId),
-  );
-  writer.nullableObject("session.agent", session.agent, writeAgent);
-  writer.number("session.messageCount", session.messageCount);
-  writer.number("session.toolCount", session.toolCount);
-  writer.number("session.warningCount", session.warningCount);
-  writer.array("session.diagnostics", session.diagnostics, writeDiagnostic);
-  writer.number("session.itemCount", session.itemCount);
-}
-
-function writeAgent(writer: DigestWriter, agent: DomainAgentIdentity): void {
-  writer.nullableString("taskName", agent.taskName);
-  writer.nullableString("nickname", agent.nickname);
-  writer.nullableString("role", agent.role);
-}
-
-function writeDiagnostic(writer: DigestWriter, diagnostic: DomainDiagnostic): void {
-  writer.string("code", diagnostic.code);
-  writer.string("severity", diagnostic.severity);
-  writer.string("message", diagnostic.message);
-  writer.nullableNumber("ordinal", diagnostic.ordinal);
 }
 
 function writeTimelineItem(
