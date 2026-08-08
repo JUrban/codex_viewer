@@ -26,14 +26,19 @@ timeline items. Keep it synchronized with `rollout-decoder.ts`,
   A message without accepted text content is dropped.
 - Every accepted response message becomes a `directive`; response and event
   records are intentionally retained without duplicate matching.
-- Valid `user_message` and `agent_message` events require a non-empty string
+- Legacy `user_message` and `agent_message` events require a non-empty string
   `message` and become user and assistant conversation messages respectively.
   Invalid message events become safe `internal` summaries of their event type.
-- An `item_completed` event with an object `item` and non-empty string
-  `item.text` becomes an assistant final conversation message. The text is
-  interpreted as Markdown and `item.type`, when present, is published as the
-  message's `itemType`. Other `item_completed` events become safe `internal`
-  summaries.
+- Newer `item_completed` events become conversation messages only for these
+  allowlisted item shapes: `UserMessage` joins non-empty `text` content parts
+  into a user message, `AgentMessage` joins non-empty `Text` content parts into
+  an assistant message, and `Plan` accepts a non-empty `item.text` as an
+  assistant final message. Joined parts are separated by a blank line.
+  `AgentMessage` phases `final` and `final_answer` normalize to `final`, while
+  `commentary` is retained. Only `Plan` publishes its item type as the message's
+  `itemType`; user and agent messages leave `itemType` unset. Empty, non-text,
+  and all other completed items become safe `internal` summaries without
+  retaining their payloads.
 - Every `token_count` event becomes a `token` item. Only non-negative integer
   counters in `total_token_usage` and `last_token_usage` are retained; missing
   groups become unavailable. Rate limits and unknown payload fields are

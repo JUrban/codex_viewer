@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   MAX_INLINE_DIRECTIVE_CHARS,
-  MAX_MESSAGE_CHARS,
 } from "../../src/server/adapters/codex/limits.js";
 import { normalizeRecords } from "./session-normalizer.fixtures.js";
 
@@ -147,7 +146,64 @@ describe("message and directive normalization", () => {
     });
   });
 
-  it("emits completed items as typed assistant final Markdown messages", () => {
+  it("emits a completed UserMessage and uses it for title and preview", () => {
+    const normalized = normalizeRecords("completed-user-message", [
+      completedItem(1, {
+        type: "UserMessage",
+        content: [
+          { type: "text", text: "First user line" },
+          { type: "image", text: "NON_TEXT_MUST_NOT_RENDER" },
+          { type: "text", text: "Second user paragraph" },
+          { type: "Text", text: "WRONG_CASE_MUST_NOT_RENDER" },
+        ],
+      }),
+    ]);
+
+    expect(normalized.timeline).toEqual([expect.objectContaining({
+      kind: "message",
+      role: "user",
+      phase: null,
+      itemType: null,
+      markdown: "First user line\n\nSecond user paragraph",
+    })]);
+    expect(normalized.session).toEqual(expect.objectContaining({
+      title: "First user line",
+      preview: "First user line\n\nSecond user paragraph",
+      messageCount: 1,
+    }));
+    expect(JSON.stringify(normalized)).not.toContain("NON_TEXT_MUST_NOT_RENDER");
+    expect(JSON.stringify(normalized)).not.toContain("WRONG_CASE_MUST_NOT_RENDER");
+  });
+
+  it.each([
+    ["commentary", "commentary"],
+    ["final", "final"],
+    ["final_answer", "final"],
+    [undefined, null],
+  ] as const)("normalizes completed AgentMessage phase %s", (phase, expectedPhase) => {
+    const normalized = normalizeRecords(`completed-agent-${phase ?? "missing"}`, [
+      completedItem(1, {
+        type: "AgentMessage",
+        ...(phase === undefined ? {} : { phase }),
+        content: [
+          { type: "Text", text: "First assistant paragraph" },
+          { type: "text", text: "WRONG_CASE_MUST_NOT_RENDER" },
+          { type: "Text", text: "Second assistant paragraph" },
+        ],
+      }),
+    ]);
+
+    expect(normalized.timeline).toEqual([expect.objectContaining({
+      kind: "message",
+      role: "assistant",
+      phase: expectedPhase,
+      itemType: null,
+      markdown: "First assistant paragraph\n\nSecond assistant paragraph",
+    })]);
+    expect(JSON.stringify(normalized)).not.toContain("WRONG_CASE_MUST_NOT_RENDER");
+  });
+
+  it("keeps completed Plan text as a typed assistant final message", () => {
     const normalized = normalizeRecords("completed-item-session", [{
       ordinal: 1,
       value: {
@@ -168,23 +224,58 @@ describe("message and directive normalization", () => {
     })]);
   });
 
-  it("limits completed item types to the message character boundary", () => {
-    const itemType = "t".repeat(MAX_MESSAGE_CHARS + 1);
-    const normalized = normalizeRecords("completed-item-type-boundary", [{
-      ordinal: 1,
-      value: {
-        type: "event_msg",
-        payload: {
-          type: "item_completed",
-          item: { type: itemType, text: "Done" },
-        },
-      },
-    }]);
+  it("reduces empty, non-text, and unknown completed items to safe internals", () => {
+    const normalized = normalizeRecords("invalid-completed-items", [
+      completedItem(1, { type: "UserMessage", content: [] }),
+      completedItem(2, {
+        type: "AgentMessage",
+        content: [{ type: "Image", text: "AGENT_PAYLOAD_MUST_NOT_RENDER" }],
+      }),
+      completedItem(3, {
+        type: "Reasoning",
+        text: "REASONING_PAYLOAD_MUST_NOT_RENDER",
+      }),
+      completedItem(4, {
+        type: "UnknownCompletion",
+        text: "UNKNOWN_PAYLOAD_MUST_NOT_RENDER",
+      }),
+      completedItem(5, { type: "Plan", text: "" }),
+      completedItem(6, {
+        type: "ReviewMode",
+        text: "REVIEW_PAYLOAD_MUST_NOT_RENDER",
+      }),
+      completedItem(7, {
+        type: "Extension",
+        text: "EXTENSION_PAYLOAD_MUST_NOT_RENDER",
+      }),
+    ]);
 
-    expect(normalized.timeline[0]).toEqual(expect.objectContaining({
-      kind: "message",
-      itemType: "t".repeat(MAX_MESSAGE_CHARS),
-    }));
+    expect(normalized.timeline).toEqual([1, 2, 3, 4, 5, 6, 7].map((ordinal) => ({
+      kind: "internal",
+      id: `internal-${ordinal}`,
+      ordinal,
+      timestamp: null,
+      eventType: "item_completed",
+      summary: "Internal event: item_completed",
+    })));
+    expect(normalized.session.messageCount).toBe(0);
+    const serialized = JSON.stringify(normalized);
+    expect(serialized).not.toContain("AGENT_PAYLOAD_MUST_NOT_RENDER");
+    expect(serialized).not.toContain("REASONING_PAYLOAD_MUST_NOT_RENDER");
+    expect(serialized).not.toContain("UNKNOWN_PAYLOAD_MUST_NOT_RENDER");
+    expect(serialized).not.toContain("REVIEW_PAYLOAD_MUST_NOT_RENDER");
+    expect(serialized).not.toContain("EXTENSION_PAYLOAD_MUST_NOT_RENDER");
+  });
+
+  it("does not turn arbitrary completed items with text fields into messages", () => {
+    const normalized = normalizeRecords("strict-completed-plan", [
+      completedItem(1, { type: "FileChange", text: "SECRET_PATCH" }),
+      completedItem(2, { type: "CommandExecution", text: "SECRET_OUTPUT" }),
+    ]);
+
+    expect(normalized.timeline.every((item) => item.kind === "internal")).toBe(true);
+    expect(JSON.stringify(normalized)).not.toContain("SECRET_PATCH");
+    expect(JSON.stringify(normalized)).not.toContain("SECRET_OUTPUT");
   });
 });
 
@@ -198,6 +289,16 @@ function responseMessage(ordinal: number, text: string) {
         role: "user",
         content: [{ type: "input_text", text }],
       },
+    },
+  };
+}
+
+function completedItem(ordinal: number, item: Record<string, unknown>) {
+  return {
+    ordinal,
+    value: {
+      type: "event_msg",
+      payload: { type: "item_completed", item },
     },
   };
 }

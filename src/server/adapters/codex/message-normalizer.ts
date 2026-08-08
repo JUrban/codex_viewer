@@ -75,16 +75,32 @@ export function eventMessage(
     return messageItem(ordinal, timestamp, role, phase, null, markdown);
   }
   if (type !== "item_completed" || !isObject(payload.item)) return null;
-  const markdown = string(payload.item.text);
-  if (markdown === null) return null;
-  return messageItem(
-    ordinal,
-    timestamp,
-    "assistant",
-    "final",
-    string(payload.item.type),
-    markdown,
-  );
+  const item = payload.item;
+  const itemType = string(item.type);
+  if (itemType === "UserMessage") {
+    const markdown = itemContentText(item.content, "text");
+    return markdown === null
+      ? null
+      : messageItem(ordinal, timestamp, "user", null, null, markdown);
+  }
+  if (itemType === "AgentMessage") {
+    const markdown = itemContentText(item.content, "Text");
+    return markdown === null
+      ? null
+      : messageItem(
+        ordinal,
+        timestamp,
+        "assistant",
+        normalizePhase(item.phase),
+        null,
+        markdown,
+      );
+  }
+  if (itemType !== "Plan") return null;
+  const markdown = string(item.text);
+  return markdown === null
+    ? null
+    : messageItem(ordinal, timestamp, "assistant", "final", itemType, markdown);
 }
 
 export function firstUserTitle(items: readonly DomainTimelineRecord[]): string | null {
@@ -126,6 +142,17 @@ function contentText(value: unknown): string | null {
   const text = value
     .filter(isObject)
     .filter((part) => ["input_text", "output_text", "text"].includes(string(part.type) ?? ""))
+    .map((part) => string(part.text))
+    .filter((part): part is string => part !== null)
+    .join("\n\n");
+  return text.length === 0 ? null : text;
+}
+
+function itemContentText(value: unknown, acceptedType: "text" | "Text"): string | null {
+  if (!Array.isArray(value)) return null;
+  const text = value
+    .filter(isObject)
+    .filter((part) => part.type === acceptedType)
     .map((part) => string(part.text))
     .filter((part): part is string => part !== null)
     .join("\n\n");

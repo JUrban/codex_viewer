@@ -1,10 +1,8 @@
 # Codex Sessions Reader
 
-A private web viewer for local Codex session history. It is read-only by default
-and can optionally send input to an existing tmux-hosted Codex session.
-
-It reads session history from your Codex home and serves a responsive local
-interface. It does not edit, delete, export, or upload session files.
+A local web viewer for Codex session history stored in your Codex home. It does
+not edit, delete, export, or upload session files. With explicit opt-in, it can
+send input to an existing tmux-hosted Codex session.
 
 ![Codex session catalog](docs/images/codex-sessions-catalog.png)
 
@@ -86,13 +84,12 @@ restart the server after replacing them.
 ## Features and limits
 
 - Browse active and archived Codex sessions.
-- Open each session at a stable `/sessions/:id` URL using ordinary page navigation.
+- Open each session at a stable `/sessions/:id` URL.
 - Search session titles, project paths, and visible user and assistant messages.
 - Render Markdown, GitHub-flavored Markdown, and KaTeX math.
 - Continue reading rollout files while Codex is writing them.
 - Enable Live updates for individual active sessions. The setting is off by
-  default and remembered per session. While the page is visible, one bounded
-  long-poll request waits for timeline, metadata, or interaction changes.
+  default and remembered per session.
 - Handle malformed or unknown records with diagnostics where possible.
 - With `--enable-interaction`, send multiline prompts, `Ctrl+C`, and `Esc` to a
   user-bound tmux pane. Archived sessions remain read-only.
@@ -102,18 +99,18 @@ session, run the activation command shown at the bottom of that session's
 timeline from inside its Codex pane. The interaction panel is shown only while
 Live updates are enabled.
 
-The viewer reads only `rollout-*.jsonl` files. It does not inspect Codex
-databases. Large records and responses are capped to keep memory and search work
-bounded. See [Session JSONL filtering rules](docs/session-jsonl-filtering.md)
-for the detailed decoding and visibility policy.
+The viewer reads only `rollout-*.jsonl` files and does not inspect Codex
+databases. It applies size limits when reading and serving session data. See
+[Session JSONL filtering rules](docs/session-jsonl-filtering.md) for supported
+records, truncation, and visibility rules.
 
 ## Security
 
 The server listens on loopback by default. It rejects path traversal and symlink
 escapes, does not enable permissive CORS, and does not expose rollout file paths
-or raw Codex records. Mutation requests are authorized only when the process
-is started with `--enable-interaction`; they use the same network trust boundary as
-the read API.
+or raw Codex records. Interaction endpoints are disabled unless the process is
+started with `--enable-interaction`. Enabling them does not add authentication;
+they use the same network trust boundary as the read API.
 
 Rendered Markdown cannot run raw HTML. Remote images are replaced with text,
 and unsafe links are disabled.
@@ -171,11 +168,6 @@ npm run benchmark:scale
 
 Pass `--codex-home` with the directory containing `sessions/`, not `sessions/`
 itself. Session files must be regular files named `rollout-*.jsonl`.
-
-**A session shows diagnostics**
-
-Codex may still be writing the file, or a record may exceed a safety limit.
-Wait for the write to finish and reload.
 
 **Search returns partial results**
 
