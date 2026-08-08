@@ -153,7 +153,7 @@ export class DefaultSessionRepository implements SessionRepository {
     );
     return result === null
       ? null
-      : this.#mapper.toolDetail(id, itemId, result);
+      : this.#mapper.toolDetail(itemId, result);
   }
 
   async getDirectiveDetail(
@@ -170,7 +170,7 @@ export class DefaultSessionRepository implements SessionRepository {
     );
     return result === null
       ? null
-      : this.#mapper.directiveDetail(id, itemId, result);
+      : this.#mapper.directiveDetail(itemId, result);
   }
 
   async getInteractionSession(id: SessionId): Promise<InteractionSessionSnapshot | null> {

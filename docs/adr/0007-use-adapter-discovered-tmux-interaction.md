@@ -7,15 +7,16 @@ date: 2026-08-01
 
 ## Context and Problem Statement
 
-The session viewer needs to send prompts and a small set of control keys to an already running agent without taking ownership of the agent process or weakening its default read-only behavior. Agent rollout formats differ, while safely addressing and operating a tmux pane has transport-specific validation and serialization requirements.
+The session viewer needs to send prompts and a small set of control keys to an already running agent, and provide a bounded on-demand terminal preview, without taking ownership of the agent process or weakening its default read-only behavior. Agent rollout formats differ, while safely addressing and operating a tmux pane has transport-specific validation and serialization requirements.
 
 ## Decision Drivers
 
-- Interaction must remain disabled unless the operator explicitly enables write operations.
+- Interaction must remain disabled unless the operator explicitly enables pane read and write operations.
 - The viewer must not start agents or create, own, or manage tmux servers and panes.
 - Agent-specific rollout parsing must remain behind the existing adapter boundary.
 - Stale or reused tmux targets must fail closed before every operation.
 - Multiline prompts must be delivered as one bracketed-paste submission.
+- Terminal output must be captured only on request, remain separate from the canonical rollout timeline, and have a fixed response bound.
 
 ## Considered Options
 
@@ -27,17 +28,20 @@ The session viewer needs to send prompts and a small set of control keys to an a
 
 Chosen option: "Discover a user-activated tmux binding through each agent adapter and execute it through a shared tmux transport", because it preserves adapter ownership of agent formats, centralizes transport validation, and keeps process lifecycle outside the viewer.
 
-Interaction is guarded by the global `--enable-interaction` option and remains unavailable for archived sessions. An adapter scans its complete rollout and exposes only its latest binding attempt plus its interaction state. The transport validates the socket owner and type and records the tmux server start time, pane ID, and pane PID; it revalidates all of them before every serialized pane operation.
+Interaction is guarded by the global `--enable-interaction` option and remains unavailable for archived sessions. An adapter scans its complete rollout and exposes only its latest binding attempt. The transport validates the socket owner and type and records the tmux server start time, pane ID, and pane PID; it revalidates all of them before every serialized pane operation.
 
-Interaction state is part of the top-level session detail and item-page read responses rather than a standalone resource. The client has one per-session Live update scheduler, disabled by default, that refreshes both timeline metadata and interaction state. Its default interval is two seconds and its enabled state is stored per session. Pagination adopts the interaction state returned with that page. Message, interrupt, and escape mutations do not refresh immediately or start a faster polling window; the next ordinary Live update tick observes their effects. Archived sessions ignore any stored Live update preference without deleting it.
+The same validated binding supports a manual plain-text terminal preview. Each request captures the current pane plus the most recent 500 history lines, omits terminal escape attributes, and discards older bytes when the result exceeds 256 KiB. Preview content is returned as a separate uncached API resource, held only in browser memory, and never merged into or persisted with the rollout timeline. There is no background capture, terminal stream, or automatic preview refresh.
+
+Interaction connection status is part of the top-level session detail and item-page read responses rather than a standalone resource. It is limited to unbound, disconnected, or connected; the viewer does not infer agent activity from rollout events or restrict connected operations according to an inferred activity state. The client has one per-session Live update scheduler, disabled by default, that refreshes both timeline metadata and connection status. Its enabled state is stored per session. Archived sessions ignore any stored Live update preference without deleting it.
 
 ### Positive Consequences
 
 - Read-only behavior remains the default and is observable through the API and UI.
-- Other agent adapters can add their own activation syntax and state parsing without duplicating tmux safety logic.
+- Other agent adapters can add their own activation syntax without duplicating tmux safety logic.
 - The viewer can reconnect after restart by rescanning the rollout and does not need a binding database.
 - Pane reuse, server restart, and stale sockets fail closed instead of targeting a different process.
-- Timeline and interaction state share one ordered read path and polling lifecycle.
+- Timeline and interaction connection status share one ordered read path and polling lifecycle.
+- Operators can inspect recent terminal-only output without turning the viewer into a terminal owner or treating screen contents as structured session data.
 
 ### Negative Consequences
 
@@ -45,7 +49,8 @@ Interaction state is part of the top-level session detail and item-page read res
 - Binding availability depends on the activation record being present in the rollout.
 - The existing network trust model now protects mutation endpoints as well as reads; binding to a non-loopback address requires external access controls.
 - A timeout has an unknown result and cannot be retried automatically without risking duplicate input.
-- Interaction feedback is bounded by the configured Live update interval rather than refreshed immediately after a mutation.
+- The viewer cannot indicate whether the connected agent is idle, running, or waiting for user input.
+- A preview can expose secrets and unrelated terminal output present in recent scrollback, and large previews require bounded additional memory and transport work.
 
 ## Pros and Cons of the Options
 

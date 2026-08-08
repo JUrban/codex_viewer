@@ -1,4 +1,7 @@
-import type { InteractionResponse } from "../../shared/api-contract.js";
+import type {
+  InteractionResponse,
+  TerminalPreviewResponse,
+} from "../../shared/api-contract.js";
 import type { InteractionBindingAttempt } from "../domain/session-domain.js";
 import type {
   InteractionSessionSnapshot,
@@ -10,15 +13,12 @@ import {
   type TmuxBinding,
 } from "./tmux-service.js";
 
-export type InteractionAction = "message" | "interrupt" | "escape";
-
 export class SessionInteractionError extends Error {
   constructor(
     readonly code:
       | "session_not_found"
       | "interaction_not_supported"
       | "interaction_not_connected"
-      | "interaction_state_conflict"
       | "operation_result_unknown"
       | "interaction_failed",
     message: string,
@@ -63,7 +63,7 @@ export class SessionInteractionService {
     try {
       const binding = await this.tmux.connect(attempt);
       this.#bindings.set(sessionId, { attempt, binding });
-      return response(interaction.activation, interaction.state);
+      return response(interaction.activation, "connected");
     } catch {
       this.#bindings.delete(sessionId);
       return response(interaction.activation, "disconnected");
@@ -71,21 +71,33 @@ export class SessionInteractionService {
   }
 
   async sendMessage(sessionId: string, message: string): Promise<void> {
-    const { binding } = await this.#resolve(sessionId, "message");
+    const { binding } = await this.#resolve(sessionId);
     await this.#perform(sessionId, () => this.tmux.sendMessage(binding, message));
   }
 
   async interrupt(sessionId: string): Promise<void> {
-    const { binding } = await this.#resolve(sessionId, "interrupt");
+    const { binding } = await this.#resolve(sessionId);
     await this.#perform(sessionId, () => this.tmux.sendInterrupt(binding));
   }
 
   async escape(sessionId: string): Promise<void> {
-    const { binding } = await this.#resolve(sessionId, "escape");
+    const { binding } = await this.#resolve(sessionId);
     await this.#perform(sessionId, () => this.tmux.sendEscape(binding));
   }
 
-  async #resolve(sessionId: string, action: InteractionAction): Promise<CachedBinding> {
+  async preview(sessionId: string): Promise<TerminalPreviewResponse> {
+    const { binding } = await this.#resolve(sessionId);
+    const result = await this.#perform(
+      sessionId,
+      () => this.tmux.captureTerminal(binding),
+    );
+    return {
+      ...result,
+      capturedAt: new Date().toISOString(),
+    };
+  }
+
+  async #resolve(sessionId: string): Promise<CachedBinding> {
     const session = await this.repository.getInteractionSession(sessionId);
     if (session === null) {
       throw new SessionInteractionError("session_not_found", "Session not found");
@@ -97,15 +109,6 @@ export class SessionInteractionService {
       );
     }
     const interaction = session.interaction!;
-    if (
-      (action === "message" && interaction.state !== "idle") ||
-      (action === "interrupt" && interaction.state === "idle")
-    ) {
-      throw new SessionInteractionError(
-        "interaction_state_conflict",
-        `The ${action} action is not available while the agent is ${interaction.state}`,
-      );
-    }
     const attempt = interaction.bindingAttempt;
     if (attempt === null || !attempt.valid) {
       this.#bindings.delete(sessionId);
@@ -133,9 +136,9 @@ export class SessionInteractionService {
     }
   }
 
-  async #perform(sessionId: string, operation: () => Promise<void>): Promise<void> {
+  async #perform<T>(sessionId: string, operation: () => Promise<T>): Promise<T> {
     try {
-      await operation();
+      return await operation();
     } catch (error) {
       if (error instanceof TmuxInteractionError) {
         if (error.code === "disconnected") {
@@ -183,15 +186,11 @@ export class SessionInteractionService {
 
 function response(
   activation: string,
-  state: "unbound" | "disconnected" | "idle" | "running" | "awaiting_user_input",
+  state: "unbound" | "disconnected" | "connected",
 ): InteractionResponse {
-  const connected = state !== "unbound" && state !== "disconnected";
   return {
     supported: true,
     state,
     activation,
-    canSendMessage: state === "idle",
-    canInterrupt: state === "running" || state === "awaiting_user_input",
-    canSendEscape: connected,
   };
 }

@@ -10,6 +10,7 @@ import type {
   SessionListResponse,
   ToolDetailQuery,
   ToolDetailResponse,
+  TerminalPreviewResponse,
 } from "../../shared/api-contract";
 
 export class ApiClientError extends Error {
@@ -145,6 +146,11 @@ export const api = {
     postJson<void>(
       `/api/v1/sessions/${encodeURIComponent(sessionId)}/keys`,
       { key: "escape" },
+      signal,
+    ),
+  terminalPreview: (sessionId: string, signal?: AbortSignal) =>
+    request<TerminalPreviewResponse>(
+      `/api/v1/sessions/${encodeURIComponent(sessionId)}/terminal-preview`,
       signal,
     ),
 };

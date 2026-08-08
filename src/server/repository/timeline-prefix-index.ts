@@ -278,12 +278,6 @@ class DigestWriter {
     this.#token(value === null ? "null" : String(value));
   }
 
-  object(name: string, write: (writer: DigestWriter) => void): void {
-    this.#field(name, "object-start");
-    write(this);
-    this.#token("object-end");
-  }
-
   nullableObject<T>(
     name: string,
     value: T | null,
@@ -310,28 +304,6 @@ class DigestWriter {
       this.#token("item-start");
       write(this, value);
       this.#token("item-end");
-    }
-  }
-
-  arrayEncoded<T>(
-    name: string,
-    values: readonly T[],
-    write: (writer: DigestWriter, value: T) => void,
-    observe: (value: T, encoded: Uint8Array) => void,
-  ): void {
-    this.#field(name, "array");
-    this.#token(String(values.length));
-    for (const value of values) {
-      const chunks: Buffer[] = [];
-      const itemWriter = new DigestWriter((chunk) => {
-        chunks.push(typeof chunk === "string" ? Buffer.from(chunk, "utf8") : Buffer.from(chunk));
-      });
-      write(itemWriter, value);
-      const encoded = Buffer.concat(chunks);
-      this.#token("item-start");
-      this.update(encoded);
-      this.#token("item-end");
-      observe(value, encoded);
     }
   }
 

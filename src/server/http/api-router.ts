@@ -43,7 +43,7 @@ export interface ApiRouterOptions {
   readonly requestId?: () => string;
   readonly interaction?: Pick<
     SessionInteractionService,
-    "describe" | "sendMessage" | "interrupt" | "escape"
+    "describe" | "sendMessage" | "interrupt" | "escape" | "preview"
   > & Partial<Pick<SessionInteractionService, "describeSnapshot">>;
   readonly live?: SessionLiveService;
 }
@@ -121,6 +121,15 @@ export function createApiRouter(
           request.removeListener("aborted", onDisconnect);
           response.removeListener("close", onDisconnect);
         }
+      }
+      if (segments.length === 1 && segments[0] === "terminal-preview") {
+        if (!readMethod) return false;
+        if ([...url.searchParams].length > 0) {
+          invalid("terminal preview does not accept query parameters");
+        }
+        if (options.interaction === undefined) return interactionUnavailable(response);
+        sendJson(response, 200, await options.interaction.preview(id), headOnly);
+        return true;
       }
       if (segments.length === 1 && segments[0] === "messages") {
         if (request.method !== "POST") return false;

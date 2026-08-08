@@ -52,7 +52,6 @@ export class SessionApiMapper {
   }
 
   toolDetail(
-    sessionId: string,
     itemId: string,
     result: ToolDetailResult,
   ): ToolDetailResponse {
@@ -65,7 +64,6 @@ export class SessionApiMapper {
   }
 
   directiveDetail(
-    sessionId: string,
     itemId: string,
     result: DirectiveDetailResult,
   ): DirectiveDetailResponse {

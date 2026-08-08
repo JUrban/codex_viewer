@@ -1,6 +1,5 @@
 import type {
   DomainAgentInteraction,
-  DomainAgentInteractionState,
   InteractionBindingAttempt,
 } from "../../domain/session-domain.js";
 import type { DecodedRecord, DecodedRollout } from "./rollout-decoder.js";
@@ -14,8 +13,6 @@ const BIND_MARKER = "CODEX_VIEWER_TMUX_BIND_V1";
 
 export function codexInteraction(decoded: DecodedRollout): DomainAgentInteraction {
   let bindingAttempt: InteractionBindingAttempt | null = null;
-  let state: DomainAgentInteractionState = "idle";
-  const pendingUserInput = new Set<string>();
 
   for (const record of decoded.records) {
     const attempt = bindingAttemptFrom(record);
@@ -23,44 +20,9 @@ export function codexInteraction(decoded: DecodedRollout): DomainAgentInteractio
       attempt !== null &&
       (bindingAttempt === null || attempt.ordinal >= bindingAttempt.ordinal)
     ) bindingAttempt = attempt;
-
-    const value = record.value;
-    const payload = value.payload;
-    if (!isObject(payload)) continue;
-    if (value.type === "event_msg") {
-      if (payload.type === "user_message") state = "running";
-      if (payload.type === "turn_aborted" || payload.type === "task_complete") {
-        pendingUserInput.clear();
-        state = "idle";
-      }
-      continue;
-    }
-    if (value.type !== "response_item") continue;
-    if (
-      payload.type === "message" &&
-      payload.role === "assistant" &&
-      (payload.phase === "final" || payload.phase === "final_answer")
-    ) {
-      state = "idle";
-    }
-    if (payload.type === "function_call" && payload.name === "request_user_input") {
-      const callId = nonEmptyString(payload.call_id);
-      if (callId !== null) {
-        pendingUserInput.add(callId);
-        state = "awaiting_user_input";
-      }
-    }
-    if (
-      (payload.type === "function_call_output" || payload.type === "custom_tool_call_output") &&
-      typeof payload.call_id === "string" &&
-      pendingUserInput.delete(payload.call_id)
-    ) {
-      state = "running";
-    }
   }
 
-  if (pendingUserInput.size > 0) state = "awaiting_user_input";
-  return { activation: CODEX_TMUX_ACTIVATION, bindingAttempt, state };
+  return { activation: CODEX_TMUX_ACTIVATION, bindingAttempt };
 }
 
 function bindingAttemptFrom(record: DecodedRecord): InteractionBindingAttempt | null {
@@ -118,8 +80,4 @@ function contentText(value: unknown): string | null {
     if (part.type === "input_text" || part.type === "text") parts.push(part.text);
   }
   return parts.length === 0 ? null : parts.join("\n\n");
-}
-
-function nonEmptyString(value: unknown): string | null {
-  return typeof value === "string" && value.length > 0 ? value : null;
 }

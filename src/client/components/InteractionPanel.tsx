@@ -1,31 +1,80 @@
-import { useState, type KeyboardEvent } from "react";
-import type { InteractionResponse } from "../../shared/api-contract";
+import {
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type KeyboardEvent,
+} from "react";
+import type {
+  InteractionResponse,
+  TerminalPreviewResponse,
+} from "../../shared/api-contract";
 
 interface InteractionPanelProps {
   interaction: InteractionResponse | null;
+  itemCount: number;
+  updatedAt: string | null;
   busy: boolean;
   error: string | null;
   onDismissError: () => void;
   onSendMessage: (message: string) => Promise<void>;
   onInterrupt: () => Promise<void>;
   onEscape: () => Promise<void>;
+  preview: TerminalPreviewResponse | null;
+  previewBusy: boolean;
+  previewError: string | null;
+  onDismissPreviewError: () => void;
+  onPreviewTerminal: () => Promise<void>;
 }
 
 export function InteractionPanel({
   interaction,
+  itemCount,
+  updatedAt,
   busy,
   error,
   onDismissError,
   onSendMessage,
   onInterrupt,
   onEscape,
+  preview,
+  previewBusy,
+  previewError,
+  onDismissPreviewError,
+  onPreviewTerminal,
 }: InteractionPanelProps) {
   const [message, setMessage] = useState("");
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
+  const [previewExpanded, setPreviewExpanded] = useState(preview !== null);
+  const previewContentId = useId();
+  const previewContent = useRef<HTMLPreElement | null>(null);
+  const scrollOnExpand = useRef(preview !== null);
+  const focusOnExpand = useRef(false);
+  const previewScrollTop = useRef<number | null>(null);
+  useLayoutEffect(() => {
+    if (!previewExpanded || preview === null) return;
+    const content = previewContent.current;
+    if (content === null) {
+      focusOnExpand.current = false;
+      return;
+    }
+    if (scrollOnExpand.current) {
+      content.scrollTop = content.scrollHeight;
+      scrollOnExpand.current = false;
+      previewScrollTop.current = null;
+    } else if (previewScrollTop.current !== null) {
+      content.scrollTop = previewScrollTop.current;
+      previewScrollTop.current = null;
+    }
+    if (focusOnExpand.current) {
+      content.focus({ preventScroll: true });
+      focusOnExpand.current = false;
+    }
+  }, [preview, previewExpanded]);
   if (interaction == null || !interaction.supported) return null;
 
   const send = async () => {
-    if (busy || !interaction.canSendMessage || message.trim().length === 0) return;
+    if (busy || message.trim().length === 0) return;
     await onSendMessage(message);
     setMessage("");
   };
@@ -44,17 +93,33 @@ export function InteractionPanel({
       setCopyState("failed");
     }
   };
+  const togglePreview = async () => {
+    if (preview === null) {
+      scrollOnExpand.current = true;
+      await onPreviewTerminal();
+      focusOnExpand.current = true;
+      setPreviewExpanded(true);
+      return;
+    }
+    setPreviewExpanded((expanded) => {
+      if (!expanded) {
+        scrollOnExpand.current = true;
+        focusOnExpand.current = true;
+      }
+      return !expanded;
+    });
+  };
+  const refreshPreview = async () => {
+    previewScrollTop.current = previewContent.current?.scrollTop ?? null;
+    await onPreviewTerminal();
+  };
 
   return (
     <section className="interaction-panel" aria-label="Session interaction">
       <div className="interaction-heading">
         <div>
           <p className="eyebrow">Live interaction</p>
-          <h3>{stateLabel(interaction.state)}</h3>
         </div>
-        {!unbound && !disconnected
-          ? <span className={`interaction-state ${interaction.state}`}>{interaction.state.replaceAll("_", " ")}</span>
-          : null}
       </div>
       {error
         ? (
@@ -84,51 +149,128 @@ export function InteractionPanel({
           )
         : (
             <>
-              <textarea
-                aria-label="Message to agent"
-                value={message}
-                rows={4}
-                maxLength={65_536}
-                placeholder={interaction.canSendMessage
-                  ? "Send a prompt… Enter for a new line, Shift+Enter to send"
-                  : "Wait for the agent to become idle before sending a message"}
-                disabled={busy || !interaction.canSendMessage}
-                onChange={(event) => setMessage(event.target.value)}
-                onKeyDown={onKeyDown}
-              />
-              <div className="interaction-actions">
-                <button
-                  type="button"
-                  disabled={busy || !interaction.canSendMessage || message.trim().length === 0}
-                  onClick={() => void send().catch(() => undefined)}
-                >
-                  Send
-                </button>
-                <button
-                  type="button"
-                  disabled={busy || !interaction.canInterrupt}
-                  onClick={() => void onInterrupt().catch(() => undefined)}
-                >
-                  Interrupt
-                </button>
-                <button
-                  type="button"
-                  disabled={busy || !interaction.canSendEscape}
-                  onClick={() => void onEscape().catch(() => undefined)}
-                >
-                  Esc
-                </button>
+              <section className="terminal-preview" aria-label="Terminal preview">
+                <div className="terminal-preview-header">
+                  <button
+                    type="button"
+                    className="terminal-preview-toggle"
+                    aria-expanded={preview !== null && previewExpanded}
+                    aria-controls={preview !== null ? previewContentId : undefined}
+                    disabled={preview === null && previewBusy}
+                    onClick={() => void togglePreview().catch(() => undefined)}
+                  >
+                    <span className="terminal-preview-mark" aria-hidden="true">
+                      {preview !== null && previewExpanded ? "▾" : "▸"}
+                    </span>
+                    <span>Terminal preview</span>
+                    {preview === null && previewBusy
+                      ? <span className="terminal-preview-status">Capturing…</span>
+                      : null}
+                  </button>
+                  {preview
+                    ? (
+                        <div className="terminal-preview-meta">
+                          <time dateTime={preview.capturedAt}>
+                            {new Date(preview.capturedAt).toLocaleTimeString()}
+                          </time>
+                          <button
+                            type="button"
+                            className={previewBusy ? "is-active" : undefined}
+                            aria-label="Refresh terminal preview"
+                            aria-busy={previewBusy}
+                            disabled={previewBusy}
+                            onClick={() => void refreshPreview().catch(() => undefined)}
+                          >
+                            <span
+                              className={`terminal-preview-refresh-icon${previewBusy ? " is-spinning" : ""}`}
+                              aria-hidden="true"
+                            >↻</span>
+                          </button>
+                        </div>
+                      )
+                    : null}
+                </div>
+                {previewError
+                  ? (
+                      <div className="interaction-error terminal-preview-error" role="alert">
+                        <span>{previewError}</span>
+                        <button
+                          type="button"
+                          onClick={onDismissPreviewError}
+                          aria-label="Dismiss terminal preview error"
+                        >×</button>
+                      </div>
+                    )
+                  : null}
+                {preview && previewExpanded
+                  ? (
+                      <div id={previewContentId} className="terminal-preview-body">
+                        {preview.truncated
+                          ? <p className="terminal-preview-notice">Older terminal output was truncated.</p>
+                          : null}
+                        {preview.content.length > 0
+                          ? (
+                              <pre
+                                key={preview.capturedAt}
+                                ref={previewContent}
+                                aria-label="Terminal preview content"
+                                tabIndex={0}
+                              >
+                                {preview.content}
+                              </pre>
+                            )
+                          : <p className="terminal-preview-empty">The terminal pane is empty.</p>}
+                      </div>
+                    )
+                  : null}
+              </section>
+              <div className="interaction-composer">
+                <textarea
+                  aria-label="Message to agent"
+                  value={message}
+                  rows={3}
+                  maxLength={65_536}
+                  placeholder="Send a prompt… Enter for a new line, Shift+Enter to send"
+                  disabled={busy}
+                  onChange={(event) => setMessage(event.target.value)}
+                  onKeyDown={onKeyDown}
+                />
+                <div className="interaction-actions">
+                  <button
+                    type="button"
+                    className="interaction-send"
+                    disabled={busy || message.trim().length === 0}
+                    onClick={() => void send().catch(() => undefined)}
+                  >
+                    Send
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void onInterrupt().catch(() => undefined)}
+                  >
+                    Ctrl-C
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void onEscape().catch(() => undefined)}
+                  >
+                    Esc
+                  </button>
+                </div>
               </div>
             </>
           )}
+      <p className="interaction-summary">{sessionSummary(itemCount, updatedAt)}</p>
     </section>
   );
 }
 
-function stateLabel(state: string): string {
-  if (state === "unbound") return "Connect a tmux pane";
-  if (state === "disconnected") return "Reconnect the tmux pane";
-  if (state === "awaiting_user_input") return "Agent is awaiting input";
-  if (state === "running") return "Agent is running";
-  return "Send a message";
+function sessionSummary(itemCount: number, updatedAt: string | null): string {
+  const eventLabel = `${itemCount} ${itemCount === 1 ? "event" : "events"}`;
+  if (updatedAt === null) return `${eventLabel} · Update time unavailable`;
+  const date = new Date(updatedAt);
+  if (Number.isNaN(date.valueOf())) return `${eventLabel} · Update time unavailable`;
+  return `${eventLabel} · Updated ${date.toLocaleTimeString(undefined, { timeStyle: "medium" })}`;
 }

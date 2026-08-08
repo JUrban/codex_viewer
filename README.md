@@ -40,7 +40,7 @@ Pass server options after `npm start --`:
 | `--ssl-cert <path>` | none | PEM server certificate or certificate chain; required with `--ssl` |
 | `--ssl-key <path>` | none | PEM server private key; required with `--ssl` |
 | `--ssl-ca <path>` | none | PEM CA bundle; enables mandatory client-certificate verification |
-| `--enable-interaction` | disabled | Allow prompts, `Ctrl+C`, and `Esc` for active sessions bound to an existing tmux pane |
+| `--enable-interaction` | disabled | Allow interaction and terminal previews for active sessions bound to an existing tmux pane |
 | `--help` | — | Print command-line help |
 
 Example:
@@ -90,8 +90,8 @@ restart the server after replacing them.
 - Continue reading rollout files while Codex is writing them.
 - Enable Live updates for individual active sessions.
 - Handle malformed or unknown records with diagnostics where possible.
-- With `--enable-interaction`, send multiline prompts, `Ctrl+C`, and `Esc` to a
-  user-bound tmux pane. Archived sessions remain read-only.
+- With `--enable-interaction`, interact with a user-bound tmux pane and manually
+  preview its terminal contents. Archived sessions remain read-only.
 
 The viewer never starts Codex or creates or manages tmux. To bind an active
 session, run the activation command shown at the bottom of that session's
@@ -153,6 +153,12 @@ Verification commands:
 npm run typecheck
 npm test
 npm run build
+```
+
+When `tmux` is available, include the real transport integration test with:
+
+```sh
+npm run test:all
 ```
 
 Run the optional scale benchmark with:

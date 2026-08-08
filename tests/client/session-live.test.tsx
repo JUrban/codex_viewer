@@ -118,13 +118,15 @@ describe("session Live updates", () => {
   it("adopts interaction and metadata-only Live changes without advancing cursor", async () => {
     const changed = live(false, NEXT_REVISION, {
       supported: true,
-      state: "idle",
+      state: "connected",
       activation: "activate",
-      canSendMessage: true,
-      canInterrupt: false,
-      canSendEscape: true,
     });
-    changed.session = { ...changed.session, title: "Changed title" };
+    changed.session = {
+      ...changed.session,
+      title: "Changed title",
+      itemCount: 7,
+      updatedAt: "2026-08-08T12:34:00.000Z",
+    };
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(json(page([])))
       .mockResolvedValueOnce(json(changed))
@@ -136,7 +138,10 @@ describe("session Live updates", () => {
     await flush(10);
     expect(screen.getByRole("heading", { name: "Changed title" })).toBeInTheDocument();
     expect(document.title).toBe("Changed title · Codex Sessions");
-    expect(screen.getByText("Send a message")).toBeInTheDocument();
+    const localTime = new Date(changed.session.updatedAt!).toLocaleTimeString(undefined, {
+      timeStyle: "medium",
+    });
+    expect(screen.getByText(`7 events · Updated ${localTime}`)).toBeInTheDocument();
     expect(String(fetchMock.mock.calls[2]?.[0])).toContain("cursor=opaque.timeline.cursor");
   });
 
@@ -188,6 +193,7 @@ describe("session Live updates", () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
     expect(fetchMock).toHaveBeenCalledTimes(3);
     expect(screen.getByText("Stop")).toBeInTheDocument();
+    expect(screen.getByRole("switch", { name: "Live updates" })).not.toBeChecked();
     vi.useRealTimers();
   });
 

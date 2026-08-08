@@ -13,6 +13,7 @@
     "start": "node dist/server/server/main.js",
     "benchmark:scale": "tsx scripts/benchmark-scale.ts",
     "test": "vitest run",
+    "test:all": "npm test && npm run test:integration:tmux",
     "test:integration:tmux": "vitest run --config vitest.integration.config.ts tests/integration/tmux-service.integration.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.server.json --noEmit"
   },

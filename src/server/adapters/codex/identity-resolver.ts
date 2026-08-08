@@ -52,23 +52,34 @@ export class IdentityResolver {
 
 function rawMetadata(value: unknown): RawMetadata | null {
   if (!isObject(value)) return null;
+  const spawn = threadSpawn(value);
   return {
     id: string(value.id),
     agentVersion: string(value.cli_version ?? value.agent_version),
     title: string(value.title),
     cwd: string(value.cwd),
     timestamp: string(value.timestamp),
-    parentThreadId: string(value.parent_thread_id ?? value.parent_id),
-    agent: rawAgent(value),
+    parentThreadId: string(value.parent_thread_id) ??
+      string(value.parent_id) ??
+      string(spawn?.parent_thread_id),
+    agent: rawAgent(value, spawn),
   };
 }
 
-function rawAgent(value: Record<string, unknown>): AgentIdentity | null {
+function threadSpawn(value: Record<string, unknown>): Record<string, unknown> | null {
   const source = isObject(value.source) ? value.source : null;
   const subagent = source?.subagent;
-  const spawn = isObject(subagent) && isObject(subagent.thread_spawn)
+  return isObject(subagent) && isObject(subagent.thread_spawn)
     ? subagent.thread_spawn
     : null;
+}
+
+function rawAgent(
+  value: Record<string, unknown>,
+  spawn: Record<string, unknown> | null,
+): AgentIdentity | null {
+  const source = isObject(value.source) ? value.source : null;
+  const subagent = source?.subagent;
   return nonEmptyAgentIdentity({
     taskName: taskNameFromAgentPath(string(value.agent_path) ?? string(spawn?.agent_path)),
     nickname: string(value.agent_nickname) ?? string(spawn?.agent_nickname),

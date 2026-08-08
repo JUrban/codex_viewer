@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { LOOPBACK_HOST, type ServerConfig } from "../../src/server/config.js";
 import { createApiRouter } from "../../src/server/http/api-router.js";
-import { createServer } from "../../src/server/http/create-server.js";
+import { createServer, listenServer } from "../../src/server/http/create-server.js";
 import type { SessionRepository } from "../../src/server/repository/session-repository.js";
 import { createTempDirectory } from "../helpers/temp-directories.js";
 import {
@@ -148,6 +148,27 @@ async function startSecure(requireClientCertificate: boolean): Promise<string> {
 }
 
 describe("secure HTTP foundation", () => {
+  it("rejects the startup promise when the listen address is already in use", async () => {
+    const clientDirectory = await createTempDirectory("codex-reader-listen-error-");
+    const config: ServerConfig = {
+      host: LOOPBACK_HOST,
+      port: 0,
+      codexHome: "/unused",
+      clientDirectory,
+      tls: { enabled: false },
+      interactionEnabled: false,
+    };
+    const occupied = createServer(config);
+    const candidate = createServer(config);
+    servers.push(occupied, candidate);
+    await listenServer(occupied, 0, LOOPBACK_HOST);
+    const { port } = occupied.address() as AddressInfo;
+
+    await expect(listenServer(candidate, port, LOOPBACK_HOST)).rejects.toMatchObject({
+      code: "EADDRINUSE",
+    });
+  });
+
   it("serves both MPA pages with restrictive headers and no CORS", async () => {
     const base = await start();
     const response = await fetch(`${base}/sessions/abcdefghijklmnopqrstuvwx`);

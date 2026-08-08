@@ -3,10 +3,12 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   MAX_INTERACTION_MESSAGE_BYTES,
+  MAX_TERMINAL_PREVIEW_BYTES,
   normalizeMessage,
   TmuxInteractionError,
   TmuxInteractionService,
   type TmuxCommandRunner,
+  type TmuxCommandOptions,
 } from "../../src/server/interaction/tmux-service.js";
 import { createTempDirectory } from "../helpers/temp-directories.js";
 
@@ -14,6 +16,7 @@ interface Call {
   readonly socketPath: string;
   readonly args: readonly string[];
   readonly input: string | undefined;
+  readonly options?: TmuxCommandOptions;
 }
 
 class FakeRunner implements TmuxCommandRunner {
@@ -21,15 +24,27 @@ class FakeRunner implements TmuxCommandRunner {
   panePid = "4100";
   serverStartTime = "1700000000";
   failure: ((call: Call) => Error | null) | null = null;
+  terminalOutput = "recent terminal output";
+  terminalTruncated = false;
 
-  async run(socketPath: string, args: readonly string[], input: string | undefined) {
-    const call = { socketPath, args, input };
+  async run(
+    socketPath: string,
+    args: readonly string[],
+    input: string | undefined,
+    _timeoutMs?: number,
+    options?: TmuxCommandOptions,
+  ) {
+    const call = { socketPath, args, input, options };
     this.calls.push(call);
     const failure = this.failure?.(call);
     if (failure) throw failure;
-    return args[0] === "display-message"
-      ? { stdout: `${this.serverStartTime}|%3|${this.panePid}|0\n` }
-      : { stdout: "" };
+    if (args[0] === "display-message") {
+      return { stdout: `${this.serverStartTime}|%3|${this.panePid}|0\n` };
+    }
+    if (args[0] === "capture-pane") {
+      return { stdout: this.terminalOutput, truncated: this.terminalTruncated };
+    }
+    return { stdout: "" };
   }
 }
 
@@ -86,6 +101,37 @@ describe("tmux interaction transport", () => {
     ]);
     expect(keys).toHaveLength(1);
     expect(keys[0]?.args).toEqual(["send-keys", "-t", "%3", "Enter"]);
+  });
+
+  it("revalidates and captures the current pane plus 500 history lines", async () => {
+    const socketPath = await unixSocket();
+    const runner = new FakeRunner();
+    runner.terminalOutput = "alpha\n世界\n";
+    runner.terminalTruncated = true;
+    const service = new TmuxInteractionService(runner);
+    const binding = await service.connect({ ordinal: 1, valid: true, socketPath, paneId: "%3" });
+
+    await expect(service.captureTerminal(binding)).resolves.toEqual({
+      content: "alpha\n世界\n",
+      truncated: true,
+    });
+    const capture = runner.calls.find((call) => call.args[0] === "capture-pane");
+    expect(capture?.args).toEqual(["capture-pane", "-p", "-t", "%3", "-S", "-500"]);
+    expect(capture?.options).toEqual({
+      maxOutputBytes: MAX_TERMINAL_PREVIEW_BYTES,
+      truncateStart: true,
+    });
+  });
+
+  it("does not capture after pane reuse", async () => {
+    const socketPath = await unixSocket();
+    const runner = new FakeRunner();
+    const service = new TmuxInteractionService(runner);
+    const binding = await service.connect({ ordinal: 1, valid: true, socketPath, paneId: "%3" });
+    runner.panePid = "9999";
+
+    await expect(service.captureTerminal(binding)).rejects.toMatchObject({ code: "disconnected" });
+    expect(runner.calls.some((call) => call.args[0] === "capture-pane")).toBe(false);
   });
 
   it("fails closed on pane reuse and does not paste", async () => {

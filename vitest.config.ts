@@ -7,6 +7,7 @@ export default defineConfig({
     exclude: [...configDefaults.exclude, "tests/integration/**"],
     restoreMocks: true,
     setupFiles: ["./tests/setup.ts"],
+    unstubEnvs: true,
     unstubGlobals: true,
   },
 });

@@ -119,9 +119,7 @@ export interface DirectiveDetailQuery {
 export type InteractionState =
   | "unbound"
   | "disconnected"
-  | "idle"
-  | "running"
-  | "awaiting_user_input";
+  | "connected";
 
 export type InteractionResponse =
   | { supported: false }
@@ -129,7 +127,10 @@ export type InteractionResponse =
       supported: true;
       state: InteractionState;
       activation: string;
-      canSendMessage: boolean;
-      canInterrupt: boolean;
-      canSendEscape: boolean;
     };
+
+export interface TerminalPreviewResponse {
+  content: string;
+  truncated: boolean;
+  capturedAt: string;
+}

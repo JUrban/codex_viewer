@@ -54,7 +54,6 @@ describe("Codex interaction adapter", () => {
         socketPath: "/tmp/tmux.sock",
         paneId: "%7",
       },
-      state: "running",
     });
   });
 
@@ -116,53 +115,4 @@ describe("Codex interaction adapter", () => {
     expect(normalized.interaction?.bindingAttempt).toEqual({ ordinal: 10, valid: false });
   });
 
-  it("derives idle, running, and awaiting-user-input states", () => {
-    const running = normalizeRecords("running", [{
-      ordinal: 1,
-      value: { type: "event_msg", payload: { type: "user_message", message: "go" } },
-    }]);
-    const idle = normalizeRecords("idle", [
-      { ordinal: 1, value: { type: "event_msg", payload: { type: "user_message", message: "go" } } },
-      response(2, {
-        type: "message",
-        role: "assistant",
-        phase: "final_answer",
-        content: [{ type: "output_text", text: "done" }],
-      }),
-    ]);
-    const awaiting = normalizeRecords("awaiting", [
-      response(1, {
-        type: "function_call",
-        name: "request_user_input",
-        call_id: "question",
-        arguments: "{\"questions\":[]}",
-      }),
-    ]);
-    expect(running.interaction?.state).toBe("running");
-    expect(idle.interaction?.state).toBe("idle");
-    expect(awaiting.interaction?.state).toBe("awaiting_user_input");
-  });
-
-  it.each(["turn_aborted", "task_complete"])(
-    "clears pending user input when %s ends the turn",
-    (eventType) => {
-      const normalized = normalizeRecords(`pending-${eventType}`, [
-        response(1, {
-          type: "function_call",
-          name: "request_user_input",
-          call_id: "question",
-          arguments: "{\"questions\":[]}",
-        }),
-        {
-          ordinal: 2,
-          value: {
-            type: "event_msg",
-            payload: { type: eventType },
-          },
-        },
-      ]);
-
-      expect(normalized.interaction?.state).toBe("idle");
-    },
-  );
 });

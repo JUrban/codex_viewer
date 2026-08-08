@@ -4,8 +4,10 @@ import { lstat } from "node:fs/promises";
 import type { InteractionBindingAttempt } from "../domain/session-domain.js";
 
 export const MAX_INTERACTION_MESSAGE_BYTES = 64 * 1024;
+export const MAX_TERMINAL_PREVIEW_BYTES = 256 * 1024;
 const DEFAULT_TIMEOUT_MS = 5_000;
 const MAX_COMMAND_OUTPUT_BYTES = 64 * 1024;
+const TERMINAL_PREVIEW_HISTORY_LINES = 500;
 
 export interface TmuxBinding {
   readonly socketPath: string;
@@ -20,7 +22,13 @@ export interface TmuxCommandRunner {
     args: readonly string[],
     input: string | undefined,
     timeoutMs: number,
-  ): Promise<{ readonly stdout: string }>;
+    options?: TmuxCommandOptions,
+  ): Promise<{ readonly stdout: string; readonly truncated?: boolean }>;
+}
+
+export interface TmuxCommandOptions {
+  readonly maxOutputBytes: number;
+  readonly truncateStart: boolean;
 }
 
 export class TmuxInteractionError extends Error {
@@ -92,6 +100,26 @@ export class TmuxInteractionService {
     });
   }
 
+  captureTerminal(binding: TmuxBinding): Promise<{
+    readonly content: string;
+    readonly truncated: boolean;
+  }> {
+    return this.#serialize(binding, async () => {
+      await this.#revalidate(binding);
+      const result = await this.runner.run(
+        binding.socketPath,
+        [
+          "capture-pane", "-p", "-t", binding.paneId,
+          "-S", `-${TERMINAL_PREVIEW_HISTORY_LINES}`,
+        ],
+        undefined,
+        this.timeoutMs,
+        { maxOutputBytes: MAX_TERMINAL_PREVIEW_BYTES, truncateStart: true },
+      );
+      return { content: result.stdout, truncated: result.truncated === true };
+    });
+  }
+
   async #revalidate(binding: TmuxBinding): Promise<void> {
     await validateSocket(binding.socketPath);
     const current = await this.#display(binding.socketPath, binding.paneId);
@@ -143,7 +171,7 @@ export class TmuxInteractionService {
     await this.runner.run(binding.socketPath, args, input, this.timeoutMs);
   }
 
-  #serialize(binding: TmuxBinding, operation: () => Promise<void>): Promise<void> {
+  #serialize<T>(binding: TmuxBinding, operation: () => Promise<T>): Promise<T> {
     const key = `${binding.socketPath}\0${binding.paneId}`;
     const previous = this.#queues.get(key) ?? Promise.resolve();
     const current = previous.catch(() => undefined).then(operation);
@@ -192,15 +220,17 @@ export class SpawnTmuxCommandRunner implements TmuxCommandRunner {
     args: readonly string[],
     input: string | undefined,
     timeoutMs: number,
-  ): Promise<{ readonly stdout: string }> {
+    options?: TmuxCommandOptions,
+  ): Promise<{ readonly stdout: string; readonly truncated?: boolean }> {
     return new Promise((resolve, reject) => {
       const child = spawn("tmux", ["-S", socketPath, ...args], {
         shell: false,
         stdio: ["pipe", "pipe", "pipe"],
       });
-      const stdout: Buffer[] = [];
+      let stdout: Buffer = Buffer.alloc(0);
       const stderr: Buffer[] = [];
       let outputBytes = 0;
+      let truncated = false;
       let settled = false;
       const finish = (callback: () => void) => {
         if (settled) return;
@@ -215,13 +245,28 @@ export class SpawnTmuxCommandRunner implements TmuxCommandRunner {
           "tmux operation timed out; the result is unknown",
         )));
       }, timeoutMs);
-      const collect = (target: Buffer[]) => (chunk: Buffer) => {
+      const collectStdout = (chunk: Buffer) => {
+        if (options?.truncateStart) {
+          stdout = Buffer.concat([stdout, chunk]);
+          if (stdout.byteLength > options.maxOutputBytes) {
+            stdout = trimLeadingPartialUtf8(
+              stdout.subarray(stdout.byteLength - options.maxOutputBytes),
+            );
+            truncated = true;
+          }
+          return;
+        }
         outputBytes += chunk.byteLength;
-        if (outputBytes <= MAX_COMMAND_OUTPUT_BYTES) target.push(chunk);
+        if (outputBytes <= MAX_COMMAND_OUTPUT_BYTES) stdout = Buffer.concat([stdout, chunk]);
         else child.kill("SIGKILL");
       };
-      child.stdout.on("data", collect(stdout));
-      child.stderr.on("data", collect(stderr));
+      const collectStderr = (chunk: Buffer) => {
+        outputBytes += chunk.byteLength;
+        if (outputBytes <= MAX_COMMAND_OUTPUT_BYTES) stderr.push(chunk);
+        else child.kill("SIGKILL");
+      };
+      child.stdout.on("data", collectStdout);
+      child.stderr.on("data", collectStderr);
       child.once("error", (error) => finish(() => reject(
         new TmuxInteractionError("command_failed", error.message),
       )));
@@ -236,10 +281,16 @@ export class SpawnTmuxCommandRunner implements TmuxCommandRunner {
           ));
           return;
         }
-        resolve({ stdout: Buffer.concat(stdout).toString("utf8") });
+        resolve({ stdout: stdout.toString("utf8"), truncated });
       }));
       if (input === undefined) child.stdin.end();
       else child.stdin.end(input, "utf8");
     });
   }
+}
+
+function trimLeadingPartialUtf8(buffer: Buffer): Buffer {
+  let start = 0;
+  while (start < buffer.byteLength && (buffer[start]! & 0xc0) === 0x80) start += 1;
+  return buffer.subarray(start);
 }

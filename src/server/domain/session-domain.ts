@@ -24,11 +24,6 @@ export interface DomainSessionOrigin {
   readonly formatVersion: string | null;
 }
 
-export type DomainAgentInteractionState =
-  | "idle"
-  | "running"
-  | "awaiting_user_input";
-
 export type InteractionBindingAttempt =
   | {
       readonly ordinal: number;
@@ -44,7 +39,6 @@ export type InteractionBindingAttempt =
 export interface DomainAgentInteraction {
   readonly activation: string;
   readonly bindingAttempt: InteractionBindingAttempt | null;
-  readonly state: DomainAgentInteractionState;
 }
 
 export interface DomainSession {

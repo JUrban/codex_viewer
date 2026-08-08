@@ -60,7 +60,9 @@ export function SessionReader({
     [items, visibility],
   );
   const hasMore = context.hasMore;
-  const interactionController = useSessionInteraction(context.session.id);
+  const previewAvailable = interaction?.supported === true &&
+    interaction.state === "connected";
+  const interactionController = useSessionInteraction(context.session.id, previewAvailable);
 
   return (
     <section className="reader" aria-labelledby="session-title">
@@ -102,12 +104,19 @@ export function SessionReader({
         ? (
             <InteractionPanel
               interaction={interaction}
+              itemCount={context.session.itemCount}
+              updatedAt={context.session.updatedAt}
               busy={interactionController.busy}
               error={interactionController.error}
               onDismissError={interactionController.clearError}
               onSendMessage={interactionController.sendMessage}
               onInterrupt={interactionController.interrupt}
               onEscape={interactionController.sendEscape}
+              preview={interactionController.preview}
+              previewBusy={interactionController.previewBusy}
+              previewError={interactionController.previewError}
+              onDismissPreviewError={interactionController.clearPreviewError}
+              onPreviewTerminal={interactionController.previewTerminal}
             />
           )
         : null}

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import type { SessionListEntry } from "../../shared/api-contract";
 
 export interface SessionGroup {
@@ -66,26 +66,10 @@ export function SessionTree({
   revealMatches = false,
 }: SessionTreeProps) {
   const groups = useMemo(() => groupSessions(entries), [entries]);
-  const selectedAncestors = useMemo(
-    () => new Set<string>(),
-    [],
-  );
   const [expansion, setExpansion] = useState<ExpansionOverrides>(() => ({
     expanded: new Set(),
     collapsed: new Set(),
   }));
-
-  useEffect(() => {
-    setExpansion((current) => {
-      const hasCollapsedAncestor = [...selectedAncestors]
-        .some((id) => current.collapsed.has(id));
-      if (!hasCollapsedAncestor) return current;
-
-      const collapsed = new Set(current.collapsed);
-      for (const id of selectedAncestors) collapsed.delete(id);
-      return { ...current, collapsed };
-    });
-  }, [selectedAncestors]);
 
   const onToggle = (id: string, open: boolean) => {
     setExpansion((current) => {
@@ -104,7 +88,6 @@ export function SessionTree({
           <SessionBranch
             key={group.root.session.id}
             group={group}
-            selectedAncestors={selectedAncestors}
             expanded={expansion.expanded}
             collapsed={expansion.collapsed}
             revealMatches={revealMatches}
@@ -118,7 +101,6 @@ export function SessionTree({
 
 interface SessionBranchProps {
   group: SessionGroup;
-  selectedAncestors: ReadonlySet<string>;
   expanded: ReadonlySet<string>;
   collapsed: ReadonlySet<string>;
   revealMatches: boolean;
@@ -128,7 +110,6 @@ interface SessionBranchProps {
 
 function SessionBranch({
   group,
-  selectedAncestors,
   expanded,
   collapsed,
   revealMatches,
@@ -138,7 +119,7 @@ function SessionBranch({
   const { id, title } = group.root.session;
   const hasChildren = group.children.length > 0;
   const open = hasChildren && !collapsed.has(id) &&
-    (expanded.has(id) || selectedAncestors.has(id) || revealMatches);
+    (expanded.has(id) || revealMatches);
   const childListId = `session-children-${id.replaceAll(/[^A-Za-z0-9_-]/g, "-")}`;
 
   return (
@@ -172,7 +153,6 @@ function SessionBranch({
                 <SessionBranch
                   key={nested.root.session.id}
                   group={nested}
-                  selectedAncestors={selectedAncestors}
                   expanded={expanded}
                   collapsed={collapsed}
                   revealMatches={revealMatches}
@@ -208,8 +188,6 @@ function SessionButton({ entry, child = false }: SessionButtonProps) {
     <a
       className={`session${child ? " child" : ""}`}
       href={`/sessions/${encodeURIComponent(session.id)}`}
-      target="_blank"
-      rel="noreferrer noopener"
     >
       <span className={taskName === null ? "session-title" : "session-title task-name"}>
         {displayTitle}

@@ -22,7 +22,7 @@ describe("session interaction state", () => {
     vi.spyOn(api, "sendMessage").mockImplementation((sessionId) =>
       sessionId === "session-a" ? sessionA.promise : sessionB.promise);
     const { result, rerender } = renderHook(
-      ({ sessionId }) => useSessionInteraction(sessionId),
+      ({ sessionId }) => useSessionInteraction(sessionId, true),
       { initialProps: { sessionId: "session-a" } },
     );
 
@@ -43,5 +43,46 @@ describe("session interaction state", () => {
     await expect(operationB).resolves.toBeUndefined();
     expect(result.current.busy).toBe(false);
     expect(result.current.error).toBeNull();
+  });
+
+  it("tracks terminal preview independently and clears it when disconnected", async () => {
+    const captured = {
+      content: "recent output",
+      truncated: false,
+      capturedAt: "2026-08-08T12:00:00.000Z",
+    };
+    vi.spyOn(api, "terminalPreview").mockResolvedValue(captured);
+    const { result, rerender } = renderHook(
+      ({ available }) => useSessionInteraction("session-a", available),
+      { initialProps: { available: true } },
+    );
+
+    await act(async () => result.current.previewTerminal());
+    expect(result.current.preview).toEqual(captured);
+    expect(result.current.busy).toBe(false);
+
+    rerender({ available: false });
+    expect(result.current.preview).toBeNull();
+  });
+
+  it("keeps the last successful terminal preview when a refresh fails", async () => {
+    const captured = {
+      content: "last successful output",
+      truncated: false,
+      capturedAt: "2026-08-08T12:00:00.000Z",
+    };
+    vi.spyOn(api, "terminalPreview")
+      .mockResolvedValueOnce(captured)
+      .mockRejectedValueOnce(new Error("temporary capture failure"));
+    const { result } = renderHook(() => useSessionInteraction("session-a", true));
+
+    await act(async () => result.current.previewTerminal());
+    await act(async () => {
+      await expect(result.current.previewTerminal()).rejects.toThrow("temporary capture failure");
+    });
+
+    expect(result.current.preview).toEqual(captured);
+    expect(result.current.previewError).toBe("temporary capture failure");
+    expect(result.current.previewBusy).toBe(false);
   });
 });

@@ -85,25 +85,15 @@ describe("session browser components", () => {
     expect(within(last).queryByText("Reasoning output")).toBeNull();
   });
 
-  it("renders unavailable token usage groups without affecting ordinary internal events", () => {
+  it("renders unavailable token usage groups", () => {
     render(<Timeline
-      items={[
-        {
-          kind: "token",
-          id: "token-8",
-          ordinal: 8,
-          timestamp: null,
-          tokenUsage: { total: null, last: null },
-        },
-        {
-          kind: "internal",
-          id: "internal-9",
-          ordinal: 9,
-          timestamp: null,
-          eventType: "turn_context",
-          summary: "Internal event: turn_context",
-        },
-      ]}
+      items={[{
+        kind: "token",
+        id: "token-8",
+        ordinal: 8,
+        timestamp: null,
+        tokenUsage: { total: null, last: null },
+      }]}
       sessionId={SESSION_ID}
       cursor={firstPage.cursor}
       hasMore={false}
@@ -113,8 +103,6 @@ describe("session browser components", () => {
     />);
   
     expect(screen.getAllByText("Unavailable")).toHaveLength(2);
-    expect(screen.getByText("turn_context").closest("p"))
-      .toHaveTextContent("turn_context — Internal event: turn_context");
   });
 
   it("groups children and preserves missing-parent sessions", () => {
@@ -166,8 +154,6 @@ describe("session browser components", () => {
     );
     expect(screen.getByText("Codex 1.2.3 · format rollout-v1")).toBeInTheDocument();
     expect(screen.getByText(/native-session/)).toBeInTheDocument();
-    expect(screen.queryByRole("spinbutton", { name: "Refresh interval in seconds" }))
-      .toBeNull();
   });
 
   it("falls back when the session update timestamp is invalid", () => {

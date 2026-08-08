@@ -5,6 +5,7 @@ import type {
   SessionRepository,
 } from "../../src/server/repository/session-repository.js";
 import { CODEX_TMUX_ACTIVATION } from "../../src/server/adapters/codex/interaction-parser.js";
+import type { TmuxInteractionService } from "../../src/server/interaction/tmux-service.js";
 
 function repository(snapshot: InteractionSessionSnapshot | null): SessionRepository {
   return {
@@ -18,48 +19,93 @@ function repository(snapshot: InteractionSessionSnapshot | null): SessionReposit
   };
 }
 
-function session(
-  state: "idle" | "running" | "awaiting_user_input",
-  archived = false,
-): InteractionSessionSnapshot {
+function session(archived = false): InteractionSessionSnapshot {
   return {
     archived,
     interaction: {
       activation: CODEX_TMUX_ACTIVATION,
       bindingAttempt: null,
-      state,
+    },
+  };
+}
+
+function boundSession(): InteractionSessionSnapshot {
+  return {
+    archived: false,
+    interaction: {
+      activation: CODEX_TMUX_ACTIVATION,
+      bindingAttempt: {
+        ordinal: 4,
+        valid: true,
+        socketPath: "/tmp/viewer.sock",
+        paneId: "%7",
+      },
     },
   };
 }
 
 describe("session interaction policy", () => {
   it("is unsupported when disabled or archived", async () => {
-    expect(await new SessionInteractionService(repository(session("idle")), false)
+    expect(await new SessionInteractionService(repository(session()), false)
       .describe("session")).toEqual({ supported: false });
-    expect(await new SessionInteractionService(repository(session("idle", true)), true)
+    expect(await new SessionInteractionService(repository(session(true)), true)
       .describe("session")).toEqual({ supported: false });
   });
 
-  it("reports unbound and enforces action state before transport", async () => {
-    const idle = new SessionInteractionService(repository(session("idle")), true);
-    expect(await idle.describe("session")).toEqual({
+  it("reports unbound and rejects actions before transport", async () => {
+    const service = new SessionInteractionService(repository(session()), true);
+    expect(await service.describe("session")).toEqual({
       supported: true,
       state: "unbound",
       activation: CODEX_TMUX_ACTIVATION,
-      canSendMessage: false,
-      canInterrupt: false,
-      canSendEscape: false,
     });
-    await expect(idle.interrupt("session")).rejects.toMatchObject({
-      code: "interaction_state_conflict",
-    });
-
-    const running = new SessionInteractionService(repository(session("running")), true);
-    await expect(running.sendMessage("session", "hello")).rejects.toMatchObject({
-      code: "interaction_state_conflict",
-    });
-    await expect(running.interrupt("session")).rejects.toMatchObject({
+    await expect(service.sendMessage("session", "hello")).rejects.toMatchObject({
       code: "interaction_not_connected",
     });
+    await expect(service.interrupt("session")).rejects.toMatchObject({
+      code: "interaction_not_connected",
+    });
+  });
+
+  it("allows all actions whenever the pane is connected", async () => {
+    const binding = {
+      socketPath: "/tmp/viewer.sock",
+      serverStartTime: "1700000000",
+      paneId: "%7",
+      panePid: "4100",
+    };
+    const tmux = {
+      connect: vi.fn().mockResolvedValue(binding),
+      sendMessage: vi.fn().mockResolvedValue(undefined),
+      sendInterrupt: vi.fn().mockResolvedValue(undefined),
+      sendEscape: vi.fn().mockResolvedValue(undefined),
+      captureTerminal: vi.fn().mockResolvedValue({
+        content: "recent output",
+        truncated: false,
+      }),
+    } as unknown as TmuxInteractionService;
+    const service = new SessionInteractionService(
+      repository(boundSession()),
+      true,
+      tmux,
+    );
+
+    await expect(service.describe("session")).resolves.toEqual({
+      supported: true,
+      state: "connected",
+      activation: CODEX_TMUX_ACTIVATION,
+    });
+    await service.sendMessage("session", "hello");
+    await service.interrupt("session");
+    await service.escape("session");
+    await expect(service.preview("session")).resolves.toEqual({
+      content: "recent output",
+      truncated: false,
+      capturedAt: expect.any(String),
+    });
+    expect(tmux.sendMessage).toHaveBeenCalledWith(binding, "hello");
+    expect(tmux.sendInterrupt).toHaveBeenCalledWith(binding);
+    expect(tmux.sendEscape).toHaveBeenCalledWith(binding);
+    expect(tmux.captureTerminal).toHaveBeenCalledWith(binding);
   });
 });

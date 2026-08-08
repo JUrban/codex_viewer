@@ -184,7 +184,10 @@ export function useSessionReader(sessionId: string) {
     },
     onUpdate: onLiveUpdate,
     onConflict: markTimelineChanged,
-    onError: (reason) => dispatch({ type: "live-error", error: messageFor(reason) }),
+    onError: (reason, terminal) => {
+      dispatch({ type: "live-error", error: messageFor(reason) });
+      if (terminal) setAutoRefreshEnabled(false);
+    },
     onSuccess: () => dispatch({ type: "clear-error" }),
   });
 

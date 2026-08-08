@@ -1,6 +1,6 @@
 import { commandLineHelp, loadConfig } from "./config.js";
 import { createApiRouter } from "./http/api-router.js";
-import { createServer } from "./http/create-server.js";
+import { createServer, listenServer } from "./http/create-server.js";
 import { createCodexSessionRepository } from "./create-session-repository.js";
 import { SessionInteractionService } from "./interaction/interaction-service.js";
 
@@ -19,16 +19,15 @@ async function main(): Promise<void> {
   );
   const server = createServer(config, createApiRouter(repository, { interaction }));
 
-  server.listen(config.port, config.host, () => {
-    const address = server.address();
-    const port = typeof address === "object" && address ? address.port : config.port;
-    const host = config.host.includes(":") ? `[${config.host}]` : config.host;
-    const protocol = config.tls.enabled ? "https" : "http";
-    const mutualTls = config.tls.enabled && config.tls.certificateAuthorityPath
-      ? " (client certificates required)"
-      : "";
-    console.log(`Codex Sessions Reader listening on ${protocol}://${host}:${port}${mutualTls}`);
-  });
+  await listenServer(server, config.port, config.host);
+  const address = server.address();
+  const port = typeof address === "object" && address ? address.port : config.port;
+  const host = config.host.includes(":") ? `[${config.host}]` : config.host;
+  const protocol = config.tls.enabled ? "https" : "http";
+  const mutualTls = config.tls.enabled && config.tls.certificateAuthorityPath
+    ? " (client certificates required)"
+    : "";
+  console.log(`Codex Sessions Reader listening on ${protocol}://${host}:${port}${mutualTls}`);
 
   function close(): void {
     server.close((error) => {

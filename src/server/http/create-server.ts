@@ -2,6 +2,7 @@ import { createReadStream, readFileSync } from "node:fs";
 import { stat } from "node:fs/promises";
 import { createServer as createHttpServer, type RequestListener, type ServerResponse } from "node:http";
 import { createServer as createHttpsServer } from "node:https";
+import type { Server as NetServer } from "node:net";
 import { extname, resolve, sep } from "node:path";
 import type { ServerConfig } from "../config.js";
 import { emptyApiRouter, sendJson, type ApiRouter } from "./router.js";
@@ -98,6 +99,30 @@ export function createServer(config: ServerConfig, apiRouter: ApiRouter = emptyA
     requestListener,
   );
   return closeRouterWith(server, apiRouter);
+}
+
+export function listenServer(
+  server: NetServer,
+  port: number,
+  host: string,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const cleanup = () => {
+      server.removeListener("error", onError);
+      server.removeListener("listening", onListening);
+    };
+    const onError = (error: Error) => {
+      cleanup();
+      reject(error);
+    };
+    const onListening = () => {
+      cleanup();
+      resolve();
+    };
+    server.once("error", onError);
+    server.once("listening", onListening);
+    server.listen(port, host);
+  });
 }
 
 function closeRouterWith<T extends ReturnType<typeof createHttpServer>>(

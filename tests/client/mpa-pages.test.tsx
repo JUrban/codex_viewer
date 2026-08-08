@@ -17,7 +17,7 @@ import {
 } from "./session-browser.fixtures";
 
 describe("MPA pages", () => {
-  it("opens session links outside the catalog page and forces freshness on refresh", async () => {
+  it("opens session links in the catalog window and forces freshness on refresh", async () => {
     const responses = [listResponse(), listResponse()];
     const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => new Response(JSON.stringify(responses.shift()), {
       status: 200,
@@ -28,8 +28,8 @@ describe("MPA pages", () => {
 
     const link = await screen.findByRole("link", { name: /Reader work/ });
     expect(link).toHaveAttribute("href", `/sessions/${SESSION_ID}`);
-    expect(link).toHaveAttribute("target", "_blank");
-    expect(link).toHaveAttribute("rel", "noreferrer noopener");
+    expect(link).not.toHaveAttribute("target");
+    expect(link).not.toHaveAttribute("rel");
     expect(fetchMock).toHaveBeenNthCalledWith(
       1,
       expect.stringContaining("/api/v1/sessions?"),

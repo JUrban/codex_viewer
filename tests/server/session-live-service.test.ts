@@ -23,11 +23,8 @@ describe("SessionLiveService", () => {
     expect(createRevision({ ...SESSION, title: "Changed" }, { supported: false })).not.toBe(first);
     expect(createRevision(SESSION, {
       supported: true,
-      state: "idle",
+      state: "connected",
       activation: "activate",
-      canSendMessage: true,
-      canInterrupt: false,
-      canSendEscape: true,
     })).not.toBe(first);
   });
 
@@ -50,12 +47,29 @@ describe("SessionLiveService", () => {
     expect(getLiveSession.mock.calls.length).toBeGreaterThanOrEqual(3);
   });
 
-  it("enforces process and per-session waiter limits", async () => {
+  it("enforces the process-wide waiter limit across sessions", async () => {
     const getLiveSession = vi.fn().mockResolvedValue(snapshot(false));
     const service = createService(getLiveSession, {
       probeIntervalMs: 1_000,
       waitTimeoutMs: 5_000,
       maxWaiters: 1,
+      maxWaitersPerSession: 2,
+    });
+    const abort = new AbortController();
+    const first = service.wait("session-one", { cursor: CURSOR, after: REVISION }, abort.signal);
+    await vi.waitFor(() => expect(getLiveSession).toHaveBeenCalledTimes(1));
+    await expect(service.wait("session-two", { cursor: CURSOR, after: REVISION }))
+      .rejects.toMatchObject<Partial<SessionLiveError>>({ code: "live_capacity_exceeded" });
+    abort.abort();
+    await expect(first).rejects.toMatchObject({ name: "AbortError" });
+  });
+
+  it("enforces the per-session waiter limit below process capacity", async () => {
+    const getLiveSession = vi.fn().mockResolvedValue(snapshot(false));
+    const service = createService(getLiveSession, {
+      probeIntervalMs: 1_000,
+      waitTimeoutMs: 5_000,
+      maxWaiters: 2,
       maxWaitersPerSession: 1,
     });
     const abort = new AbortController();
@@ -130,7 +144,7 @@ function snapshot(hasMore: boolean, interaction = false): RepositoryLiveSessionS
     interactionSession: {
       archived: false,
       interaction: interaction
-        ? { activation: "activate", bindingAttempt: null, state: "idle" }
+        ? { activation: "activate", bindingAttempt: null }
         : null,
     },
   };

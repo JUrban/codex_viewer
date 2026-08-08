@@ -32,15 +32,17 @@ async function start() {
   const interaction = {
     describe: vi.fn().mockResolvedValue({
       supported: true,
-      state: "idle",
+      state: "connected",
       activation: "activate",
-      canSendMessage: true,
-      canInterrupt: false,
-      canSendEscape: true,
     }),
     sendMessage: vi.fn().mockResolvedValue(undefined),
     interrupt: vi.fn().mockResolvedValue(undefined),
     escape: vi.fn().mockResolvedValue(undefined),
+    preview: vi.fn().mockResolvedValue({
+      content: "terminal output",
+      truncated: false,
+      capturedAt: "2026-08-08T12:00:00.000Z",
+    }),
   };
   const config: ServerConfig = {
     host: LOOPBACK_HOST,
@@ -58,12 +60,12 @@ async function start() {
 }
 
 describe("interaction HTTP API", () => {
-  it("includes state in session reads and accepts messages", async () => {
+  it("includes connection state in session reads and accepts messages", async () => {
     const { base, interaction } = await start();
     const detail = await fetch(`${base}/api/v1/sessions/${SESSION_ID}`);
     expect(detail.status).toBe(200);
     expect(await detail.json()).toEqual(expect.objectContaining({
-      interaction: expect.objectContaining({ supported: true, state: "idle" }),
+      interaction: expect.objectContaining({ supported: true, state: "connected" }),
     }));
     const message = "first\r\nsecond 🌊";
     const sent = await fetch(`${base}/api/v1/sessions/${SESSION_ID}/messages`, {
@@ -103,6 +105,23 @@ describe("interaction HTTP API", () => {
     });
     expect(escape.status).toBe(204);
     expect(interaction.escape).toHaveBeenCalledWith(SESSION_ID);
+  });
+
+  it("returns an uncached terminal preview and rejects query parameters", async () => {
+    const { base, interaction } = await start();
+    const response = await fetch(`${base}/api/v1/sessions/${SESSION_ID}/terminal-preview`);
+    expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(await response.json()).toEqual({
+      content: "terminal output",
+      truncated: false,
+      capturedAt: "2026-08-08T12:00:00.000Z",
+    });
+    expect(interaction.preview).toHaveBeenCalledWith(SESSION_ID);
+
+    expect((await fetch(
+      `${base}/api/v1/sessions/${SESSION_ID}/terminal-preview?lines=all`,
+    )).status).toBe(400);
   });
 
   it("allows POST only on the declared interaction routes", async () => {

@@ -111,12 +111,10 @@ describe("CatalogSnapshotStore incremental derivation", () => {
     expect(prefixAtEnd(second, id)).toBe(prefixAtEnd(first, id));
   });
 
-  it("updates the precise relationship dependency closure", async () => {
+  it("updates only the affected relationship closure when a child is reparented or deleted", async () => {
     const parentOne = normalizedSession("p1", "Parent one");
     const parentTwo = normalizedSession("p2", "Parent two");
     const child = normalizedSession("child", "Child");
-    const lateParent = normalizedSession("late-parent", "Late parent");
-    const duplicateParent = normalizedSession("duplicate", "Duplicate parent");
     let signature = "initial";
     let entries = [
       sourceEntry("p1", parentOne, "native-p1"),
@@ -165,71 +163,108 @@ describe("CatalogSnapshotStore incremental derivation", () => {
     expect(snapshot.sessions.get(p2Id)!.normalized.session.childIds).toEqual([]);
     expectChanged(snapshot, beforeDelete, [p2Id]);
     expect(snapshot.sessions.get(p1Id)!.normalized).toBe(beforeDelete.get(p1Id));
+  });
 
-    entries = [
-      ...entries,
-      sourceEntry("late-child", child, "late-child", "late-native"),
+  it("relinks a child when its missing parent appears, disappears, and reappears", async () => {
+    const child = normalizedSession("child", "Child");
+    const parent = normalizedSession("parent", "Parent");
+    let signature = "child-before-parent";
+    let entries = [
+      sourceEntry("child", child, "native-child", "native-parent"),
     ];
-    signature = "child-before-parent";
-    snapshot = await store.refresh();
-    const lateChildId = idByTitle(snapshot, "Child");
-    expect(snapshot.sessions.get(lateChildId)!.normalized.session.parentId).toBeNull();
-    expect(searchCalls).toBe(8);
+    let searchCalls = 0;
+    const store = new CatalogSnapshotStore(
+      [mutableSource(() => ({ signature, entries }))],
+      0,
+      () => 0,
+      {
+        searchDocumentBuilder(normalized) {
+          searchCalls += 1;
+          return buildSearchDocument(normalized);
+        },
+      },
+    );
+    let snapshot = await store.current();
+    const childId = idByTitle(snapshot, "Child");
+    expect(snapshot.sessions.get(childId)!.normalized.session.parentId).toBeNull();
+    expect(searchCalls).toBe(1);
 
     entries = [
       ...entries,
-      sourceEntry("late-parent", lateParent, "late-native"),
+      sourceEntry("parent", parent, "native-parent"),
     ];
     signature = "parent-appears";
     snapshot = await store.refresh();
-    const lateParentId = idByTitle(snapshot, "Late parent");
-    const firstLateParent = snapshot.sessions.get(lateParentId)!.normalized;
-    expect(snapshot.sessions.get(lateChildId)!.normalized.session.parentId)
-      .toBe(lateParentId);
-    expect(snapshot.sessions.get(lateParentId)!.normalized.session.childIds)
-      .toEqual([lateChildId]);
-    expect(searchCalls).toBe(10);
+    const parentId = idByTitle(snapshot, "Parent");
+    const firstParent = snapshot.sessions.get(parentId)!.normalized;
+    expect(snapshot.sessions.get(childId)!.normalized.session.parentId).toBe(parentId);
+    expect(snapshot.sessions.get(parentId)!.normalized.session.childIds).toEqual([childId]);
+    expect(searchCalls).toBe(3);
 
-    entries = entries.filter((entry) => entry.localId !== "late-parent");
+    entries = entries.filter((entry) => entry.localId !== "parent");
     signature = "parent-deleted";
     snapshot = await store.refresh();
-    expect(snapshot.sessions.get(lateChildId)!.normalized.session.parentId).toBeNull();
-    expect(searchCalls).toBe(11);
+    expect(snapshot.sessions.get(childId)!.normalized.session.parentId).toBeNull();
+    expect(searchCalls).toBe(4);
 
     entries = [
       ...entries,
-      sourceEntry("late-parent", lateParent, "late-native"),
+      sourceEntry("parent", parent, "native-parent"),
     ];
     signature = "parent-reappears";
     snapshot = await store.refresh();
-    expect(snapshot.sessions.get(lateParentId)!.normalized)
-      .not.toBe(firstLateParent);
-    expect(snapshot.sessions.get(lateChildId)!.normalized.session.parentId)
-      .toBe(lateParentId);
-    expect(searchCalls).toBe(13);
+    expect(snapshot.sessions.get(parentId)!.normalized).not.toBe(firstParent);
+    expect(snapshot.sessions.get(childId)!.normalized.session.parentId).toBe(parentId);
+    expect(searchCalls).toBe(6);
+  });
+
+  it("unlinks and recovers a child when its native parent identity becomes ambiguous", async () => {
+    const child = normalizedSession("child", "Child");
+    const parent = normalizedSession("parent", "Parent");
+    const duplicateParent = normalizedSession("duplicate", "Duplicate parent");
+    let signature = "native-unique";
+    let entries = [
+      sourceEntry("child", child, "native-child", "native-parent"),
+      sourceEntry("parent", parent, "native-parent"),
+    ];
+    let searchCalls = 0;
+    const store = new CatalogSnapshotStore(
+      [mutableSource(() => ({ signature, entries }))],
+      0,
+      () => 0,
+      {
+        searchDocumentBuilder(normalized) {
+          searchCalls += 1;
+          return buildSearchDocument(normalized);
+        },
+      },
+    );
+    let snapshot = await store.current();
+    const childId = idByTitle(snapshot, "Child");
+    const parentId = idByTitle(snapshot, "Parent");
+    expect(snapshot.sessions.get(childId)!.normalized.session.parentId).toBe(parentId);
+    expect(searchCalls).toBe(2);
 
     entries = [
       ...entries,
-      sourceEntry("duplicate", duplicateParent, "late-native"),
+      sourceEntry("duplicate", duplicateParent, "native-parent"),
     ];
     signature = "native-duplicate";
     snapshot = await store.refresh();
     const duplicateId = idByTitle(snapshot, "Duplicate parent");
-    expect(snapshot.sessions.get(lateChildId)!.normalized.session.parentId).toBeNull();
-    expect(snapshot.sessions.get(lateParentId)!.normalized.session.childIds).toEqual([]);
-    expect(searchCalls).toBe(16);
+    expect(snapshot.sessions.get(childId)!.normalized.session.parentId).toBeNull();
+    expect(snapshot.sessions.get(parentId)!.normalized.session.childIds).toEqual([]);
+    expect(searchCalls).toBe(5);
 
     const beforeRecovery = normalizedReferences(snapshot);
     entries = entries.filter((entry) => entry.localId !== "duplicate");
     signature = "native-unique-again";
     snapshot = await store.refresh();
     expect(snapshot.sessions.get(duplicateId)).toBeUndefined();
-    expect(snapshot.sessions.get(lateChildId)!.normalized.session.parentId)
-      .toBe(lateParentId);
-    expect(snapshot.sessions.get(lateParentId)!.normalized.session.childIds)
-      .toEqual([lateChildId]);
-    expectChanged(snapshot, beforeRecovery, [lateChildId, lateParentId]);
-    expect(searchCalls).toBe(18);
+    expect(snapshot.sessions.get(childId)!.normalized.session.parentId).toBe(parentId);
+    expect(snapshot.sessions.get(parentId)!.normalized.session.childIds).toEqual([childId]);
+    expectChanged(snapshot, beforeRecovery, [childId, parentId]);
+    expect(searchCalls).toBe(7);
   });
 
   it("does not commit derived caches after a failed rebuild", async () => {
