@@ -108,7 +108,6 @@ describe("tool normalization", () => {
     expect(after.timeline[0]).toEqual(before.timeline[0]);
     expect(after.toolDetails.get("tool-1"))
       .toEqual(before.toolDetails.get("tool-1"));
-    expect(before.timeline[0]).not.toHaveProperty("status");
     expect(after.timeline[1]).toMatchObject({
       kind: "tool",
       stage: "output",

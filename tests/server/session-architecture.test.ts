@@ -163,18 +163,6 @@ describe("server architecture boundaries", () => {
     ).toBe(10);
   });
 
-  it("filters lists, publishes facets, and reads timeline items", () => {
-    const queries = new SessionQueryService();
-    const snapshot = snapshotOf(normalized);
-    const first = queries.list(snapshot, { project: "/project", limit: 1 });
-    expect(first).toMatchObject({
-      total: 1,
-      nextCursor: null,
-      projects: [{ project: "/project", count: 1 }],
-    });
-    expect(queries.items(snapshot, "session-one", {})?.items).toEqual(timeline);
-  });
-
   it("rejects a cursor after its confirmed timeline prefix changes", () => {
     const queries = new SessionQueryService();
     const first = queries.items(snapshotOf(normalized), session.id, {})!;

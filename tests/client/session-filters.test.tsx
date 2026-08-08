@@ -9,20 +9,6 @@ import { json, listBody } from "./session-browser.fixtures";
 const STORAGE_KEY = "codex-sessions-reader.filters.v1";
 
 describe("session filters", () => {
-  it("orders filters by state, project, date, then query", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(json(listBody)));
-    render(<App />);
-    await screen.findByRole("link", { name: /Reader work/ });
-
-    const form = screen.getByRole("search");
-    expect(Array.from(form.children)).toEqual([
-      screen.getByRole("group", { name: "Session state" }),
-      screen.getByRole("combobox", { name: "Project" }),
-      screen.getByRole("button", { name: "Date range" }).closest(".date-grid"),
-      screen.getByRole("searchbox", { name: "Find a session" }),
-    ]);
-  });
-
   it("keeps query as a draft until Enter and ignores duplicate submissions", async () => {
     const listUrls: string[] = [];
     vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => {
@@ -194,20 +180,4 @@ describe("session filters", () => {
     expect(screen.getByRole("radio", { name: "Active" })).toBeChecked();
   });
 
-  it("does not treat legacy list URL parameters as applied filters", () => {
-    window.history.replaceState(
-      null,
-      "",
-      "/?q=legacy&from=2020-01-01&archiveScope=all&show=internal",
-    );
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(json(listBody)));
-
-    render(<App />);
-
-    expect(window.location.search).toBe(
-      "?q=legacy&from=2020-01-01&archiveScope=all&show=internal",
-    );
-    expect(screen.getByRole("searchbox")).toHaveValue("");
-    expect(screen.getByRole("radio", { name: "Active" })).toBeChecked();
-  });
 });

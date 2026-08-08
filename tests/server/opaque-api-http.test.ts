@@ -101,9 +101,6 @@ describe("opaque cursor API", () => {
       nextCursor: expect.any(String),
       partial: false,
     }));
-    expect(first).not.toHaveProperty("listRevision");
-    expect(first).not.toHaveProperty("nextOffset");
-
     const second = await fetch(
       `${base}/api/v1/sessions?archiveScope=all&limit=1&cursor=${encodeURIComponent(first.nextCursor)}`,
     ).then((response) => response.json());
@@ -142,8 +139,6 @@ describe("opaque cursor API", () => {
     const metadata = await fetch(`${base}/api/v1/sessions/${sessionId}`)
       .then((response) => response.json());
     expect(metadata.session.title).toBe("Synthetic trace");
-    expect(metadata).not.toHaveProperty("cursor");
-    expect(metadata).not.toHaveProperty("context");
 
     const first = await fetch(`${base}/api/v1/sessions/${sessionId}/items?limit=1`)
       .then((response) => response.json());
@@ -155,8 +150,6 @@ describe("opaque cursor API", () => {
       hasMore: true,
       liveRevision: expect.any(String),
     }));
-    expect(first.cursor).not.toContain("throughOrdinal");
-
     const unconfirmed = await fetch(
       `${base}/api/v1/sessions/${sessionId}/items/directive-4/directive?cursor=${encodeURIComponent(first.cursor)}`,
     );

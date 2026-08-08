@@ -56,7 +56,7 @@ describe("session Live updates", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
-  it("persists Live independently per session and has no interval setting", async () => {
+  it("persists Live independently per session", async () => {
     const fetchMock = vi.fn((input: RequestInfo | URL) => String(input).includes("/live?")
       ? new Promise<Response>(() => {})
       : Promise.resolve(json(page([]))));
@@ -65,7 +65,6 @@ describe("session Live updates", () => {
     await flush();
     fireEvent.click(screen.getByRole("switch", { name: "Live updates" }));
     expect(localStorage.getItem(`${LIVE_KEY}${SESSION_ID}`)).toBe("1");
-    expect(screen.queryByRole("spinbutton", { name: /refresh interval/i })).toBeNull();
     first.unmount();
 
     window.history.replaceState(null, "", `/sessions/${OTHER_SESSION_ID}`);

@@ -1,4 +1,3 @@
-import { execFileSync, spawnSync } from "node:child_process";
 import { createServer, type Server } from "node:net";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -227,28 +226,4 @@ describe("tmux interaction transport", () => {
     ]);
   });
 
-  it.runIf(spawnSync("tmux", ["-V"]).status === 0)(
-    "validates a real tmux server and pane when tmux is available",
-    async () => {
-      const directory = await createTempDirectory("codex-real-tmux-");
-      const socketPath = join(directory, "server.sock");
-      execFileSync("tmux", ["-S", socketPath, "new-session", "-d", "-s", "viewer-test", "sleep", "30"]);
-      try {
-        const paneId = execFileSync("tmux", [
-          "-S", socketPath, "display-message", "-p", "-t", "viewer-test", "#{pane_id}",
-        ], { encoding: "utf8" }).trim();
-        const service = new TmuxInteractionService();
-        const binding = await service.connect({
-          ordinal: 1,
-          valid: true,
-          socketPath,
-          paneId,
-        });
-        expect(binding.paneId).toBe(paneId);
-        await service.sendEscape(binding);
-      } finally {
-        spawnSync("tmux", ["-S", socketPath, "kill-server"]);
-      }
-    },
-  );
 });

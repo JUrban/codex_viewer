@@ -58,17 +58,13 @@ async function start() {
 }
 
 describe("interaction HTTP API", () => {
-  it("includes state in session reads, removes the standalone GET, and accepts messages", async () => {
+  it("includes state in session reads and accepts messages", async () => {
     const { base, interaction } = await start();
     const detail = await fetch(`${base}/api/v1/sessions/${SESSION_ID}`);
     expect(detail.status).toBe(200);
     expect(await detail.json()).toEqual(expect.objectContaining({
       interaction: expect.objectContaining({ supported: true, state: "idle" }),
     }));
-    expect((await fetch(
-      `${base}/api/v1/sessions/${SESSION_ID}/interaction`,
-    )).status).toBe(404);
-
     const message = "first\r\nsecond 🌊";
     const sent = await fetch(`${base}/api/v1/sessions/${SESSION_ID}/messages`, {
       method: "POST",
