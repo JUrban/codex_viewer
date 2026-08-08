@@ -229,17 +229,6 @@
   color: var(--current); font-family: var(--mono-font); font-size: .76rem;
   font-weight: 650; letter-spacing: .03em;
 }
-.auto-refresh-interval {
-  width: 3.4rem; height: 1.7rem; padding: .1rem .25rem;
-  color: var(--ink); background: var(--paper); border: 1px solid #aebfc3;
-  font-family: var(--mono-font); font-size: .76rem; text-align: right;
-}
-.auto-refresh-interval:focus-visible {
-  outline: 2px solid var(--signal); outline-offset: 2px;
-}
-.auto-refresh-unit {
-  color: var(--ink-soft); font-family: var(--mono-font); font-size: .72rem;
-}
 .auto-refresh-switch {
   position: relative; flex: 0 0 auto; width: 2.45rem; height: 1.35rem; padding: .15rem;
   background: #c9d5d7; border: 1px solid #8fa6ab; border-radius: 999px; cursor: pointer;

@@ -30,8 +30,6 @@ function SessionPage({ sessionId }: { sessionId: string }) {
               busy={reader.operation !== null}
               autoRefreshEnabled={reader.autoRefreshEnabled}
               onAutoRefreshChange={reader.setAutoRefreshEnabled}
-              refreshIntervalSeconds={reader.refreshIntervalSeconds}
-              onRefreshIntervalChange={reader.setRefreshIntervalSeconds}
               onLoadMore={reader.loadMore}
               onConflict={reader.markTimelineChanged}
               prefixChanged={reader.prefixChanged}

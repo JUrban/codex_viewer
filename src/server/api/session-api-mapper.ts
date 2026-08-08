@@ -38,11 +38,11 @@ export class SessionApiMapper {
     };
   }
 
-  detail(result: DomainSession): Omit<SessionDetailResponse, "interaction"> {
+  detail(result: DomainSession): Omit<SessionDetailResponse, "interaction" | "liveRevision"> {
     return { session: this.sessionDetail(result) };
   }
 
-  itemPage(result: ItemPageResult): Omit<ItemPageResponse, "interaction"> {
+  itemPage(result: ItemPageResult): Omit<ItemPageResponse, "interaction" | "liveRevision"> {
     return {
       session: this.sessionDetail(result.context.session),
       cursor: result.context.cursor,

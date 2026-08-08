@@ -1,10 +1,10 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { ApiError } from "../../shared/api-contract.js";
 
-export type ApiRouter = (
+export type ApiRouter = ((
   request: IncomingMessage,
   response: ServerResponse,
-) => Promise<boolean> | boolean;
+) => Promise<boolean> | boolean) & { close?: () => void };
 
 export function sendJson(
   response: ServerResponse,
@@ -31,4 +31,3 @@ export const emptyApiRouter: ApiRouter = (request, response) => {
   );
   return true;
 };
-

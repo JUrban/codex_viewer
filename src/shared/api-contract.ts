@@ -9,6 +9,8 @@ declare const listCursorBrand: unique symbol;
 export type ListCursor = string & { readonly [listCursorBrand]: true };
 declare const timelineCursorBrand: unique symbol;
 export type TimelineCursor = string & { readonly [timelineCursorBrand]: true };
+declare const liveRevisionBrand: unique symbol;
+export type LiveRevision = string & { readonly [liveRevisionBrand]: true };
 
 export interface ApiWarning {
   code: string;
@@ -63,6 +65,7 @@ export interface SessionListResponse {
 export interface SessionDetailResponse {
   session: SessionDetail;
   interaction: InteractionResponse;
+  liveRevision: LiveRevision;
 }
 
 export interface ItemPageQuery {
@@ -76,6 +79,20 @@ export interface ItemPageResponse {
   hasMore: boolean;
   items: TimelineItem[];
   interaction: InteractionResponse;
+  liveRevision: LiveRevision;
+}
+
+export interface SessionLiveQuery {
+  cursor: TimelineCursor;
+  after: LiveRevision;
+}
+
+export interface SessionLiveResponse {
+  session: SessionDetail;
+  cursor: TimelineCursor;
+  hasMore: boolean;
+  interaction: InteractionResponse;
+  liveRevision: LiveRevision;
 }
 
 export interface ToolDetailResponse {

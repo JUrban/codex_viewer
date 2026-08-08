@@ -6,6 +6,7 @@ import { LOOPBACK_HOST, type ServerConfig } from "../../src/server/config.js";
 import { createCodexSessionRepository } from "../../src/server/create-session-repository.js";
 import { createApiRouter } from "../../src/server/http/api-router.js";
 import { createServer } from "../../src/server/http/create-server.js";
+import { SessionLiveService } from "../../src/server/live/session-live-service.js";
 import { createTempDirectory } from "../helpers/temp-directories.js";
 
 const servers: ReturnType<typeof createServer>[] = [];
@@ -34,7 +35,12 @@ async function startApi(existingHome?: string) {
     tls: { enabled: false },
     interactionEnabled: false,
   };
-  const server = createServer(config, createApiRouter(repository));
+  const server = createServer(config, createApiRouter(repository, {
+    live: new SessionLiveService(repository, {
+      probeIntervalMs: 5,
+      waitTimeoutMs: 15,
+    }),
+  }));
   servers.push(server);
   await new Promise<void>((done) => server.listen(0, LOOPBACK_HOST, done));
   const { port } = server.address() as AddressInfo;
@@ -147,6 +153,7 @@ describe("opaque cursor API", () => {
       items: expect.any(Array),
       cursor: expect.any(String),
       hasMore: true,
+      liveRevision: expect.any(String),
     }));
     expect(first.cursor).not.toContain("throughOrdinal");
 
@@ -176,6 +183,45 @@ describe("opaque cursor API", () => {
       text: expect.stringContaining("DIRECTIVE_DETAIL_CANARY"),
       truncated: false,
     });
+  });
+
+  it("long-polls without advancing the timeline cursor and detects appended backlog", async () => {
+    const { base, home, repository } = await startApi();
+    const list = await fetch(`${base}/api/v1/sessions?q=synthetic`).then((response) => response.json());
+    const sessionId = list.sessions.find(
+      (entry: { session: { title: string } }) => entry.session.title === "Synthetic trace",
+    ).session.id;
+    const page = await fetch(`${base}/api/v1/sessions/${sessionId}/items?limit=300`)
+      .then((response) => response.json());
+    const query = `cursor=${encodeURIComponent(page.cursor)}&after=${encodeURIComponent(page.liveRevision)}`;
+
+    const unchanged = await fetch(`${base}/api/v1/sessions/${sessionId}/live?${query}`);
+    expect(unchanged.status).toBe(204);
+    expect(unchanged.headers.get("cache-control")).toBe("no-store");
+
+    const rollout = join(
+      home,
+      "sessions/2026/07/28/rollout-2026-07-28T10-00-00-basic-session.jsonl",
+    );
+    await writeFile(
+      rollout,
+      `${await readFile(rollout, "utf8")}{"timestamp":"2026-08-01T00:00:00Z","type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"live append"}]}}\n`,
+    );
+    await repository.refresh();
+    const changed = await fetch(`${base}/api/v1/sessions/${sessionId}/live?${query}`);
+    expect(changed.status).toBe(200);
+    expect(await changed.json()).toEqual(expect.objectContaining({
+      cursor: page.cursor,
+      hasMore: true,
+      liveRevision: expect.not.stringMatching(page.liveRevision),
+    }));
+
+    expect((await fetch(
+      `${base}/api/v1/sessions/${sessionId}/live?cursor=bad&after=${"a".repeat(43)}`,
+    )).status).toBe(400);
+    expect((await fetch(
+      `${base}/api/v1/sessions/${sessionId}/live?cursor=${encodeURIComponent(page.cursor)}&after=bad`,
+    )).status).toBe(400);
   });
 
   it("accepts append-only continuation and reports timeline_changed after replacement", async () => {
@@ -213,5 +259,10 @@ describe("opaque cursor API", () => {
     );
     expect(changed.status).toBe(409);
     expect(await changed.json()).toMatchObject({ error: { code: "timeline_changed" } });
+    const liveChanged = await fetch(
+      `${base}/api/v1/sessions/${sessionId}/live?cursor=${encodeURIComponent(page.cursor)}&after=${encodeURIComponent(page.liveRevision)}`,
+    );
+    expect(liveChanged.status).toBe(409);
+    expect(await liveChanged.json()).toMatchObject({ error: { code: "timeline_changed" } });
   });
 });

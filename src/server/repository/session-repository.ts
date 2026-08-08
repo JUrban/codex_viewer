@@ -40,6 +40,8 @@ export interface SessionRepository {
     id: SessionId,
   ): Promise<RepositorySessionDetailResponse | null>;
   getItems(id: SessionId, query: ItemPageQuery): Promise<RepositoryItemPageResponse | null>;
+  getLiveSession(id: SessionId, cursor: import("../../shared/api-contract.js").TimelineCursor):
+    Promise<RepositoryLiveSessionSnapshot | null>;
   getToolDetail(
     id: SessionId,
     itemId: string,
@@ -54,8 +56,15 @@ export interface SessionRepository {
   getInteractionSession(id: SessionId): Promise<InteractionSessionSnapshot | null>;
 }
 
-export type RepositorySessionDetailResponse = Omit<SessionDetailResponse, "interaction">;
-export type RepositoryItemPageResponse = Omit<ItemPageResponse, "interaction">;
+export type RepositorySessionDetailResponse = Omit<SessionDetailResponse, "interaction" | "liveRevision">;
+export type RepositoryItemPageResponse = Omit<ItemPageResponse, "interaction" | "liveRevision">;
+
+export interface RepositoryLiveSessionSnapshot {
+  readonly session: SessionDetailResponse["session"];
+  readonly cursor: import("../../shared/api-contract.js").TimelineCursor;
+  readonly hasMore: boolean;
+  readonly interactionSession: InteractionSessionSnapshot;
+}
 
 export interface InteractionSessionSnapshot {
   readonly archived: boolean;
@@ -109,6 +118,25 @@ export class DefaultSessionRepository implements SessionRepository {
     const snapshot = await this.#store.current();
     const result = this.#queries.items(snapshot, id, query);
     return result === null ? null : this.#mapper.itemPage(result);
+  }
+
+  async getLiveSession(
+    id: SessionId,
+    cursor: import("../../shared/api-contract.js").TimelineCursor,
+  ): Promise<RepositoryLiveSessionSnapshot | null> {
+    const snapshot = await this.#store.current();
+    const context = this.#queries.live(snapshot, id, cursor);
+    if (context === null) return null;
+    const normalized = snapshot.sessions.get(id)!.normalized;
+    return {
+      session: this.#mapper.sessionDetail(context.session),
+      cursor: context.cursor,
+      hasMore: context.hasMore,
+      interactionSession: {
+        archived: normalized.session.archived,
+        interaction: normalized.interaction ?? null,
+      },
+    };
   }
 
   async getToolDetail(

@@ -91,7 +91,8 @@ restart the server after replacing them.
 - Render Markdown, GitHub-flavored Markdown, and KaTeX math.
 - Continue reading rollout files while Codex is writing them.
 - Enable Live updates for individual active sessions. The setting is off by
-  default, remembered per session, and refreshes every 2 seconds by default.
+  default and remembered per session. While the page is visible, one bounded
+  long-poll request waits for timeline, metadata, or interaction changes.
 - Handle malformed or unknown records with diagnostics where possible.
 - With `--enable-interaction`, send multiline prompts, `Ctrl+C`, and `Esc` to a
   user-bound tmux pane. Archived sessions remain read-only.
@@ -137,6 +138,7 @@ Accepted architecture decisions are recorded under [`docs/adr`](docs/adr):
 - [ADR-0008: Multi-page catalog and reader](docs/adr/0008-split-session-catalog-and-reader-into-an-mpa.md)
 - [ADR-0009: Opaque single-writer timeline cursors](docs/adr/0009-use-opaque-single-writer-timeline-cursors.md)
 - [ADR-0010: Opaque session-list cursors](docs/adr/0010-use-opaque-session-list-cursors.md)
+- [ADR-0011: Repository-probed bounded long polling](docs/adr/0011-use-repository-probed-bounded-long-polling.md)
 
 ## Development
 

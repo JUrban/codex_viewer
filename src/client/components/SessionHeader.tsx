@@ -1,4 +1,3 @@
-import { useEffect, useState } from "react";
 import type { SessionDetail } from "../../shared/domain";
 import type {
   TimelineVisibility,
@@ -11,8 +10,6 @@ interface SessionHeaderProps {
   onVisibilityChange: (key: TimelineVisibilityKey, visible: boolean) => void;
   autoRefreshEnabled: boolean;
   onAutoRefreshChange: (enabled: boolean) => void;
-  refreshIntervalSeconds: number;
-  onRefreshIntervalChange: (seconds: number) => void;
 }
 
 const DATE_FORMAT = new Intl.DateTimeFormat(undefined, {
@@ -26,14 +23,7 @@ export function SessionHeader({
   onVisibilityChange,
   autoRefreshEnabled,
   onAutoRefreshChange,
-  refreshIntervalSeconds,
-  onRefreshIntervalChange,
 }: SessionHeaderProps) {
-  const [intervalDraft, setIntervalDraft] = useState(String(refreshIntervalSeconds));
-  useEffect(() => {
-    setIntervalDraft(String(refreshIntervalSeconds));
-  }, [refreshIntervalSeconds]);
-
   const updatedAt = formatTimestamp(session.updatedAt);
 
   return (
@@ -60,24 +50,6 @@ export function SessionHeader({
                   <span className="auto-refresh-label" id="live-updates-label">
                     Live updates
                   </span>
-                  <input
-                    className="auto-refresh-interval"
-                    type="number"
-                    min="1"
-                    max="3600"
-                    step="1"
-                    value={intervalDraft}
-                    aria-label="Refresh interval in seconds"
-                    onChange={(event) => {
-                      setIntervalDraft(event.target.value);
-                      const seconds = Number(event.target.value);
-                      if (Number.isInteger(seconds) && seconds >= 1 && seconds <= 3600) {
-                        onRefreshIntervalChange(seconds);
-                      }
-                    }}
-                    onBlur={() => setIntervalDraft(String(refreshIntervalSeconds))}
-                  />
-                  <span className="auto-refresh-unit" aria-hidden="true">s</span>
                   <button
                     type="button"
                     className="auto-refresh-switch"

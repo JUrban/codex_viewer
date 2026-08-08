@@ -6,6 +6,7 @@ import { App } from "../../src/client/App";
 import { SessionApp } from "../../src/client/SessionApp";
 import type {
   ItemPageResponse,
+  LiveRevision,
   ListCursor,
   SessionListResponse,
   TimelineCursor,
@@ -228,6 +229,7 @@ function itemPage(): ItemPageResponse {
     cursor: "opaque.timeline.cursor" as TimelineCursor,
     hasMore: false,
     interaction: { supported: false },
+    liveRevision: "opaque.live.revision" as LiveRevision,
   };
 }
 

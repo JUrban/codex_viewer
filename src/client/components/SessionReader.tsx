@@ -28,8 +28,6 @@ interface SessionReaderProps {
   busy: boolean;
   autoRefreshEnabled: boolean;
   onAutoRefreshChange: (enabled: boolean) => void;
-  refreshIntervalSeconds: number;
-  onRefreshIntervalChange: (seconds: number) => void;
   onLoadMore: () => void;
   onConflict: () => void;
   prefixChanged: boolean;
@@ -49,8 +47,6 @@ export function SessionReader({
   busy,
   autoRefreshEnabled,
   onAutoRefreshChange,
-  refreshIntervalSeconds,
-  onRefreshIntervalChange,
   onLoadMore,
   onConflict,
   prefixChanged,
@@ -74,8 +70,6 @@ export function SessionReader({
         onVisibilityChange={onVisibilityChange}
         autoRefreshEnabled={autoRefreshEnabled}
         onAutoRefreshChange={onAutoRefreshChange}
-        refreshIntervalSeconds={refreshIntervalSeconds}
-        onRefreshIntervalChange={onRefreshIntervalChange}
       />
       <DiagnosticNotice
         diagnostics={context.session.diagnostics}

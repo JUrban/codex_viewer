@@ -150,7 +150,6 @@ describe("session browser components", () => {
     expect(screen.getByText("Codex", { selector: ".source-label" })).toBeInTheDocument();
     unmount();
 
-    const onRefreshIntervalChange = vi.fn();
     render(
       <SessionHeader
         session={{
@@ -163,23 +162,12 @@ describe("session browser components", () => {
         onVisibilityChange={vi.fn()}
         autoRefreshEnabled={false}
         onAutoRefreshChange={vi.fn()}
-        refreshIntervalSeconds={8}
-        onRefreshIntervalChange={onRefreshIntervalChange}
       />,
     );
     expect(screen.getByText("Codex 1.2.3 · format rollout-v1")).toBeInTheDocument();
     expect(screen.getByText(/native-session/)).toBeInTheDocument();
-    expect(screen.getByRole("spinbutton", { name: "Refresh interval in seconds" }))
-      .toHaveValue(8);
-    const interval = screen.getByRole("spinbutton", {
-      name: "Refresh interval in seconds",
-    });
-    fireEvent.change(interval, { target: { value: "12" } });
-    expect(onRefreshIntervalChange).toHaveBeenCalledWith(12);
-    fireEvent.change(interval, { target: { value: "0" } });
-    expect(onRefreshIntervalChange).toHaveBeenCalledTimes(1);
-    fireEvent.blur(interval);
-    expect(interval).toHaveValue(8);
+    expect(screen.queryByRole("spinbutton", { name: "Refresh interval in seconds" }))
+      .toBeNull();
   });
 
   it("falls back when the session update timestamp is invalid", () => {
@@ -196,8 +184,6 @@ describe("session browser components", () => {
         onVisibilityChange={vi.fn()}
         autoRefreshEnabled={false}
         onAutoRefreshChange={vi.fn()}
-        refreshIntervalSeconds={5}
-        onRefreshIntervalChange={vi.fn()}
       />,
     );
 

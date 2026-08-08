@@ -2,19 +2,15 @@ import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import type {
   InteractionResponse,
   ItemPageResponse,
+  SessionLiveResponse,
 } from "../../shared/api-contract";
 import type { TimelineItem } from "../../shared/domain";
 import { api, ApiClientError } from "../api/client";
 import { isAbort, isTimelineChanged, messageFor } from "./request-errors";
-import { useSessionPolling } from "./use-session-polling";
+import { useSessionLive, type LiveSnapshot } from "./use-session-live";
 import type { ReaderContext } from "./session-reader-state";
 
 const TIMELINE_PAGE_SIZE = 300;
-const DEFAULT_REFRESH_INTERVAL_SECONDS = 2;
-const MIN_REFRESH_INTERVAL_SECONDS = 1;
-const MAX_REFRESH_INTERVAL_SECONDS = 3_600;
-const REFRESH_INTERVAL_STORAGE_KEY =
-  "codex-sessions-reader.refresh-interval-seconds.v1";
 const LIVE_UPDATES_STORAGE_KEY_PREFIX =
   "codex-sessions-reader.live-updates.v1:";
 
@@ -34,6 +30,8 @@ interface ReaderState {
 type ReaderAction =
   | { type: "start"; operation: Exclude<ReaderOperation, null>; preserve: boolean }
   | { type: "success"; page: ItemPageResponse; replace: boolean }
+  | { type: "live-success"; response: SessionLiveResponse }
+  | { type: "live-error"; error: string }
   | { type: "failure"; error: string; missing: boolean }
   | { type: "timeline-changed" }
   | { type: "clear-error" };
@@ -63,9 +61,6 @@ export function useSessionReader(sessionId: string) {
   const [state, dispatch] = useReducer(reducer, initialState);
   const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(
     () => readLiveUpdatesEnabled(sessionId),
-  );
-  const [refreshIntervalSeconds, setRefreshIntervalSecondsState] = useState(
-    readRefreshIntervalSeconds,
   );
   const active = useRef<ActiveRequest | null>(null);
   const generation = useRef(0);
@@ -121,6 +116,7 @@ export function useSessionReader(sessionId: string) {
   }, [isCurrent, markTimelineChanged, sessionId]);
 
   useEffect(() => {
+    setAutoRefreshEnabled(readLiveUpdatesEnabled(sessionId));
     generation.current += 1;
     active.current?.controller.abort();
     active.current = null;
@@ -146,15 +142,6 @@ export function useSessionReader(sessionId: string) {
     });
   }, [requestPage]);
 
-  const poll = useCallback(() => {
-    const current = stateRef.current;
-    if (current.context === null || current.timelineChanged) return Promise.resolve(false);
-    return requestPage("poll", current.context.cursor, {
-      preserveCurrent: true,
-      replaceItems: false,
-    });
-  }, [requestPage]);
-
   const retryOpen = useCallback(() => requestPage("open", undefined, {
     preserveCurrent: false,
     replaceItems: true,
@@ -170,16 +157,6 @@ export function useSessionReader(sessionId: string) {
     });
   }, [requestPage]);
 
-  const setRefreshIntervalSeconds = useCallback((seconds: number) => {
-    if (!isValidRefreshInterval(seconds)) return;
-    setRefreshIntervalSecondsState(seconds);
-    try {
-      window.localStorage.setItem(REFRESH_INTERVAL_STORAGE_KEY, String(seconds));
-    } catch {
-      // Storage may be unavailable; the in-memory setting still works.
-    }
-  }, []);
-
   const setLiveUpdatesEnabled = useCallback((enabled: boolean) => {
     setAutoRefreshEnabled(enabled);
     try {
@@ -191,14 +168,40 @@ export function useSessionReader(sessionId: string) {
     }
   }, [sessionId]);
 
-  useSessionPolling(
-    autoRefreshEnabled &&
-      state.context !== null &&
+  const onLiveUpdate = useCallback(async (
+    response: SessionLiveResponse,
+    expected: LiveSnapshot,
+  ) => {
+    const current = stateRef.current;
+    if (current.context === null || current.timelineChanged ||
+      current.context.cursor !== expected.cursor ||
+      current.context.liveRevision !== expected.liveRevision ||
+      response.cursor !== expected.cursor) return;
+    if (response.hasMore) {
+      await requestPage("poll", expected.cursor, {
+        preserveCurrent: true,
+        replaceItems: false,
+      });
+      return;
+    }
+    dispatch({ type: "live-success", response });
+  }, [requestPage]);
+
+  useSessionLive({
+    sessionId,
+    enabled: autoRefreshEnabled && state.operation === null &&
+      state.context !== null && state.context.session.id === sessionId &&
       !state.context.session.archived &&
       !state.timelineChanged,
-    poll,
-    refreshIntervalSeconds * 1_000,
-  );
+    snapshot: state.context === null ? null : {
+      cursor: state.context.cursor,
+      liveRevision: state.context.liveRevision,
+    },
+    onUpdate: onLiveUpdate,
+    onConflict: markTimelineChanged,
+    onError: (reason) => dispatch({ type: "live-error", error: messageFor(reason) }),
+    onSuccess: () => dispatch({ type: "clear-error" }),
+  });
 
   return {
     context: state.context,
@@ -214,8 +217,6 @@ export function useSessionReader(sessionId: string) {
     clearReaderError: () => dispatch({ type: "clear-error" }),
     autoRefreshEnabled,
     setAutoRefreshEnabled: setLiveUpdatesEnabled,
-    refreshIntervalSeconds,
-    setRefreshIntervalSeconds,
     loadMore,
     retryOpen,
     markTimelineChanged,
@@ -234,6 +235,7 @@ function reducer(state: ReaderState, action: ReaderAction): ReaderState {
         session: action.page.session,
         cursor: action.page.cursor,
         hasMore: action.page.hasMore,
+        liveRevision: action.page.liveRevision,
       };
       return {
         ...state,
@@ -249,12 +251,28 @@ function reducer(state: ReaderState, action: ReaderAction): ReaderState {
           : state.timelineGeneration,
       };
     }
+    case "live-success":
+      if (state.context === null || action.response.cursor !== state.context.cursor) return state;
+      return {
+        ...state,
+        context: {
+          session: action.response.session,
+          cursor: action.response.cursor,
+          hasMore: action.response.hasMore,
+          liveRevision: action.response.liveRevision,
+        },
+        interaction: action.response.interaction,
+        error: null,
+        missing: false,
+      };
+    case "live-error":
+      return { ...state, error: action.error };
     case "failure":
       return { ...state, operation: null, error: action.error, missing: action.missing };
     case "timeline-changed":
       return { ...state, operation: null, error: null, timelineChanged: true };
     case "clear-error":
-      return { ...state, error: null };
+      return state.error === null ? state : { ...state, error: null };
   }
 }
 
@@ -272,18 +290,4 @@ function readLiveUpdatesEnabled(sessionId: string): boolean {
   } catch {
     return false;
   }
-}
-
-function readRefreshIntervalSeconds(): number {
-  try {
-    const stored = Number(window.localStorage.getItem(REFRESH_INTERVAL_STORAGE_KEY));
-    return isValidRefreshInterval(stored) ? stored : DEFAULT_REFRESH_INTERVAL_SECONDS;
-  } catch {
-    return DEFAULT_REFRESH_INTERVAL_SECONDS;
-  }
-}
-
-function isValidRefreshInterval(seconds: number): boolean {
-  return Number.isInteger(seconds) && seconds >= MIN_REFRESH_INTERVAL_SECONDS &&
-    seconds <= MAX_REFRESH_INTERVAL_SECONDS;
 }

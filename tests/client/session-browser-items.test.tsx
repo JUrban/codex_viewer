@@ -7,7 +7,7 @@ import { SessionApp } from "../../src/client/SessionApp";
 import { DirectiveItem } from "../../src/client/components/DirectiveItem";
 import { Timeline } from "../../src/client/components/Timeline";
 import { ToolItem } from "../../src/client/components/ToolItem";
-import type { ItemPageResponse, TimelineCursor } from "../../src/shared/api-contract";
+import type { ItemPageResponse, LiveRevision, TimelineCursor } from "../../src/shared/api-contract";
 import type { TimelineItem } from "../../src/shared/domain";
 import {
   baseSession,
@@ -176,5 +176,6 @@ function page(
     cursor,
     hasMore,
     interaction: { supported: false },
+    liveRevision: "opaque.live.revision" as LiveRevision,
   };
 }

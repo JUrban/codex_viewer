@@ -1,5 +1,6 @@
 import type {
   ItemPageResponse,
+  LiveRevision,
   SessionListEntry,
   TimelineCursor,
 } from "../../src/shared/api-contract";
@@ -14,6 +15,7 @@ export const CHILD_ID = "zyxwvutsrqponmlkjihgfedc";
 export const OTHER_ID = "otherabcdefghijklmnopqrs";
 export const TIMELINE_CURSOR = "opaque.timeline.cursor" as TimelineCursor;
 export const NEXT_TIMELINE_CURSOR = "opaque.timeline.next" as TimelineCursor;
+export const LIVE_REVISION = "opaque.live.revision" as LiveRevision;
 
 export const baseSession: SessionSummary = {
   id: SESSION_ID, title: "Reader work", preview: "preview", cwd: "/project/reader",
@@ -52,12 +54,14 @@ export function readContext(
     cursor,
     session: sessionDetail,
     hasMore,
+    liveRevision: LIVE_REVISION,
   };
 }
 
 export const detailBody = {
   session: sessionDetail,
   interaction: { supported: false as const },
+  liveRevision: LIVE_REVISION,
 };
 
 export const toolItem: Tool = {
@@ -80,6 +84,7 @@ export const directiveItem: Directive = {
 export const firstPage: ItemPageResponse = {
   ...readContext(),
   interaction: { supported: false },
+  liveRevision: LIVE_REVISION,
   items: [
     { kind: "message", id: "message-1", ordinal: 1, timestamp: null, role: "user", phase: null, itemType: null, markdown: "Hello" },
     toolItem,

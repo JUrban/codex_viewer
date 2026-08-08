@@ -6,7 +6,8 @@ export function messageFor(reason: unknown): string {
 }
 
 export function isAbort(reason: unknown): boolean {
-  return reason instanceof Error && reason.name === "AbortError";
+  return typeof reason === "object" && reason !== null &&
+    "name" in reason && reason.name === "AbortError";
 }
 
 export function isStaleListCursor(reason: unknown): reason is ApiClientError {

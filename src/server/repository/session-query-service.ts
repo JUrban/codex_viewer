@@ -205,6 +205,17 @@ export class SessionQueryService {
     };
   }
 
+  live(
+    snapshot: CatalogSnapshot,
+    id: string,
+    cursor: TimelineCursor,
+  ): TimelinePageContext | null {
+    const versioned = snapshot.sessions.get(id);
+    if (versioned === undefined) return null;
+    const boundary = this.#resolveReadBoundary(id, versioned, cursor);
+    return this.#readContext(id, versioned, boundary);
+  }
+
   toolDetail(
     snapshot: CatalogSnapshot,
     id: string,

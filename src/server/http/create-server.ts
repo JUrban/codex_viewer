@@ -78,10 +78,13 @@ export function createServer(config: ServerConfig, apiRouter: ApiRouter = emptyA
     }
   };
 
-  if (!config.tls.enabled) return createHttpServer(requestListener);
+  if (!config.tls.enabled) {
+    const server = createHttpServer(requestListener);
+    return closeRouterWith(server, apiRouter);
+  }
 
   const requireClientCertificate = config.tls.certificateAuthorityPath !== undefined;
-  return createHttpsServer(
+  const server = createHttpsServer(
     {
       cert: readFileSync(config.tls.certificatePath),
       key: readFileSync(config.tls.privateKeyPath),
@@ -94,4 +97,21 @@ export function createServer(config: ServerConfig, apiRouter: ApiRouter = emptyA
     },
     requestListener,
   );
+  return closeRouterWith(server, apiRouter);
+}
+
+function closeRouterWith<T extends ReturnType<typeof createHttpServer>>(
+  server: T,
+  apiRouter: ApiRouter,
+): T {
+  const close = server.close.bind(server);
+  const mutable = server as unknown as {
+    close(callback?: (error?: Error) => void): T;
+  };
+  mutable.close = (callback?: (error?: Error) => void) => {
+    apiRouter.close?.();
+    close(callback);
+    return server;
+  };
+  return server;
 }

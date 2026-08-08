@@ -45,6 +45,13 @@ export class SessionInteractionService {
   async describe(sessionId: string): Promise<InteractionResponse | null> {
     const session = await this.repository.getInteractionSession(sessionId);
     if (session === null) return null;
+    return this.describeSnapshot(sessionId, session);
+  }
+
+  async describeSnapshot(
+    sessionId: string,
+    session: InteractionSessionSnapshot,
+  ): Promise<InteractionResponse> {
     if (!this.#supported(session)) return { supported: false };
     const interaction = session.interaction!;
     const attempt = interaction.bindingAttempt;

@@ -4,6 +4,8 @@ import type {
   DirectiveDetailResponse,
   ItemPageQuery,
   ItemPageResponse,
+  SessionLiveQuery,
+  SessionLiveResponse,
   SessionListQuery,
   SessionListResponse,
   ToolDetailQuery,
@@ -99,6 +101,14 @@ export const api = {
       })}`,
       signal,
     ),
+  live: (id: string, query: SessionLiveQuery, signal?: AbortSignal) =>
+    request<SessionLiveResponse | null>(
+      `/api/v1/sessions/${encodeURIComponent(id)}/live${queryString({
+        cursor: query.cursor,
+        after: query.after,
+      })}`,
+      signal,
+    ).then((value) => value ?? null),
   tool: (
     sessionId: string,
     itemId: string,

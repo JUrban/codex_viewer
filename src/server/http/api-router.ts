@@ -3,6 +3,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import type {
   DirectiveDetailQuery,
   ItemPageQuery,
+  SessionLiveQuery,
   SessionListQuery,
   TimelineCursor,
   ToolDetailQuery,
@@ -21,6 +22,11 @@ import {
   normalizeMessage,
   TmuxInteractionError,
 } from "../interaction/tmux-service.js";
+import {
+  SessionLiveError,
+  SessionLiveService,
+} from "../live/session-live-service.js";
+import { withLiveRevision } from "../live/live-revision.js";
 
 const API_ROOT = "/api/v1";
 const SESSION_ROOT = `${API_ROOT}/sessions`;
@@ -38,7 +44,8 @@ export interface ApiRouterOptions {
   readonly interaction?: Pick<
     SessionInteractionService,
     "describe" | "sendMessage" | "interrupt" | "escape"
-  >;
+  > & Partial<Pick<SessionInteractionService, "describeSnapshot">>;
+  readonly live?: SessionLiveService;
 }
 
 const CONSOLE_ERROR_LOGGER: ApiErrorLogger = {
@@ -53,7 +60,12 @@ export function createApiRouter(
 ): ApiRouter {
   const logger = options.logger ?? CONSOLE_ERROR_LOGGER;
   const requestIdFactory = options.requestId ?? randomUUID;
-  return async (request, response) => {
+  const live = options.live ?? new SessionLiveService(repository, {
+    interaction: options.interaction?.describeSnapshot === undefined
+      ? undefined
+      : { describeSnapshot: options.interaction.describeSnapshot.bind(options.interaction) },
+  });
+  const router: ApiRouter = async (request, response) => {
     const url = new URL(request.url ?? "/", "http://localhost");
     if (!url.pathname.startsWith("/api/")) return false;
     const requestId = requestIdFactory();
@@ -83,11 +95,32 @@ export function createApiRouter(
         if ([...url.searchParams].length > 0) invalid("session metadata does not accept query parameters");
         const result = await repository.getSession(id);
         if (result === null) return notFound(response, headOnly, "session_not_found");
-        sendJson(response, 200, {
+        const interaction = await describeInteraction(options.interaction, id);
+        sendJson(response, 200, withLiveRevision({
           ...result,
-          interaction: await describeInteraction(options.interaction, id),
-        }, headOnly);
+          interaction,
+        }, live.revision.bind(live)), headOnly);
         return true;
+      }
+      if (segments.length === 1 && segments[0] === "live") {
+        if (!readMethod) return false;
+        response.setHeader("Cache-Control", "no-store");
+        const abort = new AbortController();
+        const onDisconnect = () => {
+          if (!response.writableEnded) abort.abort();
+        };
+        request.once("aborted", onDisconnect);
+        response.once("close", onDisconnect);
+        try {
+          const result = await live.wait(id, parseLiveQuery(url.searchParams), abort.signal);
+          if (abort.signal.aborted || response.destroyed) return true;
+          if (result === null) return noContent(response);
+          sendJson(response, 200, result, headOnly);
+          return true;
+        } finally {
+          request.removeListener("aborted", onDisconnect);
+          response.removeListener("close", onDisconnect);
+        }
       }
       if (segments.length === 1 && segments[0] === "messages") {
         if (request.method !== "POST") return false;
@@ -121,10 +154,11 @@ export function createApiRouter(
         if (!readMethod) return false;
         const result = await repository.getItems(id, parseItemQuery(url.searchParams));
         if (result === null) return notFound(response, headOnly, "session_not_found");
-        sendJson(response, 200, {
+        const interaction = await describeInteraction(options.interaction, id);
+        sendJson(response, 200, withLiveRevision({
           ...result,
-          interaction: await describeInteraction(options.interaction, id),
-        }, headOnly);
+          interaction,
+        }, live.revision.bind(live)), headOnly);
         return true;
       }
       if (
@@ -194,6 +228,18 @@ export function createApiRouter(
         }, headOnly);
         return true;
       }
+      if (error instanceof SessionLiveError) {
+        const status = error.code === "session_not_found" ? 404 : 429;
+        if (status === 429) response.setHeader("Retry-After", "2");
+        sendJson(response, status, {
+          error: { code: error.code, message: error.message },
+        }, headOnly);
+        return true;
+      }
+      if (error instanceof DOMException && error.name === "AbortError") {
+        if (request.destroyed || response.destroyed) return true;
+        return noContent(response);
+      }
       logger.error("Session API request failed", { requestId, error });
       sendJson(
         response,
@@ -210,6 +256,8 @@ export function createApiRouter(
       return true;
     }
   };
+  router.close = () => live.close();
+  return router;
 }
 
 async function describeInteraction(
@@ -333,6 +381,19 @@ function parseItemQuery(params: URLSearchParams): ItemPageQuery {
   const limit = optional(params, "limit");
   if (limit !== undefined) query.limit = integer(limit, "limit");
   return query;
+}
+
+function parseLiveQuery(params: URLSearchParams): SessionLiveQuery {
+  only(params, ["cursor", "after"]);
+  const cursor = optional(params, "cursor");
+  const after = optional(params, "after");
+  if (cursor === undefined) invalid("cursor is required for Live updates");
+  if (after === undefined) invalid("after is required for Live updates");
+  if (!/^[A-Za-z0-9_-]{43}$/.test(after)) invalid("after is malformed");
+  return {
+    cursor: cursor as TimelineCursor,
+    after: after as import("../../shared/api-contract.js").LiveRevision,
+  };
 }
 
 function parseToolQuery(params: URLSearchParams): ToolDetailQuery {
