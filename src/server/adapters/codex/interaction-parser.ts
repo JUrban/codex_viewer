@@ -1,6 +1,7 @@
 import type {
   DomainAgentInteraction,
   InteractionBindingAttempt,
+  InteractionKeyBindings,
 } from "../../domain/session-domain.js";
 import type { DecodedRecord, DecodedRollout } from "./rollout-decoder.js";
 import { isObject } from "./rollout-decoder.js";
@@ -10,6 +11,16 @@ const CODEX_TMUX_ACTIVATION_COMMAND =
 export const CODEX_TMUX_ACTIVATION = `! ${CODEX_TMUX_ACTIVATION_COMMAND}`;
 
 const BIND_MARKER = "CODEX_VIEWER_TMUX_BIND_V1";
+
+export const CODEX_INTERACTION_KEY_BINDINGS = {
+  enter: "Enter",
+  up: "Up",
+  down: "Down",
+  left: "Left",
+  right: "Right",
+  interrupt: "C-c",
+  plan: "BTab",
+} as const satisfies InteractionKeyBindings;
 
 export function codexInteraction(decoded: DecodedRollout): DomainAgentInteraction {
   let bindingAttempt: InteractionBindingAttempt | null = null;
@@ -22,7 +33,11 @@ export function codexInteraction(decoded: DecodedRollout): DomainAgentInteractio
     ) bindingAttempt = attempt;
   }
 
-  return { activation: CODEX_TMUX_ACTIVATION, bindingAttempt };
+  return {
+    activation: CODEX_TMUX_ACTIVATION,
+    bindingAttempt,
+    keyBindings: CODEX_INTERACTION_KEY_BINDINGS,
+  };
 }
 
 function bindingAttemptFrom(record: DecodedRecord): InteractionBindingAttempt | null {

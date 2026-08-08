@@ -1,5 +1,11 @@
 import { randomUUID } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
+import {
+  INTERACTION_KEYS,
+  MAX_INTERACTION_KEY_SEQUENCE_LENGTH,
+  MAX_INTERACTION_MESSAGE_BYTES,
+  type InteractionKey,
+} from "../../shared/api-contract.js";
 import type {
   DirectiveDetailQuery,
   ItemPageQuery,
@@ -18,7 +24,6 @@ import {
   type SessionInteractionService,
 } from "../interaction/interaction-service.js";
 import {
-  MAX_INTERACTION_MESSAGE_BYTES,
   normalizeMessage,
   TmuxInteractionError,
 } from "../interaction/tmux-service.js";
@@ -43,7 +48,7 @@ export interface ApiRouterOptions {
   readonly requestId?: () => string;
   readonly interaction?: Pick<
     SessionInteractionService,
-    "describe" | "sendMessage" | "interrupt" | "escape" | "preview"
+    "describe" | "sendMessage" | "sendKeys" | "preview"
   > & Partial<Pick<SessionInteractionService, "describeSnapshot">>;
   readonly live?: SessionLiveService;
 }
@@ -72,7 +77,7 @@ export function createApiRouter(
     const headOnly = request.method === "HEAD";
     const readMethod = request.method === "GET" || headOnly;
     const mutationPath = new RegExp(
-      `^${SESSION_ROOT}/[A-Za-z0-9_-]{20,100}/(?:messages|interrupt|keys)$`,
+      `^${SESSION_ROOT}/[A-Za-z0-9_-]{20,100}/(?:messages|keys)$`,
     ).test(url.pathname);
     if (!readMethod && (request.method !== "POST" || !mutationPath)) return false;
 
@@ -142,21 +147,23 @@ export function createApiRouter(
         await options.interaction.sendMessage(id, body.message);
         return noContent(response);
       }
-      if (segments.length === 1 && segments[0] === "interrupt") {
-        if (request.method !== "POST") return false;
-        if (options.interaction === undefined) return interactionUnavailable(response);
-        await requireOptionalEmptyJsonObject(request);
-        await options.interaction.interrupt(id);
-        return noContent(response);
-      }
       if (segments.length === 1 && segments[0] === "keys") {
         if (request.method !== "POST") return false;
         if (options.interaction === undefined) return interactionUnavailable(response);
         const body = await readJsonObject(request);
-        if (Object.keys(body).length !== 1 || body.key !== "escape") {
-          invalidBody('body must be { "key": "escape" }');
+        if (Object.keys(body).length !== 1 || !Array.isArray(body.keys)) {
+          invalidBody("body must contain only a keys array");
         }
-        await options.interaction.escape(id);
+        if (
+          body.keys.length === 0 ||
+          body.keys.length > MAX_INTERACTION_KEY_SEQUENCE_LENGTH ||
+          !body.keys.every(isInteractionKey)
+        ) {
+          invalidBody(
+            `keys must contain 1-${MAX_INTERACTION_KEY_SEQUENCE_LENGTH} supported interaction keys`,
+          );
+        }
+        await options.interaction.sendKeys(id, body.keys);
         return noContent(response);
       }
       if (segments.length === 1 && segments[0] === "items") {
@@ -314,17 +321,14 @@ async function readJsonObject(request: IncomingMessage): Promise<Record<string, 
   return parsed as Record<string, unknown>;
 }
 
-async function requireOptionalEmptyJsonObject(request: IncomingMessage): Promise<void> {
-  if (
-    request.headers["content-length"] === undefined &&
-    request.headers["transfer-encoding"] === undefined
-  ) return;
-  const body = await readJsonObject(request);
-  if (Object.keys(body).length !== 0) invalidBody("body must be an empty JSON object");
-}
-
 function invalidBody(message: string): never {
   throw new RequestBodyError(400, "invalid_json", message);
+}
+
+const INTERACTION_KEY_SET = new Set<string>(INTERACTION_KEYS);
+
+function isInteractionKey(value: unknown): value is InteractionKey {
+  return typeof value === "string" && INTERACTION_KEY_SET.has(value);
 }
 
 function bodyTooLarge(): never {

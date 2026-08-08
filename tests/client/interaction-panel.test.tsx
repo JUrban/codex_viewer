@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { InteractionPanel } from "../../src/client/components/InteractionPanel";
@@ -27,13 +27,13 @@ function props(value: InteractionResponse | null) {
     error: null,
     onDismissError: vi.fn(),
     onSendMessage: vi.fn().mockResolvedValue(undefined),
-    onInterrupt: vi.fn().mockResolvedValue(undefined),
-    onEscape: vi.fn().mockResolvedValue(undefined),
+    onSendKeys: vi.fn().mockResolvedValue(undefined),
     preview: null,
     previewBusy: false,
     previewError: null,
     onDismissPreviewError: vi.fn(),
     onPreviewTerminal: vi.fn().mockResolvedValue(undefined),
+    onCancelPreviewTerminal: vi.fn(),
   };
 }
 
@@ -76,7 +76,7 @@ describe("interaction panel", () => {
     const summary = screen.getByText(`12 events · Updated ${localTime}`);
     const preview = screen.getByRole("region", { name: "Terminal preview" });
     const prompt = screen.getByRole("textbox", { name: "Message to agent" });
-    const lastAction = screen.getByRole("button", { name: "Esc" });
+    const lastAction = screen.getByRole("button", { name: "Plan" });
     expect(summary).toBeInTheDocument();
     expect(preview.compareDocumentPosition(prompt) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(lastAction.compareDocumentPosition(summary) & Node.DOCUMENT_POSITION_FOLLOWING)
@@ -120,24 +120,42 @@ describe("interaction panel", () => {
     expect(await screen.findByRole("textbox", { name: "Message to agent" })).toHaveValue("");
   });
 
+  it("keeps Send disabled for blank input", async () => {
+    const handlers = props(interaction("connected"));
+    const user = userEvent.setup();
+    render(<InteractionPanel {...handlers} />);
+    const textarea = screen.getByRole("textbox", { name: "Message to agent" });
+    const send = screen.getByRole("button", { name: "Send" });
+    expect(send).toBeDisabled();
+
+    await user.type(textarea, "   ");
+    expect(send).toBeDisabled();
+    fireEvent.keyDown(textarea, { key: "Enter", shiftKey: true });
+    expect(handlers.onSendMessage).not.toHaveBeenCalled();
+    expect(handlers.onSendKeys).not.toHaveBeenCalled();
+    expect(textarea).toHaveValue("   ");
+  });
+
   it("dispatches interaction controls and disables them while busy", async () => {
     const handlers = props(interaction("connected"));
     const user = userEvent.setup();
     const { rerender } = render(<InteractionPanel {...handlers} />);
     expect(screen.getByText(/12 events · Updated/)).toBeInTheDocument();
     expect(screen.getByRole("textbox")).toBeEnabled();
-    expect(screen.getByRole("button", { name: "Ctrl-C" })).toBeEnabled();
-    expect(screen.getByRole("button", { name: "Esc" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Interrupt" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Plan" })).toBeEnabled();
+    expect(screen.queryByRole("button", { name: "Esc" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Terminal preview" })).toBeEnabled();
-    await user.click(screen.getByRole("button", { name: "Ctrl-C" }));
-    await user.click(screen.getByRole("button", { name: "Esc" }));
-    expect(handlers.onInterrupt).toHaveBeenCalledTimes(1);
-    expect(handlers.onEscape).toHaveBeenCalledTimes(1);
+    await user.click(screen.getByRole("button", { name: "Interrupt" }));
+    expect(handlers.onSendKeys).toHaveBeenNthCalledWith(1, ["interrupt"]);
+    await user.click(screen.getByRole("button", { name: "Plan" }));
+    expect(handlers.onSendKeys).toHaveBeenNthCalledWith(2, ["plan"]);
+    expect(handlers.onSendKeys).toHaveBeenCalledTimes(2);
 
     rerender(<InteractionPanel {...props(interaction("connected"))} busy />);
     expect(screen.getByRole("textbox")).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Ctrl-C" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Esc" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Interrupt" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Plan" })).toBeDisabled();
   });
 
   it("loads from the unified header and opens at the bottom", async () => {
@@ -167,7 +185,7 @@ describe("interaction panel", () => {
     scrollHeight.mockRestore();
   });
 
-  it("folds, reopens at the bottom, refreshes in place, and renders text safely", async () => {
+  it("folds, reopens at the bottom, preserves scroll on refresh, and renders text safely", async () => {
     const handlers = {
       ...props(interaction("connected")),
       preview: {
@@ -188,7 +206,7 @@ describe("interaction panel", () => {
     );
     expect(content.querySelector("img")).toBeNull();
     expect(content.querySelector("script")).toBeNull();
-    expect(screen.getByText(/older terminal output was truncated/i)).toBeInTheDocument();
+    expect(screen.getByText(/terminal output exceeded the preview limit/i)).toBeInTheDocument();
     const header = screen.getByRole("button", { name: "Terminal preview" });
     await user.click(header);
     expect(screen.queryByLabelText("Terminal preview content")).not.toBeInTheDocument();
@@ -198,10 +216,6 @@ describe("interaction panel", () => {
 
     const reopened = screen.getByLabelText("Terminal preview content");
     reopened.scrollTop = 120;
-    const refreshButton = screen.getByRole("button", { name: "Refresh terminal preview" });
-    await user.click(refreshButton);
-    expect(refreshButton).toHaveFocus();
-    expect(handlers.onPreviewTerminal).toHaveBeenCalledTimes(1);
     const refreshedPreview = {
       ...handlers.preview,
       content: "fresh terminal output",
@@ -209,9 +223,8 @@ describe("interaction panel", () => {
     };
     rerender(<InteractionPanel {...handlers} preview={refreshedPreview} />);
     const refreshed = screen.getByLabelText("Terminal preview content");
+    expect(refreshed).toBe(reopened);
     expect(refreshed).toHaveTextContent("fresh terminal output");
-    expect(refreshed).not.toHaveFocus();
-    expect(refreshButton).toHaveFocus();
     expect(refreshed.scrollTop).toBe(120);
     scrollHeight.mockRestore();
   });
@@ -233,25 +246,156 @@ describe("interaction panel", () => {
     expect(screen.getByText("The terminal pane is empty.")).toBeInTheDocument();
   });
 
-  it("keeps the refresh glyph and exposes its busy state", () => {
+  it("replaces timestamp and manual refresh with a default-on auto-refresh switch", async () => {
     const captured = {
       content: "output",
       truncated: false,
       capturedAt: "2026-08-08T12:00:00.000Z",
     };
     const handlers = props(interaction("connected"));
-    const { rerender } = render(<InteractionPanel {...handlers} preview={captured} />);
-    const refresh = screen.getByRole("button", { name: "Refresh terminal preview" });
-    expect(refresh).toBeEnabled();
-    expect(refresh).toHaveAttribute("aria-busy", "false");
-    expect(refresh).toHaveTextContent("↻");
-    expect(refresh.firstElementChild).not.toHaveClass("is-spinning");
+    const user = userEvent.setup();
+    render(<InteractionPanel {...handlers} preview={captured} />);
+    const autoRefresh = screen.getByRole("switch", { name: "Auto refresh" });
+    expect(autoRefresh).toHaveAttribute("aria-checked", "true");
+    expect(screen.queryByRole("button", { name: "Refresh terminal preview" })).toBeNull();
+    expect(screen.queryByText(new Date(captured.capturedAt).toLocaleTimeString())).toBeNull();
 
-    rerender(<InteractionPanel {...handlers} preview={captured} previewBusy />);
-    expect(refresh).toBeDisabled();
-    expect(refresh).toHaveAttribute("aria-busy", "true");
-    expect(refresh).toHaveClass("is-active");
-    expect(refresh).toHaveTextContent("↻");
-    expect(refresh.firstElementChild).toHaveClass("is-spinning");
+    await user.click(autoRefresh);
+    expect(autoRefresh).toHaveAttribute("aria-checked", "false");
+  });
+
+  it("polls without overlap and retries after failures", async () => {
+    vi.useFakeTimers();
+    let resolveFirst!: () => void;
+    const first = new Promise<void>((resolve) => { resolveFirst = resolve; });
+    const handlers = {
+      ...props(interaction("connected")),
+      preview: { content: "output", truncated: false, capturedAt: "2026-08-08T12:00:00.000Z" },
+    };
+    handlers.onPreviewTerminal
+      .mockReturnValueOnce(first)
+      .mockRejectedValueOnce(new Error("temporary capture failure"))
+      .mockResolvedValue(undefined);
+
+    try {
+      const { unmount } = render(<InteractionPanel {...handlers} />);
+      expect(handlers.onPreviewTerminal).toHaveBeenCalledTimes(1);
+
+      await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
+      expect(handlers.onPreviewTerminal).toHaveBeenCalledTimes(1);
+
+      await act(async () => { resolveFirst(); await first; });
+      await act(async () => { await vi.advanceTimersByTimeAsync(999); });
+      expect(handlers.onPreviewTerminal).toHaveBeenCalledTimes(1);
+      await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+      expect(handlers.onPreviewTerminal).toHaveBeenCalledTimes(2);
+      await act(async () => { await vi.advanceTimersByTimeAsync(1_000); });
+      expect(handlers.onPreviewTerminal).toHaveBeenCalledTimes(3);
+      unmount();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("cancels a paused manual preview capture when unmounted", async () => {
+    const handlers = {
+      ...props(interaction("connected")),
+      preview: { content: "output", truncated: false, capturedAt: "2026-08-08T12:00:00.000Z" },
+    };
+    const { unmount } = render(<InteractionPanel {...handlers} />);
+    const autoRefresh = screen.getByRole("switch", { name: "Auto refresh" });
+    const toggle = screen.getByRole("button", { name: "Terminal preview" });
+
+    fireEvent.click(autoRefresh);
+    fireEvent.click(toggle);
+    handlers.onPreviewTerminal.mockClear();
+    handlers.onCancelPreviewTerminal.mockClear();
+
+    fireEvent.click(toggle);
+    expect(handlers.onPreviewTerminal).toHaveBeenCalledTimes(1);
+    expect(handlers.onCancelPreviewTerminal).not.toHaveBeenCalled();
+
+    unmount();
+    expect(handlers.onCancelPreviewTerminal).toHaveBeenCalledTimes(1);
+  });
+
+  it("pauses polling when disabled, collapsed, hidden, or disconnected", async () => {
+    vi.useFakeTimers();
+    let visibility: DocumentVisibilityState = "visible";
+    const visibilityState = vi.spyOn(document, "visibilityState", "get")
+      .mockImplementation(() => visibility);
+    const handlers = {
+      ...props(interaction("connected")),
+      preview: { content: "output", truncated: false, capturedAt: "2026-08-08T12:00:00.000Z" },
+    };
+
+    try {
+      const { rerender, unmount } = render(<InteractionPanel {...handlers} />);
+      await act(async () => { await Promise.resolve(); });
+      expect(handlers.onPreviewTerminal).toHaveBeenCalledTimes(1);
+
+      const autoRefresh = screen.getByRole("switch", { name: "Auto refresh" });
+      fireEvent.click(autoRefresh);
+      expect(autoRefresh).toHaveAttribute("aria-checked", "false");
+      await act(async () => { await vi.advanceTimersByTimeAsync(2_000); });
+      expect(handlers.onPreviewTerminal).toHaveBeenCalledTimes(1);
+
+      fireEvent.click(autoRefresh);
+      await act(async () => { await Promise.resolve(); });
+      expect(handlers.onPreviewTerminal).toHaveBeenCalledTimes(2);
+
+      const toggle = screen.getByRole("button", { name: "Terminal preview" });
+      fireEvent.click(toggle);
+      await act(async () => { await vi.advanceTimersByTimeAsync(2_000); });
+      expect(handlers.onPreviewTerminal).toHaveBeenCalledTimes(2);
+
+      fireEvent.click(toggle);
+      await act(async () => { await Promise.resolve(); });
+      expect(handlers.onPreviewTerminal).toHaveBeenCalledTimes(3);
+
+      visibility = "hidden";
+      fireEvent(document, new Event("visibilitychange"));
+      expect(handlers.onCancelPreviewTerminal).toHaveBeenCalled();
+      await act(async () => { await vi.advanceTimersByTimeAsync(2_000); });
+      expect(handlers.onPreviewTerminal).toHaveBeenCalledTimes(3);
+
+      visibility = "visible";
+      fireEvent(document, new Event("visibilitychange"));
+      expect(handlers.onPreviewTerminal).toHaveBeenCalledTimes(4);
+
+      rerender(<InteractionPanel {...handlers} interaction={interaction("disconnected")} />);
+      await act(async () => { await vi.advanceTimersByTimeAsync(2_000); });
+      expect(handlers.onPreviewTerminal).toHaveBeenCalledTimes(4);
+      unmount();
+    } finally {
+      visibilityState.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
+  it("sends directional and Enter keys from the floating terminal keypad", async () => {
+    const handlers = {
+      ...props(interaction("connected")),
+      preview: { content: "output", truncated: false, capturedAt: "2026-08-08T12:00:00.000Z" },
+    };
+    const user = userEvent.setup();
+    const { rerender } = render(<InteractionPanel {...handlers} />);
+    expect(screen.getByRole("group", { name: "Terminal controls" })).toBeInTheDocument();
+
+    for (const name of ["Up", "Left", "Enter", "Right", "Down"]) {
+      await user.click(screen.getByRole("button", { name }));
+    }
+    expect(handlers.onSendKeys.mock.calls).toEqual([
+      [["up"]],
+      [["left"]],
+      [["enter"]],
+      [["right"]],
+      [["down"]],
+    ]);
+
+    rerender(<InteractionPanel {...handlers} busy />);
+    for (const name of ["Up", "Left", "Enter", "Right", "Down"]) {
+      expect(screen.getByRole("button", { name })).toBeDisabled();
+    }
   });
 });

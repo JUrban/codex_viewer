@@ -1,5 +1,6 @@
 import type {
   InteractionResponse,
+  InteractionKey,
   TerminalPreviewResponse,
 } from "../../shared/api-contract.js";
 import type { InteractionBindingAttempt } from "../domain/session-domain.js";
@@ -31,6 +32,10 @@ export class SessionInteractionError extends Error {
 interface CachedBinding {
   readonly attempt: InteractionBindingAttempt & { readonly valid: true };
   readonly binding: TmuxBinding;
+}
+
+interface ResolvedBinding extends CachedBinding {
+  readonly keyBindings: NonNullable<InteractionSessionSnapshot["interaction"]>["keyBindings"];
 }
 
 export class SessionInteractionService {
@@ -75,14 +80,10 @@ export class SessionInteractionService {
     await this.#perform(sessionId, () => this.tmux.sendMessage(binding, message));
   }
 
-  async interrupt(sessionId: string): Promise<void> {
-    const { binding } = await this.#resolve(sessionId);
-    await this.#perform(sessionId, () => this.tmux.sendInterrupt(binding));
-  }
-
-  async escape(sessionId: string): Promise<void> {
-    const { binding } = await this.#resolve(sessionId);
-    await this.#perform(sessionId, () => this.tmux.sendEscape(binding));
+  async sendKeys(sessionId: string, keys: readonly InteractionKey[]): Promise<void> {
+    const { binding, keyBindings } = await this.#resolve(sessionId);
+    const mapped = keys.map((key) => keyBindings[key]);
+    await this.#perform(sessionId, () => this.tmux.sendKeys(binding, mapped));
   }
 
   async preview(sessionId: string): Promise<TerminalPreviewResponse> {
@@ -97,7 +98,7 @@ export class SessionInteractionService {
     };
   }
 
-  async #resolve(sessionId: string): Promise<CachedBinding> {
+  async #resolve(sessionId: string): Promise<ResolvedBinding> {
     const session = await this.repository.getInteractionSession(sessionId);
     if (session === null) {
       throw new SessionInteractionError("session_not_found", "Session not found");
@@ -124,13 +125,13 @@ export class SessionInteractionService {
       cached.attempt.socketPath === attempt.socketPath &&
       cached.attempt.paneId === attempt.paneId
     ) {
-      return cached;
+      return { ...cached, keyBindings: interaction.keyBindings };
     }
     try {
       const binding = await this.tmux.connect(attempt);
       const next = { attempt, binding };
       this.#bindings.set(sessionId, next);
-      return next;
+      return { ...next, keyBindings: interaction.keyBindings };
     } catch (error) {
       return this.#translateConnectionError(sessionId, error);
     }

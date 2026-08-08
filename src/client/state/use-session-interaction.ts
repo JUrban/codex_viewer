@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { TerminalPreviewResponse } from "../../shared/api-contract";
+import type {
+  InteractionKey,
+  TerminalPreviewResponse,
+} from "../../shared/api-contract";
 import { api } from "../api/client";
 import { messageFor } from "./request-errors";
 
@@ -13,6 +16,14 @@ export function useSessionInteraction(sessionId: string, previewAvailable: boole
   const [previewError, setPreviewError] = useState<string | null>(null);
   const previewRequest = useRef<AbortController | null>(null);
 
+  const cancelPreviewTerminal = useCallback(() => {
+    const controller = previewRequest.current;
+    if (controller === null) return;
+    previewRequest.current = null;
+    controller.abort();
+    setPreviewBusy(false);
+  }, []);
+
   if (activeSessionId.current !== sessionId) {
     activeSessionId.current = sessionId;
     generation.current += 1;
@@ -24,18 +35,16 @@ export function useSessionInteraction(sessionId: string, previewAvailable: boole
     setPreview(null);
     setPreviewError(null);
     setPreviewBusy(false);
-    previewRequest.current?.abort();
-    previewRequest.current = null;
-  }, [sessionId]);
+    cancelPreviewTerminal();
+  }, [cancelPreviewTerminal, sessionId]);
 
   useEffect(() => {
     if (previewAvailable) return;
-    previewRequest.current?.abort();
-    previewRequest.current = null;
+    cancelPreviewTerminal();
     setPreview(null);
     setPreviewError(null);
     setPreviewBusy(false);
-  }, [previewAvailable]);
+  }, [cancelPreviewTerminal, previewAvailable]);
 
   const act = useCallback(async (operation: () => Promise<void>) => {
     const operationGeneration = ++generation.current;
@@ -77,19 +86,19 @@ export function useSessionInteraction(sessionId: string, previewAvailable: boole
     }
   }, [sessionId]);
 
-  useEffect(() => () => previewRequest.current?.abort(), []);
+  useEffect(() => () => cancelPreviewTerminal(), [cancelPreviewTerminal]);
 
   return {
     busy,
     error,
     clearError: () => setError(null),
     sendMessage: (message: string) => act(() => api.sendMessage(sessionId, message)),
-    interrupt: () => act(() => api.interrupt(sessionId)),
-    sendEscape: () => act(() => api.sendEscape(sessionId)),
+    sendKeys: (keys: readonly InteractionKey[]) => act(() => api.sendKeys(sessionId, keys)),
     preview,
     previewBusy,
     previewError,
     previewTerminal,
+    cancelPreviewTerminal,
     clearPreviewError: () => setPreviewError(null),
   };
 }

@@ -2,6 +2,7 @@ import type {
   ApiError,
   DirectiveDetailQuery,
   DirectiveDetailResponse,
+  InteractionKey,
   ItemPageQuery,
   ItemPageResponse,
   SessionLiveQuery,
@@ -136,16 +137,14 @@ export const api = {
       { message },
       signal,
     ),
-  interrupt: (sessionId: string, signal?: AbortSignal) =>
-    postJson<void>(
-      `/api/v1/sessions/${encodeURIComponent(sessionId)}/interrupt`,
-      {},
-      signal,
-    ),
-  sendEscape: (sessionId: string, signal?: AbortSignal) =>
+  sendKeys: (
+    sessionId: string,
+    keys: readonly InteractionKey[],
+    signal?: AbortSignal,
+  ) =>
     postJson<void>(
       `/api/v1/sessions/${encodeURIComponent(sessionId)}/keys`,
-      { key: "escape" },
+      { keys },
       signal,
     ),
   terminalPreview: (sessionId: string, signal?: AbortSignal) =>

@@ -2,13 +2,15 @@ import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import { lstat } from "node:fs/promises";
 import { MAX_INTERACTION_MESSAGE_BYTES } from "../../shared/api-contract.js";
-import type { InteractionBindingAttempt } from "../domain/session-domain.js";
+import type {
+  InteractionBindingAttempt,
+  TmuxKey,
+} from "../domain/session-domain.js";
 
 export { MAX_INTERACTION_MESSAGE_BYTES };
 export const MAX_TERMINAL_PREVIEW_BYTES = 256 * 1024;
 const DEFAULT_TIMEOUT_MS = 5_000;
 const MAX_COMMAND_OUTPUT_BYTES = 64 * 1024;
-const TERMINAL_PREVIEW_HISTORY_LINES = 500;
 
 export interface TmuxBinding {
   readonly socketPath: string;
@@ -87,17 +89,10 @@ export class TmuxInteractionService {
     });
   }
 
-  sendInterrupt(binding: TmuxBinding): Promise<void> {
+  sendKeys(binding: TmuxBinding, keys: readonly TmuxKey[]): Promise<void> {
     return this.#serialize(binding, async () => {
       await this.#revalidate(binding);
-      await this.#run(binding, ["send-keys", "-t", binding.paneId, "C-c"]);
-    });
-  }
-
-  sendEscape(binding: TmuxBinding): Promise<void> {
-    return this.#serialize(binding, async () => {
-      await this.#revalidate(binding);
-      await this.#run(binding, ["send-keys", "-t", binding.paneId, "Escape"]);
+      await this.#run(binding, ["send-keys", "-t", binding.paneId, ...keys]);
     });
   }
 
@@ -109,10 +104,7 @@ export class TmuxInteractionService {
       await this.#revalidate(binding);
       const result = await this.runner.run(
         binding.socketPath,
-        [
-          "capture-pane", "-p", "-t", binding.paneId,
-          "-S", `-${TERMINAL_PREVIEW_HISTORY_LINES}`,
-        ],
+        ["capture-pane", "-p", "-t", binding.paneId],
         undefined,
         this.timeoutMs,
         { maxOutputBytes: MAX_TERMINAL_PREVIEW_BYTES, truncateStart: true },

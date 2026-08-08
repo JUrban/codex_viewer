@@ -103,7 +103,28 @@ describe("tmux interaction transport", () => {
     expect(keys[0]?.args).toEqual(["send-keys", "-t", "%3", "Enter"]);
   });
 
-  it("revalidates and captures the current pane plus 500 history lines", async () => {
+  it("revalidates and sends an ordered key sequence with one command", async () => {
+    const socketPath = await unixSocket();
+    const runner = new FakeRunner();
+    const service = new TmuxInteractionService(runner);
+    const binding = await service.connect({ ordinal: 1, valid: true, socketPath, paneId: "%3" });
+
+    await service.sendKeys(binding, [
+      "Enter", "Up", "Down", "Left", "Right", "C-c", "BTab", "Left",
+    ]);
+
+    expect(runner.calls.filter((call) => call.args[0] === "display-message")).toHaveLength(2);
+    expect(runner.calls.filter((call) => call.args[0] === "send-keys")).toEqual([
+      expect.objectContaining({
+        args: [
+          "send-keys", "-t", "%3",
+          "Enter", "Up", "Down", "Left", "Right", "C-c", "BTab", "Left",
+        ],
+      }),
+    ]);
+  });
+
+  it("revalidates and captures only the current visible pane", async () => {
     const socketPath = await unixSocket();
     const runner = new FakeRunner();
     runner.terminalOutput = "alpha\n世界\n";
@@ -116,7 +137,7 @@ describe("tmux interaction transport", () => {
       truncated: true,
     });
     const capture = runner.calls.find((call) => call.args[0] === "capture-pane");
-    expect(capture?.args).toEqual(["capture-pane", "-p", "-t", "%3", "-S", "-500"]);
+    expect(capture?.args).toEqual(["capture-pane", "-p", "-t", "%3"]);
     expect(capture?.options).toEqual({
       maxOutputBytes: MAX_TERMINAL_PREVIEW_BYTES,
       truncateStart: true,
@@ -140,7 +161,8 @@ describe("tmux interaction transport", () => {
     const service = new TmuxInteractionService(runner);
     const binding = await service.connect({ ordinal: 1, valid: true, socketPath, paneId: "%3" });
     runner.panePid = "9999";
-    await expect(service.sendEscape(binding)).rejects.toMatchObject({ code: "disconnected" });
+    await expect(service.sendKeys(binding, ["BTab"]))
+      .rejects.toMatchObject({ code: "disconnected" });
     expect(runner.calls.some((call) => call.args[0] === "send-keys")).toBe(false);
   });
 
@@ -150,7 +172,8 @@ describe("tmux interaction transport", () => {
     const service = new TmuxInteractionService(runner);
     const binding = await service.connect({ ordinal: 1, valid: true, socketPath, paneId: "%3" });
     runner.serverStartTime = "1700000001";
-    await expect(service.sendInterrupt(binding)).rejects.toMatchObject({ code: "disconnected" });
+    await expect(service.sendKeys(binding, ["C-c"]))
+      .rejects.toMatchObject({ code: "disconnected" });
     expect(runner.calls.filter((call) => call.args[0] === "send-keys")).toHaveLength(0);
   });
 
@@ -176,10 +199,10 @@ describe("tmux interaction transport", () => {
     while (!runner.calls.some((call) => call.args[0] === "load-buffer")) {
       await new Promise((resolve) => setTimeout(resolve, 0));
     }
-    const escape = service.sendEscape(binding);
+    const keys = service.sendKeys(binding, ["BTab"]);
     expect(runner.calls.filter((call) => call.args[0] === "display-message")).toHaveLength(2);
     releaseLoad();
-    await Promise.all([message, escape]);
+    await Promise.all([message, keys]);
     const commands = runner.calls.map((call) => call.args[0]);
     expect(commands).toEqual([
       "display-message",

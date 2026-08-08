@@ -1,3 +1,5 @@
+import type { InteractionKey } from "../../shared/api-contract.js";
+
 export type DomainSessionId = string;
 export type DomainItemId = string;
 
@@ -36,9 +38,21 @@ export type InteractionBindingAttempt =
       readonly valid: false;
     };
 
+export type TmuxKey =
+  | "Enter"
+  | "Up"
+  | "Down"
+  | "Left"
+  | "Right"
+  | "C-c"
+  | "BTab";
+
+export type InteractionKeyBindings = Readonly<Record<InteractionKey, TmuxKey>>;
+
 export interface DomainAgentInteraction {
   readonly activation: string;
   readonly bindingAttempt: InteractionBindingAttempt | null;
+  readonly keyBindings: InteractionKeyBindings;
 }
 
 export interface DomainSession {

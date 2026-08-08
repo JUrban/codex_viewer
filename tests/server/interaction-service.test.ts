@@ -4,7 +4,10 @@ import type {
   InteractionSessionSnapshot,
   SessionRepository,
 } from "../../src/server/repository/session-repository.js";
-import { CODEX_TMUX_ACTIVATION } from "../../src/server/adapters/codex/interaction-parser.js";
+import {
+  CODEX_INTERACTION_KEY_BINDINGS,
+  CODEX_TMUX_ACTIVATION,
+} from "../../src/server/adapters/codex/interaction-parser.js";
 import type { TmuxInteractionService } from "../../src/server/interaction/tmux-service.js";
 
 function repository(snapshot: InteractionSessionSnapshot | null): SessionRepository {
@@ -26,6 +29,7 @@ function session(archived = false): InteractionSessionSnapshot {
     interaction: {
       activation: CODEX_TMUX_ACTIVATION,
       bindingAttempt: null,
+      keyBindings: CODEX_INTERACTION_KEY_BINDINGS,
     },
   };
 }
@@ -41,6 +45,7 @@ function boundSession(): InteractionSessionSnapshot {
         socketPath: "/tmp/viewer.sock",
         paneId: "%7",
       },
+      keyBindings: CODEX_INTERACTION_KEY_BINDINGS,
     },
   };
 }
@@ -63,7 +68,7 @@ describe("session interaction policy", () => {
     await expect(service.sendMessage("session", "hello")).rejects.toMatchObject({
       code: "interaction_not_connected",
     });
-    await expect(service.interrupt("session")).rejects.toMatchObject({
+    await expect(service.sendKeys("session", ["interrupt"])).rejects.toMatchObject({
       code: "interaction_not_connected",
     });
   });
@@ -78,8 +83,7 @@ describe("session interaction policy", () => {
     const tmux = {
       connect: vi.fn().mockResolvedValue(binding),
       sendMessage: vi.fn().mockResolvedValue(undefined),
-      sendInterrupt: vi.fn().mockResolvedValue(undefined),
-      sendEscape: vi.fn().mockResolvedValue(undefined),
+      sendKeys: vi.fn().mockResolvedValue(undefined),
       captureTerminal: vi.fn().mockResolvedValue({
         content: "recent output",
         truncated: false,
@@ -97,16 +101,18 @@ describe("session interaction policy", () => {
       activation: CODEX_TMUX_ACTIVATION,
     });
     await service.sendMessage("session", "hello");
-    await service.interrupt("session");
-    await service.escape("session");
+    await service.sendKeys("session", [
+      "enter", "up", "down", "left", "right", "interrupt", "plan",
+    ]);
     await expect(service.preview("session")).resolves.toEqual({
       content: "recent output",
       truncated: false,
       capturedAt: expect.any(String),
     });
     expect(tmux.sendMessage).toHaveBeenCalledWith(binding, "hello");
-    expect(tmux.sendInterrupt).toHaveBeenCalledWith(binding);
-    expect(tmux.sendEscape).toHaveBeenCalledWith(binding);
+    expect(tmux.sendKeys).toHaveBeenCalledWith(binding, [
+      "Enter", "Up", "Down", "Left", "Right", "C-c", "BTab",
+    ]);
     expect(tmux.captureTerminal).toHaveBeenCalledWith(binding);
   });
 });

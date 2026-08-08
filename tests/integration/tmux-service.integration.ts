@@ -15,7 +15,7 @@ beforeAll(() => {
 });
 
 describe("tmux interaction integration", () => {
-  it("validates and captures a real tmux pane with bounded plain-text output", async () => {
+  it("validates and captures only the current real tmux pane as bounded plain text", async () => {
     const directory = await createTempDirectory("codex-real-tmux-");
     const socketPath = join(directory, "server.sock");
     execFileSync("tmux", [
@@ -24,12 +24,12 @@ describe("tmux interaction integration", () => {
       "new-session",
       "-d",
       "-x",
-      "1200",
+      "120",
       "-y",
       "20",
       "-s",
       "viewer-test",
-      "i=0; while [ \"$i\" -lt 520 ]; do printf '%01200d\\n' \"$i\"; i=$((i + 1)); done; printf '\\033[31mTAIL-世界\\033[0m\\n'; sleep 30",
+      "i=0; while [ \"$i\" -lt 80 ]; do printf 'HISTORY-%03d\\n' \"$i\"; i=$((i + 1)); done; printf '\\033[31mTAIL-世界\\033[0m\\n'; sleep 30",
     ]);
     try {
       const paneId = execFileSync("tmux", [
@@ -49,12 +49,15 @@ describe("tmux interaction integration", () => {
         paneId,
       });
       expect(binding.paneId).toBe(paneId);
-      await service.sendEscape(binding);
+      await service.sendKeys(binding, [
+        "Up", "Down", "Left", "Right", "BTab",
+      ]);
       const preview = await waitForPreview(service, binding, "TAIL-世界");
-      expect(preview.truncated).toBe(true);
+      expect(preview.truncated).toBe(false);
       expect(Buffer.byteLength(preview.content, "utf8"))
         .toBeLessThanOrEqual(MAX_TERMINAL_PREVIEW_BYTES);
       expect(preview.content).toContain("TAIL-世界");
+      expect(preview.content).not.toContain("HISTORY-000");
       expect(preview.content).not.toContain("\u001b[");
       expect(preview.content).not.toContain("�");
     } finally {

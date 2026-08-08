@@ -110,13 +110,13 @@ export function SessionReader({
               error={interactionController.error}
               onDismissError={interactionController.clearError}
               onSendMessage={interactionController.sendMessage}
-              onInterrupt={interactionController.interrupt}
-              onEscape={interactionController.sendEscape}
+              onSendKeys={interactionController.sendKeys}
               preview={interactionController.preview}
               previewBusy={interactionController.previewBusy}
               previewError={interactionController.previewError}
               onDismissPreviewError={interactionController.clearPreviewError}
               onPreviewTerminal={interactionController.previewTerminal}
+              onCancelPreviewTerminal={interactionController.cancelPreviewTerminal}
             />
           )
         : null}

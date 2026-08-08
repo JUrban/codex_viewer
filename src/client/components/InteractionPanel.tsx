@@ -1,11 +1,13 @@
 import {
   useId,
+  useEffect,
   useLayoutEffect,
   useRef,
   useState,
   type KeyboardEvent,
 } from "react";
 import type {
+  InteractionKey,
   InteractionResponse,
   TerminalPreviewResponse,
 } from "../../shared/api-contract";
@@ -19,13 +21,13 @@ interface InteractionPanelProps {
   error: string | null;
   onDismissError: () => void;
   onSendMessage: (message: string) => Promise<void>;
-  onInterrupt: () => Promise<void>;
-  onEscape: () => Promise<void>;
+  onSendKeys: (keys: readonly InteractionKey[]) => Promise<void>;
   preview: TerminalPreviewResponse | null;
   previewBusy: boolean;
   previewError: string | null;
   onDismissPreviewError: () => void;
   onPreviewTerminal: () => Promise<void>;
+  onCancelPreviewTerminal: () => void;
 }
 
 export function InteractionPanel({
@@ -36,24 +38,28 @@ export function InteractionPanel({
   error,
   onDismissError,
   onSendMessage,
-  onInterrupt,
-  onEscape,
+  onSendKeys,
   preview,
   previewBusy,
   previewError,
   onDismissPreviewError,
   onPreviewTerminal,
+  onCancelPreviewTerminal,
 }: InteractionPanelProps) {
   const [message, setMessage] = useState("");
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
   const [previewExpanded, setPreviewExpanded] = useState(preview !== null);
+  const [previewAutoRefresh, setPreviewAutoRefresh] = useState(true);
+  const [pageVisible, setPageVisible] = useState(() => document.visibilityState !== "hidden");
   const previewContentId = useId();
+  const previewAutoRefreshLabelId = useId();
   const previewContent = useRef<HTMLPreElement | null>(null);
   const scrollOnExpand = useRef(preview !== null);
   const focusOnExpand = useRef(false);
-  const previewScrollTop = useRef<number | null>(null);
   const messageBytes = new TextEncoder().encode(message.replace(/\r\n?/g, "\n")).byteLength;
   const messageTooLarge = messageBytes > MAX_INTERACTION_MESSAGE_BYTES;
+  const messageIsBlank = message.trim().length === 0;
+  const previewConnected = interaction?.supported === true && interaction.state === "connected";
   useLayoutEffect(() => {
     if (!previewExpanded || preview === null) return;
     const content = previewContent.current;
@@ -64,20 +70,54 @@ export function InteractionPanel({
     if (scrollOnExpand.current) {
       content.scrollTop = content.scrollHeight;
       scrollOnExpand.current = false;
-      previewScrollTop.current = null;
-    } else if (previewScrollTop.current !== null) {
-      content.scrollTop = previewScrollTop.current;
-      previewScrollTop.current = null;
     }
     if (focusOnExpand.current) {
       content.focus({ preventScroll: true });
       focusOnExpand.current = false;
     }
   }, [preview, previewExpanded]);
+  useEffect(() => {
+    const onVisibilityChange = () => setPageVisible(document.visibilityState !== "hidden");
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", onVisibilityChange);
+  }, []);
+  useEffect(() => {
+    if (!previewConnected || !previewExpanded || !pageVisible) {
+      onCancelPreviewTerminal();
+      return;
+    }
+    if (!previewAutoRefresh) {
+      return () => onCancelPreviewTerminal();
+    }
+
+    let cancelled = false;
+    let timer: number | null = null;
+    const capture = async () => {
+      try {
+        await onPreviewTerminal();
+      } catch {
+        // Keep the last successful preview and retry on the next cycle.
+      }
+      if (!cancelled) timer = window.setTimeout(() => void capture(), 1_000);
+    };
+    void capture();
+    return () => {
+      cancelled = true;
+      if (timer !== null) window.clearTimeout(timer);
+      onCancelPreviewTerminal();
+    };
+  }, [
+    onCancelPreviewTerminal,
+    onPreviewTerminal,
+    pageVisible,
+    previewAutoRefresh,
+    previewConnected,
+    previewExpanded,
+  ]);
   if (interaction == null || !interaction.supported) return null;
 
   const send = async () => {
-    if (busy || message.trim().length === 0 || messageTooLarge) return;
+    if (busy || messageIsBlank || messageTooLarge) return;
     await onSendMessage(message);
     setMessage("");
   };
@@ -96,25 +136,17 @@ export function InteractionPanel({
       setCopyState("failed");
     }
   };
-  const togglePreview = async () => {
-    if (preview === null) {
-      scrollOnExpand.current = true;
-      await onPreviewTerminal();
-      focusOnExpand.current = true;
-      setPreviewExpanded(true);
+  const togglePreview = () => {
+    if (previewExpanded) {
+      setPreviewExpanded(false);
       return;
     }
-    setPreviewExpanded((expanded) => {
-      if (!expanded) {
-        scrollOnExpand.current = true;
-        focusOnExpand.current = true;
-      }
-      return !expanded;
-    });
-  };
-  const refreshPreview = async () => {
-    previewScrollTop.current = previewContent.current?.scrollTop ?? null;
-    await onPreviewTerminal();
+    scrollOnExpand.current = true;
+    focusOnExpand.current = true;
+    setPreviewExpanded(true);
+    if (!previewAutoRefresh && pageVisible) {
+      void onPreviewTerminal().catch(() => undefined);
+    }
   };
 
   return (
@@ -157,10 +189,9 @@ export function InteractionPanel({
                   <button
                     type="button"
                     className="terminal-preview-toggle"
-                    aria-expanded={preview !== null && previewExpanded}
-                    aria-controls={preview !== null ? previewContentId : undefined}
-                    disabled={preview === null && previewBusy}
-                    onClick={() => void togglePreview().catch(() => undefined)}
+                    aria-expanded={previewExpanded}
+                    aria-controls={previewContentId}
+                    onClick={togglePreview}
                   >
                     <span className="terminal-preview-mark" aria-hidden="true">
                       {preview !== null && previewExpanded ? "▾" : "▸"}
@@ -170,28 +201,21 @@ export function InteractionPanel({
                       ? <span className="terminal-preview-status">Capturing…</span>
                       : null}
                   </button>
-                  {preview
-                    ? (
-                        <div className="terminal-preview-meta">
-                          <time dateTime={preview.capturedAt}>
-                            {new Date(preview.capturedAt).toLocaleTimeString()}
-                          </time>
-                          <button
-                            type="button"
-                            className={previewBusy ? "is-active" : undefined}
-                            aria-label="Refresh terminal preview"
-                            aria-busy={previewBusy}
-                            disabled={previewBusy}
-                            onClick={() => void refreshPreview().catch(() => undefined)}
-                          >
-                            <span
-                              className={`terminal-preview-refresh-icon${previewBusy ? " is-spinning" : ""}`}
-                              aria-hidden="true"
-                            >↻</span>
-                          </button>
-                        </div>
-                      )
-                    : null}
+                  <div className="terminal-preview-meta">
+                    <span className="terminal-preview-auto-label" id={previewAutoRefreshLabelId}>
+                      Auto refresh
+                    </span>
+                    <button
+                      type="button"
+                      className="auto-refresh-switch terminal-preview-auto-switch"
+                      role="switch"
+                      aria-checked={previewAutoRefresh}
+                      aria-labelledby={previewAutoRefreshLabelId}
+                      onClick={() => setPreviewAutoRefresh((enabled) => !enabled)}
+                    >
+                      <span className="auto-refresh-thumb" aria-hidden="true" />
+                    </button>
+                  </div>
                 </div>
                 {previewError
                   ? (
@@ -205,16 +229,15 @@ export function InteractionPanel({
                       </div>
                     )
                   : null}
-                {preview && previewExpanded
+                {previewExpanded
                   ? (
                       <div id={previewContentId} className="terminal-preview-body">
-                        {preview.truncated
-                          ? <p className="terminal-preview-notice">Older terminal output was truncated.</p>
+                        {preview?.truncated
+                          ? <p className="terminal-preview-notice">Terminal output exceeded the preview limit; the beginning was omitted.</p>
                           : null}
-                        {preview.content.length > 0
+                        {preview && preview.content.length > 0
                           ? (
                               <pre
-                                key={preview.capturedAt}
                                 ref={previewContent}
                                 aria-label="Terminal preview content"
                                 tabIndex={0}
@@ -222,7 +245,29 @@ export function InteractionPanel({
                                 {preview.content}
                               </pre>
                             )
-                          : <p className="terminal-preview-empty">The terminal pane is empty.</p>}
+                          : (
+                              <p className="terminal-preview-empty">
+                                {preview === null && previewBusy
+                                  ? "Capturing terminal pane…"
+                                  : preview === null
+                                    ? "Terminal preview unavailable."
+                                    : "The terminal pane is empty."}
+                              </p>
+                            )}
+                        <div className="terminal-keypad" role="group" aria-label="Terminal controls">
+                          {TERMINAL_CONTROL_KEYS.map(({ key, label, glyph }) => (
+                            <button
+                              key={key}
+                              type="button"
+                              className={`terminal-key terminal-key-${key}`}
+                              aria-label={label}
+                              disabled={busy}
+                              onClick={() => void onSendKeys([key]).catch(() => undefined)}
+                            >
+                              <span aria-hidden="true">{glyph}</span>
+                            </button>
+                          ))}
+                        </div>
                       </div>
                     )
                   : null}
@@ -250,7 +295,7 @@ export function InteractionPanel({
                   <button
                     type="button"
                     className="interaction-send"
-                    disabled={busy || message.trim().length === 0 || messageTooLarge}
+                    disabled={busy || messageIsBlank || messageTooLarge}
                     onClick={() => void send().catch(() => undefined)}
                   >
                     Send
@@ -258,16 +303,16 @@ export function InteractionPanel({
                   <button
                     type="button"
                     disabled={busy}
-                    onClick={() => void onInterrupt().catch(() => undefined)}
+                    onClick={() => void onSendKeys(["interrupt"]).catch(() => undefined)}
                   >
-                    Ctrl-C
+                    Interrupt
                   </button>
                   <button
                     type="button"
                     disabled={busy}
-                    onClick={() => void onEscape().catch(() => undefined)}
+                    onClick={() => void onSendKeys(["plan"]).catch(() => undefined)}
                   >
-                    Esc
+                    Plan
                   </button>
                 </div>
               </div>
@@ -277,6 +322,18 @@ export function InteractionPanel({
     </section>
   );
 }
+
+const TERMINAL_CONTROL_KEYS: ReadonlyArray<{
+  readonly key: Extract<InteractionKey, "up" | "down" | "left" | "right" | "enter">;
+  readonly label: string;
+  readonly glyph: string;
+}> = [
+  { key: "up", label: "Up", glyph: "↑" },
+  { key: "left", label: "Left", glyph: "←" },
+  { key: "enter", label: "Enter", glyph: "↵" },
+  { key: "right", label: "Right", glyph: "→" },
+  { key: "down", label: "Down", glyph: "↓" },
+];
 
 function sessionSummary(itemCount: number, updatedAt: string | null): string {
   const eventLabel = `${itemCount} ${itemCount === 1 ? "event" : "events"}`;

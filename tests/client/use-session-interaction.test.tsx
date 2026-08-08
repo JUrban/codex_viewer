@@ -16,6 +16,20 @@ function deferred() {
 }
 
 describe("session interaction state", () => {
+  it("sends semantic key sequences through the unified client operation", async () => {
+    const sendKeys = vi.spyOn(api, "sendKeys").mockResolvedValue(undefined);
+    const { result } = renderHook(() => useSessionInteraction("session-a", true));
+
+    await act(async () => result.current.sendKeys(["interrupt", "plan", "left"]));
+
+    expect(sendKeys).toHaveBeenCalledWith(
+      "session-a",
+      ["interrupt", "plan", "left"],
+    );
+    expect(result.current.busy).toBe(false);
+    expect(result.current.error).toBeNull();
+  });
+
   it("ignores completion from the session that was active before a switch", async () => {
     const sessionA = deferred();
     const sessionB = deferred();
@@ -84,5 +98,26 @@ describe("session interaction state", () => {
     expect(result.current.preview).toEqual(captured);
     expect(result.current.previewError).toBe("temporary capture failure");
     expect(result.current.previewBusy).toBe(false);
+  });
+
+  it("cancels an active terminal preview without reporting an error", async () => {
+    let requestSignal: AbortSignal | undefined;
+    vi.spyOn(api, "terminalPreview").mockImplementation((_sessionId, signal) => {
+      requestSignal = signal;
+      return new Promise((_resolve, reject) => {
+        signal?.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")));
+      });
+    });
+    const { result } = renderHook(() => useSessionInteraction("session-a", true));
+
+    let request!: Promise<void>;
+    act(() => { request = result.current.previewTerminal(); });
+    expect(result.current.previewBusy).toBe(true);
+    act(() => result.current.cancelPreviewTerminal());
+
+    expect(requestSignal?.aborted).toBe(true);
+    expect(result.current.previewBusy).toBe(false);
+    expect(result.current.previewError).toBeNull();
+    await expect(request).rejects.toMatchObject({ name: "AbortError" });
   });
 });

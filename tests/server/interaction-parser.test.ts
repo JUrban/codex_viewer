@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { CODEX_TMUX_ACTIVATION } from "../../src/server/adapters/codex/interaction-parser.js";
+import {
+  CODEX_INTERACTION_KEY_BINDINGS,
+  CODEX_TMUX_ACTIVATION,
+} from "../../src/server/adapters/codex/interaction-parser.js";
 import { normalizeRecords } from "./session-normalizer.fixtures.js";
 
 const STORED_TMUX_ACTIVATION =
@@ -54,6 +57,7 @@ describe("Codex interaction adapter", () => {
         socketPath: "/tmp/tmux.sock",
         paneId: "%7",
       },
+      keyBindings: CODEX_INTERACTION_KEY_BINDINGS,
     });
   });
 

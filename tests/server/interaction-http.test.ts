@@ -37,8 +37,7 @@ async function start() {
       activation: "activate",
     }),
     sendMessage: vi.fn().mockResolvedValue(undefined),
-    interrupt: vi.fn().mockResolvedValue(undefined),
-    escape: vi.fn().mockResolvedValue(undefined),
+    sendKeys: vi.fn().mockResolvedValue(undefined),
     preview: vi.fn().mockResolvedValue({
       content: "terminal output",
       truncated: false,
@@ -78,7 +77,7 @@ describe("interaction HTTP API", () => {
     expect(interaction.sendMessage).toHaveBeenCalledWith(SESSION_ID, message);
   });
 
-  it("validates message and key bodies including the 64 KiB boundary", async () => {
+  it("validates message and key bodies including their boundaries", async () => {
     const { base, interaction } = await start();
     const postMessage = (message: string) => fetch(
       `${base}/api/v1/sessions/${SESSION_ID}/messages`,
@@ -93,19 +92,38 @@ describe("interaction HTTP API", () => {
     expect((await postMessage("a".repeat(65_537))).status).toBe(400);
     expect(interaction.sendMessage).toHaveBeenCalledTimes(1);
 
-    const invalidKey = await fetch(`${base}/api/v1/sessions/${SESSION_ID}/keys`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ key: "enter" }),
-    });
-    expect(invalidKey.status).toBe(400);
-    const escape = await fetch(`${base}/api/v1/sessions/${SESSION_ID}/keys`, {
+    const postKeys = (keys: unknown, extra?: Record<string, unknown>) => fetch(
+      `${base}/api/v1/sessions/${SESSION_ID}/keys`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ keys, ...extra }),
+      },
+    );
+    expect((await postKeys([])).status).toBe(400);
+    expect((await postKeys(["unknown"])).status).toBe(400);
+    expect((await postKeys(["escape"])).status).toBe(400);
+    expect((await postKeys(["enter"], { extra: true })).status).toBe(400);
+    expect((await postKeys(Array.from({ length: 65 }, () => "left"))).status).toBe(400);
+
+    const representativeKeys = [
+      "enter", "up", "down", "left", "right", "interrupt", "plan", "left",
+    ];
+    const boundaryKeys = [
+      ...representativeKeys,
+      ...Array.from({ length: 56 }, () => "left"),
+    ];
+    expect(boundaryKeys).toHaveLength(64);
+    const sentKeys = await postKeys(boundaryKeys);
+    expect(sentKeys.status).toBe(204);
+    expect(interaction.sendKeys).toHaveBeenCalledWith(SESSION_ID, boundaryKeys);
+
+    const legacy = await fetch(`${base}/api/v1/sessions/${SESSION_ID}/keys`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ key: "escape" }),
     });
-    expect(escape.status).toBe(204);
-    expect(interaction.escape).toHaveBeenCalledWith(SESSION_ID);
+    expect(legacy.status).toBe(400);
   });
 
   it("returns an uncached terminal preview and rejects query parameters", async () => {
@@ -130,6 +148,8 @@ describe("interaction HTTP API", () => {
     expect((await fetch(base, { method: "POST" })).status).toBe(405);
     expect((await fetch(`${base}/api/v1/sessions`, { method: "POST" })).status).toBe(405);
     expect((await fetch(`${base}/api/v1/sessions/${SESSION_ID}`, { method: "POST" })).status).toBe(405);
+    expect((await fetch(`${base}/api/v1/sessions/${SESSION_ID}/interrupt`, { method: "POST" })).status)
+      .toBe(405);
     expect((await fetch(`${base}/api/v1/unknown`, { method: "POST" })).status).toBe(405);
   });
 });

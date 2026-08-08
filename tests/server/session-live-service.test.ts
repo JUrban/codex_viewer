@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { CODEX_INTERACTION_KEY_BINDINGS } from "../../src/server/adapters/codex/interaction-parser.js";
 import type { LiveRevision, TimelineCursor } from "../../src/shared/api-contract.js";
 import type { SessionDetail } from "../../src/shared/domain.js";
 import { createProcessLiveRevisionFactory } from "../../src/server/live/live-revision.js";
@@ -141,7 +142,11 @@ function snapshot(hasMore: boolean, interaction = false): RepositoryLiveSessionS
     interactionSession: {
       archived: false,
       interaction: interaction
-        ? { activation: "activate", bindingAttempt: null }
+        ? {
+            activation: "activate",
+            bindingAttempt: null,
+            keyBindings: CODEX_INTERACTION_KEY_BINDINGS,
+          }
         : null,
     },
   };
