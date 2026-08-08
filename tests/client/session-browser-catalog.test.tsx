@@ -27,7 +27,7 @@ describe("session catalog state", () => {
   it("aborts and ignores an obsolete query after filters change", async () => {
     let resolveInitial!: (value: Response) => void;
     const initial = new Promise<Response>((resolve) => { resolveInitial = resolve; });
-    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+    const fetchMock = vi.fn((input: RequestInfo | URL, _init?: RequestInit) => {
       const url = String(input);
       if (!url.includes("archiveScope=archived")) return initial;
       return Promise.resolve(json(response([

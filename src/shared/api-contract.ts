@@ -5,6 +5,8 @@ import type {
   TimelineItem,
 } from "./domain.js";
 
+export const MAX_INTERACTION_MESSAGE_BYTES = 64 * 1024;
+
 declare const listCursorBrand: unique symbol;
 export type ListCursor = string & { readonly [listCursorBrand]: true };
 declare const timelineCursorBrand: unique symbol;

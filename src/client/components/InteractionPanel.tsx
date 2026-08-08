@@ -9,6 +9,7 @@ import type {
   InteractionResponse,
   TerminalPreviewResponse,
 } from "../../shared/api-contract";
+import { MAX_INTERACTION_MESSAGE_BYTES } from "../../shared/api-contract";
 
 interface InteractionPanelProps {
   interaction: InteractionResponse | null;
@@ -51,6 +52,8 @@ export function InteractionPanel({
   const scrollOnExpand = useRef(preview !== null);
   const focusOnExpand = useRef(false);
   const previewScrollTop = useRef<number | null>(null);
+  const messageBytes = new TextEncoder().encode(message.replace(/\r\n?/g, "\n")).byteLength;
+  const messageTooLarge = messageBytes > MAX_INTERACTION_MESSAGE_BYTES;
   useLayoutEffect(() => {
     if (!previewExpanded || preview === null) return;
     const content = previewContent.current;
@@ -74,7 +77,7 @@ export function InteractionPanel({
   if (interaction == null || !interaction.supported) return null;
 
   const send = async () => {
-    if (busy || message.trim().length === 0) return;
+    if (busy || message.trim().length === 0 || messageTooLarge) return;
     await onSendMessage(message);
     setMessage("");
   };
@@ -229,17 +232,25 @@ export function InteractionPanel({
                   aria-label="Message to agent"
                   value={message}
                   rows={3}
-                  maxLength={65_536}
+                  maxLength={MAX_INTERACTION_MESSAGE_BYTES}
                   placeholder="Send a prompt… Enter for a new line, Shift+Enter to send"
                   disabled={busy}
                   onChange={(event) => setMessage(event.target.value)}
                   onKeyDown={onKeyDown}
                 />
+                {messageTooLarge
+                  ? (
+                      <p className="interaction-message-limit" role="alert">
+                        Message is {messageBytes.toLocaleString()} UTF-8 bytes; the limit is{" "}
+                        {MAX_INTERACTION_MESSAGE_BYTES.toLocaleString()} bytes.
+                      </p>
+                    )
+                  : null}
                 <div className="interaction-actions">
                   <button
                     type="button"
                     className="interaction-send"
-                    disabled={busy || message.trim().length === 0}
+                    disabled={busy || message.trim().length === 0 || messageTooLarge}
                     onClick={() => void send().catch(() => undefined)}
                   >
                     Send

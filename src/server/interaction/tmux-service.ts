@@ -1,9 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import { lstat } from "node:fs/promises";
+import { MAX_INTERACTION_MESSAGE_BYTES } from "../../shared/api-contract.js";
 import type { InteractionBindingAttempt } from "../domain/session-domain.js";
 
-export const MAX_INTERACTION_MESSAGE_BYTES = 64 * 1024;
+export { MAX_INTERACTION_MESSAGE_BYTES };
 export const MAX_TERMINAL_PREVIEW_BYTES = 256 * 1024;
 const DEFAULT_TIMEOUT_MS = 5_000;
 const MAX_COMMAND_OUTPUT_BYTES = 64 * 1024;

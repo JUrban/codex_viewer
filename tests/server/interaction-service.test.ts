@@ -12,6 +12,7 @@ function repository(snapshot: InteractionSessionSnapshot | null): SessionReposit
     list: vi.fn(),
     getSession: vi.fn(),
     getItems: vi.fn(),
+    getLiveSession: vi.fn(),
     getToolDetail: vi.fn(),
     getDirectiveDetail: vi.fn(),
     getInteractionSession: vi.fn().mockResolvedValue(snapshot),

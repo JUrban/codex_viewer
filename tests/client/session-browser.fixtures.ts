@@ -12,7 +12,6 @@ import type {
 
 export const SESSION_ID = "abcdefghijklmnopqrstuvwx";
 export const CHILD_ID = "zyxwvutsrqponmlkjihgfedc";
-export const OTHER_ID = "otherabcdefghijklmnopqrs";
 export const TIMELINE_CURSOR = "opaque.timeline.cursor" as TimelineCursor;
 export const NEXT_TIMELINE_CURSOR = "opaque.timeline.next" as TimelineCursor;
 export const LIVE_REVISION = "opaque.live.revision" as LiveRevision;
@@ -57,12 +56,6 @@ export function readContext(
     liveRevision: LIVE_REVISION,
   };
 }
-
-export const detailBody = {
-  session: sessionDetail,
-  interaction: { supported: false as const },
-  liveRevision: LIVE_REVISION,
-};
 
 export const toolItem: Tool = {
   kind: "tool", stage: "output", id: "tool-2", ordinal: 2, timestamp: null,

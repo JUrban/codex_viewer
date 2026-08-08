@@ -476,6 +476,7 @@ function withMessage(
       timestamp: null,
       role: "assistant",
       phase: "final",
+      itemType: null,
       markdown,
     },
   ];

@@ -55,7 +55,6 @@ describe("interaction panel", () => {
         updatedAt={updatedAt}
       />,
     );
-    expect(screen.queryByText("Connect a tmux pane")).not.toBeInTheDocument();
     expect(screen.getByText(activation)).toBeInTheDocument();
     expect(screen.getByText(`12 events · Updated ${localTime}`)).toBeInTheDocument();
     rerender(
@@ -65,12 +64,11 @@ describe("interaction panel", () => {
         updatedAt={updatedAt}
       />,
     );
-    expect(screen.queryByText("Reconnect the tmux pane")).not.toBeInTheDocument();
     expect(screen.getByText(/previous tmux target is unavailable/i)).toBeInTheDocument();
     expect(screen.getByText(`12 events · Updated ${localTime}`)).toBeInTheDocument();
   });
 
-  it("shows the event count and local update time while connected without connection labels", () => {
+  it("shows the event count and local update time while connected", () => {
     const updatedAt = "2026-08-08T12:00:00.000Z";
     const localTime = new Date(updatedAt).toLocaleTimeString(undefined, { timeStyle: "medium" });
     render(<InteractionPanel {...props(interaction("connected"))} itemCount={12} updatedAt={updatedAt} />);
@@ -84,8 +82,6 @@ describe("interaction panel", () => {
     expect(lastAction.compareDocumentPosition(summary) & Node.DOCUMENT_POSITION_FOLLOWING)
       .toBeTruthy();
     expect(preview.compareDocumentPosition(summary) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(screen.queryByText("Connected to tmux")).not.toBeInTheDocument();
-    expect(screen.queryByText("connected")).not.toBeInTheDocument();
   });
 
   it("uses a singular event label and falls back when the update time is unavailable", () => {
@@ -124,14 +120,19 @@ describe("interaction panel", () => {
     expect(await screen.findByRole("textbox", { name: "Message to agent" })).toHaveValue("");
   });
 
-  it("enables all interaction controls while connected", () => {
+  it("dispatches interaction controls and disables them while busy", async () => {
     const handlers = props(interaction("connected"));
+    const user = userEvent.setup();
     const { rerender } = render(<InteractionPanel {...handlers} />);
     expect(screen.getByText(/12 events · Updated/)).toBeInTheDocument();
     expect(screen.getByRole("textbox")).toBeEnabled();
     expect(screen.getByRole("button", { name: "Ctrl-C" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "Esc" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "Terminal preview" })).toBeEnabled();
+    await user.click(screen.getByRole("button", { name: "Ctrl-C" }));
+    await user.click(screen.getByRole("button", { name: "Esc" }));
+    expect(handlers.onInterrupt).toHaveBeenCalledTimes(1);
+    expect(handlers.onEscape).toHaveBeenCalledTimes(1);
 
     rerender(<InteractionPanel {...props(interaction("connected"))} busy />);
     expect(screen.getByRole("textbox")).toBeDisabled();

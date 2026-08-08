@@ -11,7 +11,6 @@ import type {
 import {
   DefaultSessionRepository,
   MAX_ITEM_PAGE_BYTES,
-  RepositoryQueryError,
 } from "../../src/server/repository/session-repository.js";
 import { searchDocuments } from "../../src/server/search/search-document.js";
 import type {
@@ -179,7 +178,7 @@ describe("DefaultSessionRepository", () => {
     expect(third!.session.messageCount).toBe(0);
     await expect(repository.getItems(parent.session.id, {
       cursor: page!.cursor,
-    })).rejects.toMatchObject<Partial<RepositoryQueryError>>({
+    })).rejects.toMatchObject({
       code: "timeline_changed",
     });
   });
@@ -295,6 +294,7 @@ describe("DefaultSessionRepository", () => {
         timestamp: null,
         role: "user",
         phase: null,
+        itemType: null,
         markdown: "first",
       },
       {
@@ -314,6 +314,7 @@ describe("DefaultSessionRepository", () => {
         timestamp: null,
         role: "assistant",
         phase: "final",
+        itemType: null,
         markdown: "later",
       },
     ]);
@@ -468,7 +469,7 @@ describe("DefaultSessionRepository", () => {
     await expect(repository.getItems(session.session.id, {
       limit: 301,
     }))
-      .rejects.toMatchObject<Partial<RepositoryQueryError>>({ code: "invalid_query" });
+      .rejects.toMatchObject({ code: "invalid_query" });
   });
 
   it("defaults timeline pages to 100 entries", async () => {
@@ -481,6 +482,7 @@ describe("DefaultSessionRepository", () => {
         timestamp: "2026-07-28T00:00:00Z",
         role: "assistant",
         phase: "commentary",
+        itemType: null,
         markdown: `Message ${index + 1}`,
       }),
     );
@@ -517,7 +519,7 @@ describe("DefaultSessionRepository", () => {
     }
 
     const partial = searchDocuments(
-      [{ sessionId: "one", title: "anything", cwd: "", messages: [] }],
+      [{ sessionId: "one", title: "anything", agentTerms: [], cwd: "", messages: [] }],
       "anything",
       { maxScannedBytes: 0, maxResults: 1, maxExcerptChars: 20, maxDurationMs: 100 },
     );
@@ -613,7 +615,7 @@ describe("DefaultSessionRepository", () => {
     await expect(repository.list({
       from: "2026-07-29T00:00:00Z",
       to: "2026-07-28T00:00:00Z",
-    })).rejects.toMatchObject<Partial<RepositoryQueryError>>({ code: "invalid_query" });
+    })).rejects.toMatchObject({ code: "invalid_query" });
   });
 
   it("defaults catalog pages to 100 entries and accepts up to 300", async () => {
@@ -646,7 +648,7 @@ describe("DefaultSessionRepository", () => {
     expect(new Set([...first.sessions, ...second.sessions].map((entry) => entry.session.id)).size)
       .toBe(305);
     await expect(repository.list({ limit: 301 }))
-      .rejects.toMatchObject<Partial<RepositoryQueryError>>({ code: "invalid_query" });
+      .rejects.toMatchObject({ code: "invalid_query" });
   });
 
   it("bounds a page of individually valid long messages by response bytes", async () => {
@@ -660,6 +662,7 @@ describe("DefaultSessionRepository", () => {
         timestamp: "2026-07-28T00:00:00Z",
         role: "assistant",
         phase: "commentary",
+        itemType: null,
         markdown: longText,
       }),
     );

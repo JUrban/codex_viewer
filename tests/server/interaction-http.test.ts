@@ -24,6 +24,7 @@ async function start() {
     list: vi.fn(),
     getSession: vi.fn().mockResolvedValue({ context: { source: "detail" } }),
     getItems: unavailable,
+    getLiveSession: unavailable,
     getToolDetail: unavailable,
     getDirectiveDetail: unavailable,
     getInteractionSession: unavailable,

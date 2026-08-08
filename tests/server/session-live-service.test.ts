@@ -2,10 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { LiveRevision, TimelineCursor } from "../../src/shared/api-contract.js";
 import type { SessionDetail } from "../../src/shared/domain.js";
 import { createProcessLiveRevisionFactory } from "../../src/server/live/live-revision.js";
-import {
-  SessionLiveError,
-  SessionLiveService,
-} from "../../src/server/live/session-live-service.js";
+import { SessionLiveService } from "../../src/server/live/session-live-service.js";
 import type {
   RepositoryLiveSessionSnapshot,
   SessionRepository,
@@ -59,7 +56,7 @@ describe("SessionLiveService", () => {
     const first = service.wait("session-one", { cursor: CURSOR, after: REVISION }, abort.signal);
     await vi.waitFor(() => expect(getLiveSession).toHaveBeenCalledTimes(1));
     await expect(service.wait("session-two", { cursor: CURSOR, after: REVISION }))
-      .rejects.toMatchObject<Partial<SessionLiveError>>({ code: "live_capacity_exceeded" });
+      .rejects.toMatchObject({ code: "live_capacity_exceeded" });
     abort.abort();
     await expect(first).rejects.toMatchObject({ name: "AbortError" });
   });
@@ -76,7 +73,7 @@ describe("SessionLiveService", () => {
     const first = service.wait("session", { cursor: CURSOR, after: REVISION }, abort.signal);
     await vi.waitFor(() => expect(getLiveSession).toHaveBeenCalledTimes(1));
     await expect(service.wait("session", { cursor: CURSOR, after: REVISION }))
-      .rejects.toMatchObject<Partial<SessionLiveError>>({ code: "live_capacity_exceeded" });
+      .rejects.toMatchObject({ code: "live_capacity_exceeded" });
     abort.abort();
     await expect(first).rejects.toMatchObject({ name: "AbortError" });
   });

@@ -91,7 +91,9 @@ describe("tool normalization", () => {
     expect(callDetail?.truncated).toBe(true);
     expect(outputDetail?.truncated).toBe(true);
     const directive = normalized.directiveDetails.get("directive-3");
-    expect(directiveItem?.kind === "directive" ? directiveItem.summary : null)
+    expect(directiveItem?.kind === "directive" && directiveItem.hasDetail
+      ? directiveItem.summary
+      : null)
       .toHaveLength(MAX_PREVIEW_CHARS);
     expect(directive?.text).toHaveLength(MAX_DIRECTIVE_CHARS);
     expect(directive?.truncated).toBe(true);

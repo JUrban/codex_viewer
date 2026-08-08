@@ -267,8 +267,10 @@ describe("secure HTTP foundation", () => {
       list: fail,
       getSession: fail,
       getItems: fail,
+      getLiveSession: fail,
       getToolDetail: fail,
       getDirectiveDetail: fail,
+      getInteractionSession: fail,
       refresh: fail,
     };
     const logger = { error: vi.fn() };

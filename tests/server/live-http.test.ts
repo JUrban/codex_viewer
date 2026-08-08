@@ -26,7 +26,8 @@ afterEach(async () => {
 
 describe("Live update HTTP API", () => {
   it("returns 200, 204, 400, and 404 with no-store semantics", async () => {
-    const getLiveSession = vi.fn().mockResolvedValue(snapshot(false));
+    const getLiveSession = vi.fn<SessionRepository["getLiveSession"]>()
+      .mockResolvedValue(snapshot(false));
     const { base } = await start(getLiveSession, { waitTimeoutMs: 12, probeIntervalMs: 4 });
     const changed = await fetch(url(base, OTHER_REVISION));
     expect(changed.status).toBe(200);
@@ -47,7 +48,8 @@ describe("Live update HTTP API", () => {
   });
 
   it("returns 429 at capacity and releases the slot when the client disconnects", async () => {
-    const getLiveSession = vi.fn().mockResolvedValue(snapshot(false));
+    const getLiveSession = vi.fn<SessionRepository["getLiveSession"]>()
+      .mockResolvedValue(snapshot(false));
     const { base } = await start(getLiveSession, {
       waitTimeoutMs: 5_000,
       probeIntervalMs: 1_000,
@@ -72,7 +74,7 @@ describe("Live update HTTP API", () => {
 });
 
 async function start(
-  getLiveSession: ReturnType<typeof vi.fn>,
+  getLiveSession: SessionRepository["getLiveSession"],
   options: ConstructorParameters<typeof SessionLiveService>[1],
 ) {
   const clientDirectory = await createTempDirectory("codex-live-http-");

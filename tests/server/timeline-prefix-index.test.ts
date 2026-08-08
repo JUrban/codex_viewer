@@ -19,8 +19,12 @@ describe("timeline prefix index", () => {
   });
 
   it("requires strictly increasing positive ordinals", () => {
-    const value = normalized(["one", "two"]);
-    value.timeline[1] = { ...value.timeline[1]!, ordinal: 1 };
+    const original = normalized(["one", "two"]);
+    const value = {
+      ...original,
+      timeline: original.timeline.map((item, index) =>
+        index === 1 ? { ...item, ordinal: 1 } : item),
+    };
     expect(() => deriveTimelinePrefixIndex(value, Buffer.alloc(32)))
       .toThrow("Timeline ordinals must be strictly increasing");
   });
