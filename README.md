@@ -88,8 +88,7 @@ restart the server after replacing them.
 - Search session titles, project paths, and visible user and assistant messages.
 - Render Markdown, GitHub-flavored Markdown, and KaTeX math.
 - Continue reading rollout files while Codex is writing them.
-- Enable Live updates for individual active sessions. The setting is off by
-  default and remembered per session.
+- Enable Live updates for individual active sessions.
 - Handle malformed or unknown records with diagnostics where possible.
 - With `--enable-interaction`, send multiline prompts, `Ctrl+C`, and `Esc` to a
   user-bound tmux pane. Archived sessions remain read-only.

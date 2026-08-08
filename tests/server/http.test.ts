@@ -229,7 +229,7 @@ describe("secure HTTP foundation", () => {
     expect(post.headers.get("allow")).toBe("GET, HEAD");
   });
 
-  it("does not let the SPA fallback shadow API routes", async () => {
+  it("does not let static page routing shadow API routes", async () => {
     const base = await start();
     const response = await fetch(`${base}/api/v1/unknown`);
     expect(response.status).toBe(404);

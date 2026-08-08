@@ -146,7 +146,7 @@ describe("session reader items", () => {
     expect((fetchMock.mock.calls[0]?.[1] as RequestInit).signal?.aborted).toBe(true);
   });
 
-  it("persists technical-event visibility in the show query parameter", async () => {
+  it("toggles technical-event visibility for the current page", async () => {
     window.history.replaceState(null, "", `/sessions/${SESSION_ID}`);
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(json(page([
       { kind: "internal", id: "internal-1", ordinal: 1, timestamp: null,
@@ -155,7 +155,6 @@ describe("session reader items", () => {
     render(<SessionApp />);
     const checkbox = await screen.findByRole("checkbox", { name: "internal" });
     fireEvent.click(checkbox);
-    expect(window.location.search).toBe("?show=internal");
     expect(screen.getByText(/Internal body/)).toBeInTheDocument();
   });
 });

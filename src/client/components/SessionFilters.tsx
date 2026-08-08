@@ -64,26 +64,20 @@ export function SessionFilters({ filters, projects, onChange }: SessionFiltersPr
         submitQuery();
       }}
     >
-      <fieldset
-        className="filter-section archive-scope"
-        aria-label="Session state"
-        title="Session state"
-      >
-        <div className="archive-scope-options">
-          {ARCHIVE_SCOPES.map(({ value, label }) => (
-            <label key={value}>
-              <input
-                type="radio"
-                name="archive-scope"
-                value={value}
-                checked={filters.archiveScope === value}
-                onChange={() => patch({ archiveScope: value })}
-              />
-              <span>{label}</span>
-            </label>
-          ))}
-        </div>
-      </fieldset>
+      <input
+        id="session-search"
+        type="search"
+        aria-label="Find a session"
+        title="Find a session"
+        value={queryDraft}
+        onChange={(event) => setQueryDraft(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key !== "Enter") return;
+          event.preventDefault();
+          submitQuery();
+        }}
+        placeholder="Title, project, or message"
+      />
       <select
         className="project-filter"
         aria-label="Project"
@@ -155,20 +149,26 @@ export function SessionFilters({ filters, projects, onChange }: SessionFiltersPr
           Set
         </button>
       </div>
-      <input
-        id="session-search"
-        type="search"
-        aria-label="Find a session"
-        title="Find a session"
-        value={queryDraft}
-        onChange={(event) => setQueryDraft(event.target.value)}
-        onKeyDown={(event) => {
-          if (event.key !== "Enter") return;
-          event.preventDefault();
-          submitQuery();
-        }}
-        placeholder="Title, project, or message"
-      />
+      <fieldset
+        className="filter-section archive-scope"
+        aria-label="Session state"
+        title="Session state"
+      >
+        <div className="archive-scope-options">
+          {ARCHIVE_SCOPES.map(({ value, label }) => (
+            <label key={value}>
+              <input
+                type="radio"
+                name="archive-scope"
+                value={value}
+                checked={filters.archiveScope === value}
+                onChange={() => patch({ archiveScope: value })}
+              />
+              <span>{label}</span>
+            </label>
+          ))}
+        </div>
+      </fieldset>
     </form>
   );
 }

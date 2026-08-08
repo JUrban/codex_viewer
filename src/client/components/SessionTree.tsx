@@ -208,6 +208,8 @@ function SessionButton({ entry, child = false }: SessionButtonProps) {
     <a
       className={`session${child ? " child" : ""}`}
       href={`/sessions/${encodeURIComponent(session.id)}`}
+      target="_blank"
+      rel="noreferrer noopener"
     >
       <span className={taskName === null ? "session-title" : "session-title task-name"}>
         {displayTitle}

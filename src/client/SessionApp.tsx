@@ -1,8 +1,9 @@
+import { useEffect } from "react";
 import { EmptyState } from "./components/EmptyState";
 import { ErrorState } from "./components/ErrorState";
 import { SessionReader } from "./components/SessionReader";
-import { useBrowserLocation } from "./state/use-browser-location";
 import { useSessionReader } from "./state/use-session-reader";
+import { useTimelineVisibility } from "./state/use-timeline-visibility";
 
 export function SessionApp() {
   const sessionId = sessionIdFromPath(window.location.pathname);
@@ -13,8 +14,15 @@ export function SessionApp() {
 }
 
 function SessionPage({ sessionId }: { sessionId: string }) {
-  const location = useBrowserLocation();
+  const timelineVisibility = useTimelineVisibility();
   const reader = useSessionReader(sessionId);
+  const sessionTitle = reader.context?.session.title ?? null;
+
+  useEffect(() => {
+    document.title = sessionTitle === null
+      ? "Codex Sessions"
+      : `${sessionTitle} · Codex Sessions`;
+  }, [sessionTitle]);
 
   return (
     <main className="reader-page">
@@ -24,8 +32,8 @@ function SessionPage({ sessionId }: { sessionId: string }) {
               context={reader.context}
               items={reader.items}
               interaction={reader.interaction}
-              visibility={location.visibility}
-              onVisibilityChange={location.setVisibility}
+              visibility={timelineVisibility.visibility}
+              onVisibilityChange={timelineVisibility.setVisibility}
               loading={reader.readerLoading}
               busy={reader.operation !== null}
               autoRefreshEnabled={reader.autoRefreshEnabled}

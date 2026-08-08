@@ -19,8 +19,6 @@ import {
   TIMELINE_CURSOR,
 } from "./session-browser.fixtures";
 
-const OTHER_SESSION_ID = "otherabcdefghijklmnopqrs";
-const LIVE_KEY = "codex-sessions-reader.live-updates.v1:";
 const NEXT_REVISION = "opaque.live.next" as LiveRevision;
 const OTHER_LIVE_REVISION = "opaque.live.other" as LiveRevision;
 const TAIL_CURSOR = "opaque.timeline.tail" as TimelineCursor;
@@ -56,26 +54,7 @@ describe("session Live updates", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
-  it("persists Live independently per session", async () => {
-    const fetchMock = vi.fn((input: RequestInfo | URL) => String(input).includes("/live?")
-      ? new Promise<Response>(() => {})
-      : Promise.resolve(json(page([]))));
-    vi.stubGlobal("fetch", fetchMock);
-    const first = render(<SessionApp />);
-    await flush();
-    fireEvent.click(screen.getByRole("switch", { name: "Live updates" }));
-    expect(localStorage.getItem(`${LIVE_KEY}${SESSION_ID}`)).toBe("1");
-    first.unmount();
-
-    window.history.replaceState(null, "", `/sessions/${OTHER_SESSION_ID}`);
-    render(<SessionApp />);
-    await flush();
-    expect(screen.getByRole("switch", { name: "Live updates" }))
-      .toHaveAttribute("aria-checked", "false");
-  });
-
   it("never opens Live for archived sessions", async () => {
-    localStorage.setItem(`${LIVE_KEY}${SESSION_ID}`, "1");
     const fetchMock = vi.fn().mockResolvedValue(json(page([], TIMELINE_CURSOR, false, true)));
     vi.stubGlobal("fetch", fetchMock);
     render(<SessionApp />);
@@ -85,7 +64,6 @@ describe("session Live updates", () => {
   });
 
   it("loads ordinary items pages until a multi-page Live backlog is caught up", async () => {
-    localStorage.setItem(`${LIVE_KEY}${SESSION_ID}`, "1");
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(json(page([message("One")], TIMELINE_CURSOR)))
       .mockResolvedValueOnce(json(live(true, LIVE_REVISION)))
@@ -95,6 +73,8 @@ describe("session Live updates", () => {
       .mockReturnValueOnce(new Promise<Response>(() => {}));
     vi.stubGlobal("fetch", fetchMock);
     render(<SessionApp />);
+    await flush();
+    enableLiveUpdates();
     await flush(10);
 
     expect(screen.getByText("One")).toBeInTheDocument();
@@ -110,7 +90,6 @@ describe("session Live updates", () => {
   });
 
   it("discards an old Live response after manual pagination advances the snapshot", async () => {
-    localStorage.setItem(`${LIVE_KEY}${SESSION_ID}`, "1");
     let resolveOld!: (response: Response) => void;
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(json(page([message("One")], TIMELINE_CURSOR, true)))
@@ -119,6 +98,8 @@ describe("session Live updates", () => {
       .mockReturnValueOnce(new Promise<Response>(() => {}));
     vi.stubGlobal("fetch", fetchMock);
     render(<SessionApp />);
+    await flush();
+    enableLiveUpdates();
     await flush();
     fireEvent.click(screen.getByRole("button", { name: "Load more events" }));
     await flush(8);
@@ -135,7 +116,6 @@ describe("session Live updates", () => {
   });
 
   it("adopts interaction and metadata-only Live changes without advancing cursor", async () => {
-    localStorage.setItem(`${LIVE_KEY}${SESSION_ID}`, "1");
     const changed = live(false, NEXT_REVISION, {
       supported: true,
       state: "idle",
@@ -151,27 +131,30 @@ describe("session Live updates", () => {
       .mockReturnValueOnce(new Promise<Response>(() => {}));
     vi.stubGlobal("fetch", fetchMock);
     render(<SessionApp />);
+    await flush();
+    enableLiveUpdates();
     await flush(10);
     expect(screen.getByRole("heading", { name: "Changed title" })).toBeInTheDocument();
+    expect(document.title).toBe("Changed title · Codex Sessions");
     expect(screen.getByText("Send a message")).toBeInTheDocument();
     expect(String(fetchMock.mock.calls[2]?.[0])).toContain("cursor=opaque.timeline.cursor");
   });
 
   it("freezes the reader on a Live timeline conflict", async () => {
-    localStorage.setItem(`${LIVE_KEY}${SESSION_ID}`, "1");
     vi.stubGlobal("fetch", vi.fn()
       .mockResolvedValueOnce(json(page([message("Preserved")])))
       .mockResolvedValueOnce(json({
         error: { code: "timeline_changed", message: "Timeline changed" },
       }, 409)));
     render(<SessionApp />);
+    await flush();
+    enableLiveUpdates();
     await flush(10);
     expect(screen.getByText("Preserved")).toBeInTheDocument();
     expect(screen.getByText("Session 内容已变化")).toBeInTheDocument();
   });
 
   it("reconnects immediately after consecutive 204 responses", async () => {
-    localStorage.setItem(`${LIVE_KEY}${SESSION_ID}`, "1");
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(json(page([])))
       .mockResolvedValueOnce(new Response(null, { status: 204 }))
@@ -179,6 +162,8 @@ describe("session Live updates", () => {
       .mockReturnValueOnce(new Promise<Response>(() => {}));
     vi.stubGlobal("fetch", fetchMock);
     render(<SessionApp />);
+    await flush();
+    enableLiveUpdates();
     await flush(10);
     expect(fetchMock).toHaveBeenCalledTimes(4);
   });
@@ -186,13 +171,14 @@ describe("session Live updates", () => {
   it("backs off retryable failures and stops on terminal 4xx responses", async () => {
     vi.useFakeTimers();
     vi.spyOn(Math, "random").mockReturnValue(0.5);
-    localStorage.setItem(`${LIVE_KEY}${SESSION_ID}`, "1");
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(json(page([])))
       .mockResolvedValueOnce(json({ error: { code: "busy", message: "Busy" } }, 503))
       .mockResolvedValueOnce(json({ error: { code: "invalid_query", message: "Stop" } }, 400));
     vi.stubGlobal("fetch", fetchMock);
     render(<SessionApp />);
+    await flush();
+    enableLiveUpdates();
     await flush(8);
     expect(fetchMock).toHaveBeenCalledTimes(2);
     await act(async () => { await vi.advanceTimersByTimeAsync(999); });
@@ -206,7 +192,6 @@ describe("session Live updates", () => {
   });
 
   it("aborts while hidden and resumes immediately when visible", async () => {
-    localStorage.setItem(`${LIVE_KEY}${SESSION_ID}`, "1");
     const signals: AbortSignal[] = [];
     const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
       if (!String(input).includes("/live?")) return Promise.resolve(json(page([])));
@@ -215,6 +200,8 @@ describe("session Live updates", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
     render(<SessionApp />);
+    await flush();
+    enableLiveUpdates();
     await flush();
     expect(signals).toHaveLength(1);
     Object.defineProperty(document, "hidden", { configurable: true, value: true });
@@ -226,6 +213,10 @@ describe("session Live updates", () => {
     await vi.waitFor(() => expect(signals).toHaveLength(2));
   });
 });
+
+function enableLiveUpdates(): void {
+  fireEvent.click(screen.getByRole("switch", { name: "Live updates" }));
+}
 
 async function flush(turns = 4) {
   await act(async () => {

@@ -9,6 +9,22 @@ import { json, listBody } from "./session-browser.fixtures";
 const STORAGE_KEY = "codex-sessions-reader.filters.v1";
 
 describe("session filters", () => {
+  it("orders filter controls from primary search through secondary filters", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(json(listBody)));
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByRole("link", { name: /Reader work/ });
+
+    screen.getByRole("searchbox").focus();
+    expect(screen.getByRole("searchbox")).toHaveFocus();
+    await user.tab();
+    expect(screen.getByRole("combobox", { name: "Project" })).toHaveFocus();
+    await user.tab();
+    expect(screen.getByRole("button", { name: "Date range" })).toHaveFocus();
+    await user.tab();
+    expect(screen.getByRole("radio", { name: "Active" })).toHaveFocus();
+  });
+
   it("keeps query as a draft until Enter and ignores duplicate submissions", async () => {
     const listUrls: string[] = [];
     vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => {

@@ -11,8 +11,6 @@ import { useSessionLive, type LiveSnapshot } from "./use-session-live";
 import type { ReaderContext } from "./session-reader-state";
 
 const TIMELINE_PAGE_SIZE = 300;
-const LIVE_UPDATES_STORAGE_KEY_PREFIX =
-  "codex-sessions-reader.live-updates.v1:";
 
 export type ReaderOperation = "open" | "page" | "poll" | "reload" | null;
 
@@ -59,9 +57,7 @@ const initialState: ReaderState = {
 
 export function useSessionReader(sessionId: string) {
   const [state, dispatch] = useReducer(reducer, initialState);
-  const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(
-    () => readLiveUpdatesEnabled(sessionId),
-  );
+  const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(false);
   const active = useRef<ActiveRequest | null>(null);
   const generation = useRef(0);
   const stateRef = useRef(state);
@@ -116,7 +112,7 @@ export function useSessionReader(sessionId: string) {
   }, [isCurrent, markTimelineChanged, sessionId]);
 
   useEffect(() => {
-    setAutoRefreshEnabled(readLiveUpdatesEnabled(sessionId));
+    setAutoRefreshEnabled(false);
     generation.current += 1;
     active.current?.controller.abort();
     active.current = null;
@@ -156,17 +152,6 @@ export function useSessionReader(sessionId: string) {
       replaceItems: true,
     });
   }, [requestPage]);
-
-  const setLiveUpdatesEnabled = useCallback((enabled: boolean) => {
-    setAutoRefreshEnabled(enabled);
-    try {
-      const key = `${LIVE_UPDATES_STORAGE_KEY_PREFIX}${sessionId}`;
-      if (enabled) window.localStorage.setItem(key, "1");
-      else window.localStorage.removeItem(key);
-    } catch {
-      // Storage may be unavailable; the in-memory setting still works.
-    }
-  }, [sessionId]);
 
   const onLiveUpdate = useCallback(async (
     response: SessionLiveResponse,
@@ -216,7 +201,7 @@ export function useSessionReader(sessionId: string) {
     timelineGeneration: state.timelineGeneration,
     clearReaderError: () => dispatch({ type: "clear-error" }),
     autoRefreshEnabled,
-    setAutoRefreshEnabled: setLiveUpdatesEnabled,
+    setAutoRefreshEnabled,
     loadMore,
     retryOpen,
     markTimelineChanged,
@@ -280,14 +265,4 @@ function appendUnique(existing: TimelineItem[], incoming: TimelineItem[]): Timel
   const seen = new Set(existing.map((item) => item.id));
   const additions = incoming.filter((item) => !seen.has(item.id));
   return additions.length === 0 ? existing : [...existing, ...additions];
-}
-
-function readLiveUpdatesEnabled(sessionId: string): boolean {
-  try {
-    return window.localStorage.getItem(
-      `${LIVE_UPDATES_STORAGE_KEY_PREFIX}${sessionId}`,
-    ) === "1";
-  } catch {
-    return false;
-  }
 }

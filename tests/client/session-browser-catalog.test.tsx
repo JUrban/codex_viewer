@@ -56,7 +56,6 @@ describe("session catalog state", () => {
     fireEvent.click(screen.getByRole("button", { name: "Refresh sessions" }));
     expect(await screen.findByText("Refresh failed")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Reader work/ })).toBeInTheDocument();
-    expect(fetchMock.mock.calls[1]?.[0]).toContain("fresh=true");
   });
 
   it("persists and restores the three-state archive scope", async () => {

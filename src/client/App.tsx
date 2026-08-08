@@ -14,11 +14,26 @@ export function App() {
   return (
     <main className="catalog-page">
       <aside className="session-index" aria-label="Session index">
-        <header className="brand">
-          <p className="eyebrow">Local trace notebook</p>
-          <h1>Codex sessions</h1>
-          <p>Private to this machine · local viewer</p>
-        </header>
+        <div className="catalog-header">
+          <header className="brand">
+            <p className="eyebrow">Local trace notebook</p>
+            <h1>Codex sessions</h1>
+            <p>Private to this machine · local viewer</p>
+          </header>
+          <div className="session-toolbar">
+            <p className="section-label">Sessions · {catalog.list?.total ?? 0}</p>
+            <button
+              type="button"
+              className="refresh-sessions"
+              disabled={catalog.operation !== null}
+              aria-label="Refresh sessions"
+              onClick={() => void catalog.refresh()}
+            >
+              <span aria-hidden="true" className={`refresh-mark${catalog.refreshing ? " active" : ""}`}>↻</span>
+              {catalog.refreshing ? "Refreshing…" : "Refresh"}
+            </button>
+          </div>
+        </div>
         <SessionFilters
           filters={filterState.filters}
           projects={catalog.list?.projects ?? []}
@@ -27,19 +42,6 @@ export function App() {
         {catalog.list?.warnings.length
           ? <DiagnosticNotice diagnostics={catalog.list.warnings} label="Search warnings" />
           : null}
-        <div className="session-toolbar">
-          <p className="section-label">Sessions · {catalog.list?.total ?? 0}</p>
-          <button
-            type="button"
-            className="refresh-sessions"
-            disabled={catalog.operation !== null}
-            aria-label="Refresh sessions"
-            onClick={() => void catalog.refresh()}
-          >
-            <span aria-hidden="true" className={`refresh-mark${catalog.refreshing ? " active" : ""}`}>↻</span>
-            {catalog.refreshing ? "Refreshing…" : "Refresh"}
-          </button>
-        </div>
         {catalog.listError
           ? <ErrorState title="Could not load sessions" message={catalog.listError} onDismiss={catalog.clearListError} />
           : null}
