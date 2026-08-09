@@ -80,7 +80,6 @@ export class SessionApiMapper {
       id: session.id,
       origin: { ...session.origin },
       title: session.title,
-      preview: session.preview,
       cwd: session.cwd,
       createdAt: session.createdAt,
       updatedAt: session.updatedAt,

@@ -273,7 +273,6 @@ function normalized(markdown: string[]): NormalizedSession {
         formatVersion: null,
       },
       title: "Session",
-      preview: null,
       cwd: null,
       createdAt: null,
       updatedAt: null,

@@ -207,7 +207,7 @@ describe("interaction panel", () => {
     scrollHeight.mockRestore();
   });
 
-  it("folds, reopens at the bottom, preserves scroll on refresh, and renders text safely", async () => {
+  it("renders a truncated terminal preview as plain text", () => {
     const handlers = {
       ...props(interaction("connected")),
       preview: {
@@ -216,28 +216,52 @@ describe("interaction panel", () => {
         capturedAt: "2026-08-08T12:00:00.000Z",
       },
     };
-    const scrollHeight = vi.spyOn(HTMLElement.prototype, "scrollHeight", "get")
-      .mockReturnValue(640);
-    const user = userEvent.setup();
-    const { rerender } = render(<InteractionPanel {...handlers} />);
+    render(<InteractionPanel {...handlers} />);
 
     const content = screen.getByLabelText("Terminal preview content");
-    expect(content).not.toHaveFocus();
     expect(content).toHaveTextContent(
       "plain text<img src=x onerror=alert(1)><script>alert(2)</script>",
     );
     expect(content.querySelector("img")).toBeNull();
     expect(content.querySelector("script")).toBeNull();
     expect(screen.getByText(/terminal output exceeded the preview limit/i)).toBeInTheDocument();
+  });
+
+  it("reopens a folded terminal preview at the bottom", async () => {
+    const handlers = {
+      ...props(interaction("connected")),
+      preview: {
+        content: "terminal output",
+        truncated: false,
+        capturedAt: "2026-08-08T12:00:00.000Z",
+      },
+    };
+    const scrollHeight = vi.spyOn(HTMLElement.prototype, "scrollHeight", "get")
+      .mockReturnValue(640);
+    const user = userEvent.setup();
+    render(<InteractionPanel {...handlers} />);
+
     const header = screen.getByRole("button", { name: "Terminal preview" });
     await user.click(header);
     expect(screen.queryByLabelText("Terminal preview content")).not.toBeInTheDocument();
     await user.click(header);
     expect(screen.getByLabelText("Terminal preview content")).toHaveFocus();
     expect(screen.getByLabelText("Terminal preview content").scrollTop).toBe(640);
+    scrollHeight.mockRestore();
+  });
 
-    const reopened = screen.getByLabelText("Terminal preview content");
-    reopened.scrollTop = 120;
+  it("preserves terminal preview scroll position across refreshes", () => {
+    const handlers = {
+      ...props(interaction("connected")),
+      preview: {
+        content: "terminal output",
+        truncated: false,
+        capturedAt: "2026-08-08T12:00:00.000Z",
+      },
+    };
+    const { rerender } = render(<InteractionPanel {...handlers} />);
+    const content = screen.getByLabelText("Terminal preview content");
+    content.scrollTop = 120;
     const refreshedPreview = {
       ...handlers.preview,
       content: "fresh terminal output",
@@ -245,10 +269,9 @@ describe("interaction panel", () => {
     };
     rerender(<InteractionPanel {...handlers} preview={refreshedPreview} />);
     const refreshed = screen.getByLabelText("Terminal preview content");
-    expect(refreshed).toBe(reopened);
+    expect(refreshed).toBe(content);
     expect(refreshed).toHaveTextContent("fresh terminal output");
     expect(refreshed.scrollTop).toBe(120);
-    scrollHeight.mockRestore();
   });
 
   it("keeps focus on the toggle when an expanded preview is empty", async () => {

@@ -162,7 +162,6 @@ const SESSION: SessionDetail = {
     formatVersion: null,
   },
   title: "Session",
-  preview: null,
   cwd: null,
   createdAt: null,
   updatedAt: null,

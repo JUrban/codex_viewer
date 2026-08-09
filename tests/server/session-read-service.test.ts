@@ -24,6 +24,18 @@ async function fixtureRepository() {
   return { home, repository: await createCodexSessionReadService(home) };
 }
 
+async function basicFixtureSession() {
+  const { home, repository } = await fixtureRepository();
+  const activeSessions = (await repository.list({})).sessions;
+  const session = activeSessions.find(({ title }) => title === "Synthetic trace");
+  if (session === undefined) throw new Error("Expected the basic fixture session");
+  const rollout = join(
+    home,
+    "sessions/2026/07/28/rollout-2026-07-28T10-00-00-basic-session.jsonl",
+  );
+  return { activeSessions, home, repository, rollout, session };
+}
+
 describe("SessionReadService", () => {
   it("coalesces concurrent refreshes, reuses a fresh snapshot, and permits a forced refresh", async () => {
     let discoveries = 0;
@@ -199,17 +211,15 @@ describe("SessionReadService", () => {
     ]);
   });
 
-  it("publishes linked summaries, pages one immutable revision, and replaces it after append", async () => {
-    const { home, repository } = await fixtureRepository();
-    const first = await repository.list({});
-    expect(first.sessions).toHaveLength(3);
-    expect(first.sessions.every((session) => !session.archived)).toBe(true);
+  it("publishes linked summaries and pages timeline details", async () => {
+    const { activeSessions, repository, session: parent } = await basicFixtureSession();
+    expect(activeSessions).toHaveLength(3);
+    expect(activeSessions.every((session) => !session.archived)).toBe(true);
     const archived = await repository.list({ archiveScope: "archived" });
     expect(archived.sessions).toHaveLength(1);
     expect(archived.sessions[0]?.archived).toBe(true);
     expect((await repository.list({ archiveScope: "all" })).sessions).toHaveLength(4);
-    const parent = first.sessions.find((session) => session.title === "Synthetic trace")!;
-    const child = first.sessions.find((session) => session.cwd === "/synthetic/child")!;
+    const child = activeSessions.find((session) => session.cwd === "/synthetic/child")!;
     expect(child.parentId).toBe(parent.id);
     expect(parent.childIds).toContain(child.id);
 
@@ -233,33 +243,37 @@ describe("SessionReadService", () => {
       text: expect.stringContaining("DIRECTIVE_DETAIL_CANARY"),
       truncated: false,
     }));
+  });
 
-    const rollout = join(
-      home,
-      "sessions/2026/07/28/rollout-2026-07-28T10-00-00-basic-session.jsonl",
-    );
+  it("keeps confirmed timeline and detail cursors valid after append", async () => {
+    const { repository, rollout, session } = await basicFixtureSession();
+    const page = await repository.getItems(session.id, { limit: 2 });
+    const allItems = await repository.getItems(session.id, { limit: 200 });
+    const directive = allItems!.items.find((item) => item.id === "directive-4")!;
     const previous = await readFile(rollout, "utf8");
     await writeFile(
       rollout,
       `${previous}{"timestamp":"2026-07-28T10:00:10.000Z","type":"response_item","payload":{"type":"message","role":"assistant","phase":"final","content":[{"type":"output_text","text":"Appended revision"}]}}\n`,
     );
     await repository.refresh();
-    const second = await repository.getItems(parent.id, {
+    const second = await repository.getItems(session.id, {
       cursor: page!.cursor,
       limit: 2,
     });
     expect(second!.session.messageCount)
-      .toBe(parent.messageCount);
+      .toBe(session.messageCount);
     expect(second!.hasMore).toBe(true);
-    expect(first.sessions.find((session) => session.id === parent.id)?.messageCount)
-      .toBe(parent.messageCount);
-    await expect(repository.getItems(parent.id, {
+    await expect(repository.getItems(session.id, {
       cursor: page!.cursor,
     })).resolves.not.toBeNull();
-    await expect(repository.getDirectiveDetail(parent.id, directive.id, {
+    await expect(repository.getDirectiveDetail(session.id, directive.id, {
       cursor: allItems!.cursor,
     })).resolves.toEqual(expect.objectContaining({ itemId: directive.id }));
+  });
 
+  it("invalidates confirmed cursors after rollout replacement", async () => {
+    const { repository, rollout, session } = await basicFixtureSession();
+    const page = await repository.getItems(session.id, { limit: 2 });
     const replacement = `${rollout}.replacement`;
     await writeFile(
       replacement,
@@ -268,10 +282,10 @@ describe("SessionReadService", () => {
     );
     await rename(replacement, rollout);
     await repository.refresh();
-    const third = await repository.getSession(parent.id);
+    const third = await repository.getSession(session.id);
     expect(third!.session.title).toBe("Replacement trace");
     expect(third!.session.messageCount).toBe(0);
-    await expect(repository.getItems(parent.id, {
+    await expect(repository.getItems(session.id, {
       cursor: page!.cursor,
     })).rejects.toMatchObject({
       code: "timeline_changed",
@@ -746,7 +760,6 @@ function normalizedSession(
       sourceId: id,
       origin: TEST_ORIGIN,
       title,
-      preview: null,
       cwd,
       createdAt: timestamp,
       updatedAt: timestamp,

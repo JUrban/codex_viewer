@@ -1,5 +1,10 @@
+import type { Nodes } from "mdast";
+import { fromMarkdown } from "mdast-util-from-markdown";
+import { toString } from "mdast-util-to-string";
+
 export const MAX_PREVIEW_CHARS = 240;
 export const MAX_SESSION_TITLE_CHARS = 80;
+const MAX_TITLE_HEADING_DEPTH = 64;
 
 export function truncateText(
   value: string,
@@ -15,4 +20,22 @@ export function normalizeSessionTitle(value: string | null): string | null {
   return firstLine === undefined
     ? null
     : truncateText(firstLine, MAX_SESSION_TITLE_CHARS).text;
+}
+
+export function sessionTitleFromMarkdown(value: string): string | null {
+  const heading = firstTitleHeading(fromMarkdown(value), 0);
+  return normalizeSessionTitle(heading ?? value);
+}
+
+function firstTitleHeading(node: Nodes, depth: number): string | null {
+  if (node.type === "heading" && (node.depth === 1 || node.depth === 2)) {
+    const text = toString(node).trim();
+    if (text.length > 0) return text;
+  }
+  if (depth >= MAX_TITLE_HEADING_DEPTH || !("children" in node)) return null;
+  for (const child of node.children) {
+    const heading = firstTitleHeading(child, depth + 1);
+    if (heading !== null) return heading;
+  }
+  return null;
 }

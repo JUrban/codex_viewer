@@ -96,8 +96,8 @@ its cursor prefix.
 
 Truncation preserves an item but shortens its text; it is not filtering.
 Message text is capped at 1,000,000 characters. Directive detail and
-tool input/output are capped at 256,000 characters. Session previews, item
-summaries and tool previews share a 240-character limit.
+tool input/output are capped at 256,000 characters. Item summaries and tool
+previews share a 240-character limit.
 Timeline paging may defer items to a later page because of the 300-item and
 approximately 4 MiB response size budget. To guarantee forward progress, the
 first item on a page is always included even when it exceeds that budget.

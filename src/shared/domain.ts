@@ -28,7 +28,6 @@ export interface SessionSummary {
   id: SessionId;
   origin: SessionOrigin;
   title: string;
-  preview: string | null;
   cwd: string | null;
   createdAt: string | null;
   updatedAt: string | null;

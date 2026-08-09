@@ -2,7 +2,6 @@ import type {
   DomainDiagnostic,
   DomainAgentInteraction,
   DomainDirectiveDetail,
-  DomainMessageRecord,
   DomainSession,
   DomainSessionOrigin,
   DomainTimelineRecord,
@@ -11,9 +10,8 @@ import type {
   NormalizedSession,
 } from "../../domain/session-domain.js";
 import {
-  MAX_PREVIEW_CHARS,
   normalizeSessionTitle,
-  truncateText,
+  sessionTitleFromMarkdown,
 } from "../../domain/session-text.js";
 import { MAX_SESSION_DIAGNOSTICS } from "./limits.js";
 import {
@@ -76,7 +74,6 @@ export interface SessionNormalizerState {
   readonly pendingUserInputRequests: ReadonlyMap<string, UserInputRequest>;
   readonly decoderDiagnostics: readonly DomainDiagnostic[];
   readonly normalizerDiagnostics: readonly DomainDiagnostic[];
-  readonly firstMessage: DomainMessageRecord | null;
   readonly hasFirstUserMessage: boolean;
   readonly firstUserTitle: string | null;
   readonly messageCount: number;
@@ -95,7 +92,6 @@ export class DefaultSessionNormalizer implements SessionNormalizer {
       pendingUserInputRequests: new Map(),
       decoderDiagnostics: [],
       normalizerDiagnostics: [],
-      firstMessage: null,
       hasFirstUserMessage: false,
       firstUserTitle: null,
       messageCount: 0,
@@ -142,18 +138,16 @@ export class DefaultSessionNormalizer implements SessionNormalizer {
       );
     }
 
-    let firstMessage = state.firstMessage;
     let hasFirstUserMessage = state.hasFirstUserMessage;
     let firstTitle = state.firstUserTitle;
     let messageCount = state.messageCount;
     let toolCount = state.toolCount;
     for (const item of items) {
       if (item.kind === "message") {
-        firstMessage ??= item;
         messageCount += 1;
         if (!hasFirstUserMessage && item.role === "user") {
           hasFirstUserMessage = true;
-          firstTitle = normalizeSessionTitle(item.markdown);
+          firstTitle = sessionTitleFromMarkdown(item.markdown);
         }
       } else if (item.kind === "tool" && item.stage === "call") {
         toolCount += 1;
@@ -175,7 +169,6 @@ export class DefaultSessionNormalizer implements SessionNormalizer {
         ? state.decoderDiagnostics
         : nextDecoderDiagnostics,
       normalizerDiagnostics,
-      firstMessage,
       hasFirstUserMessage,
       firstUserTitle: firstTitle,
       messageCount,
@@ -201,9 +194,6 @@ export class DefaultSessionNormalizer implements SessionNormalizer {
       sourceId: metadata.threadId,
       origin,
       title,
-      preview: state.firstMessage === null
-        ? null
-        : truncateText(state.firstMessage.markdown, MAX_PREVIEW_CHARS).text,
       cwd: metadata.cwd,
       createdAt: metadata.createdAt,
       updatedAt: metadata.updatedAt,

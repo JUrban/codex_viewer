@@ -5,6 +5,18 @@ import {
 import { normalizeRecords } from "./session-normalizer.fixtures.js";
 
 describe("message and directive normalization", () => {
+  it("keeps explicit metadata titles ahead of Markdown user headings", () => {
+    const normalized = normalizeRecords("metadata-title", [{
+      ordinal: 1,
+      value: {
+        type: "event_msg",
+        payload: { type: "user_message", message: "# Markdown title" },
+      },
+    }], { title: "Metadata title" });
+
+    expect(normalized.session.title).toBe("Metadata title");
+  });
+
   it("keeps response messages as directives and emits event messages without matching", () => {
     const normalized = normalizeRecords("message-source-session", [
       {
@@ -61,7 +73,6 @@ describe("message and directive normalization", () => {
     expect(normalized.directiveDetails.has("directive-1")).toBe(false);
     expect(normalized.session).toEqual(expect.objectContaining({
       title: "Actual user",
-      preview: "Actual user",
       messageCount: 2,
     }));
     expect(normalized.timeline.filter((item) => item.kind === "message"))
@@ -146,7 +157,7 @@ describe("message and directive normalization", () => {
     });
   });
 
-  it("emits a completed UserMessage and uses it for title and preview", () => {
+  it("emits a completed UserMessage and uses it for the title", () => {
     const normalized = normalizeRecords("completed-user-message", [
       completedItem(1, {
         type: "UserMessage",
@@ -168,7 +179,6 @@ describe("message and directive normalization", () => {
     })]);
     expect(normalized.session).toEqual(expect.objectContaining({
       title: "First user line",
-      preview: "First user line\n\nSecond user paragraph",
       messageCount: 1,
     }));
     expect(JSON.stringify(normalized)).not.toContain("NON_TEXT_MUST_NOT_RENDER");

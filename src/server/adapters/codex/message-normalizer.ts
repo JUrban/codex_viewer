@@ -2,11 +2,9 @@ import type {
   DomainDirectiveDetail,
   DomainDirectiveRecord,
   DomainMessageRecord,
-  DomainTimelineRecord,
 } from "../../domain/session-domain.js";
 import {
   MAX_PREVIEW_CHARS,
-  normalizeSessionTitle,
   truncateText,
 } from "../../domain/session-text.js";
 import {
@@ -101,13 +99,6 @@ export function eventMessage(
   return markdown === null
     ? null
     : messageItem(ordinal, timestamp, "assistant", "final", itemType, markdown);
-}
-
-export function firstUserTitle(items: readonly DomainTimelineRecord[]): string | null {
-  const first = items.find(
-    (item): item is DomainMessageRecord => item.kind === "message" && item.role === "user",
-  );
-  return first === undefined ? null : normalizeSessionTitle(first.markdown);
 }
 
 function messageItem(
