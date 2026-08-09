@@ -32,27 +32,31 @@ import {
 import type { DecodedRecord, DecodedRollout } from "./rollout-decoder.js";
 import { isObject } from "./rollout-decoder.js";
 import {
-  type AccumulatedTool,
-  ToolAccumulator,
-} from "./tool-accumulator.js";
+  type NormalizedTool,
+  normalizeToolCall,
+  normalizeToolOutput,
+  type ToolCall,
+} from "./tool-normalizer.js";
 import {
-  type AccumulatedUserInput,
-  UserInputAccumulator,
-} from "./user-input-accumulator.js";
+  type NormalizedUserInput,
+  normalizeUserInputRequest,
+  normalizeUserInputResponse,
+  type UserInputRequest,
+} from "./user-input-normalizer.js";
 import {
   codexBindingAttemptFrom,
   codexInteractionFromBindingAttempt,
 } from "./interaction-parser.js";
 
 export interface SessionNormalizer {
-  create(descriptor: RolloutDescriptor): SessionNormalizerAccumulatorState;
+  create(descriptor: RolloutDescriptor): SessionNormalizerState;
   append(
-    state: SessionNormalizerAccumulatorState,
+    state: SessionNormalizerState,
     records: readonly DecodedRecord[],
     decoderDiagnostics: readonly DomainDiagnostic[],
-  ): SessionNormalizerAccumulatorState;
+  ): SessionNormalizerState;
   materialize(
-    state: SessionNormalizerAccumulatorState,
+    state: SessionNormalizerState,
     metadata: SessionMetadata,
     origin?: DomainSessionOrigin,
   ): NormalizedSession;
@@ -63,13 +67,13 @@ export interface SessionNormalizer {
   ): NormalizedSession;
 }
 
-export interface SessionNormalizerAccumulatorState {
+export interface SessionNormalizerState {
   readonly descriptor: RolloutDescriptor;
   readonly timeline: readonly DomainTimelineRecord[];
   readonly directiveDetails: ReadonlyMap<string, DomainDirectiveDetail>;
   readonly toolDetails: ReadonlyMap<string, DomainToolDetail>;
-  readonly tools: ToolAccumulator;
-  readonly userInputs: UserInputAccumulator;
+  readonly pendingToolCalls: ReadonlyMap<string, ToolCall>;
+  readonly pendingUserInputRequests: ReadonlyMap<string, UserInputRequest>;
   readonly decoderDiagnostics: readonly DomainDiagnostic[];
   readonly normalizerDiagnostics: readonly DomainDiagnostic[];
   readonly firstMessage: DomainMessageRecord | null;
@@ -81,14 +85,14 @@ export interface SessionNormalizerAccumulatorState {
 }
 
 export class DefaultSessionNormalizer implements SessionNormalizer {
-  create(descriptor: RolloutDescriptor): SessionNormalizerAccumulatorState {
+  create(descriptor: RolloutDescriptor): SessionNormalizerState {
     return {
       descriptor,
       timeline: [],
       directiveDetails: new Map(),
       toolDetails: new Map(),
-      tools: new ToolAccumulator(),
-      userInputs: new UserInputAccumulator(),
+      pendingToolCalls: new Map(),
+      pendingUserInputRequests: new Map(),
       decoderDiagnostics: [],
       normalizerDiagnostics: [],
       firstMessage: null,
@@ -101,10 +105,10 @@ export class DefaultSessionNormalizer implements SessionNormalizer {
   }
 
   append(
-    state: SessionNormalizerAccumulatorState,
+    state: SessionNormalizerState,
     records: readonly DecodedRecord[],
     decoderDiagnostics: readonly DomainDiagnostic[],
-  ): SessionNormalizerAccumulatorState {
+  ): SessionNormalizerState {
     const nextDecoderDiagnostics = decoderDiagnostics.slice(0, MAX_SESSION_DIAGNOSTICS);
     const decoderDiagnosticsUnchanged = sameDiagnostics(
       state.decoderDiagnostics,
@@ -117,8 +121,8 @@ export class DefaultSessionNormalizer implements SessionNormalizer {
     const items: DomainTimelineRecord[] = [];
     const directiveDetails = new Map(state.directiveDetails);
     const toolDetails = new Map(state.toolDetails);
-    const tools = state.tools.fork();
-    const userInputs = state.userInputs.fork();
+    const pendingToolCalls = new Map(state.pendingToolCalls);
+    const pendingUserInputRequests = new Map(state.pendingUserInputRequests);
     const normalizerDiagnostics = [...state.normalizerDiagnostics];
     let bindingAttempt = state.bindingAttempt;
     for (const record of records) {
@@ -132,8 +136,8 @@ export class DefaultSessionNormalizer implements SessionNormalizer {
         items,
         directiveDetails,
         toolDetails,
-        tools,
-        userInputs,
+        pendingToolCalls,
+        pendingUserInputRequests,
         normalizerDiagnostics,
       );
     }
@@ -165,8 +169,8 @@ export class DefaultSessionNormalizer implements SessionNormalizer {
       toolDetails: sameMapEntries(state.toolDetails, toolDetails)
         ? state.toolDetails
         : toolDetails,
-      tools,
-      userInputs,
+      pendingToolCalls,
+      pendingUserInputRequests,
       decoderDiagnostics: decoderDiagnosticsUnchanged
         ? state.decoderDiagnostics
         : nextDecoderDiagnostics,
@@ -181,7 +185,7 @@ export class DefaultSessionNormalizer implements SessionNormalizer {
   }
 
   materialize(
-    state: SessionNormalizerAccumulatorState,
+    state: SessionNormalizerState,
     metadata: SessionMetadata,
     origin: DomainSessionOrigin = DEFAULT_SESSION_ORIGIN,
   ): NormalizedSession {
@@ -237,7 +241,7 @@ export class DefaultSessionNormalizer implements SessionNormalizer {
 }
 
 function combinedDiagnostics(
-  state: SessionNormalizerAccumulatorState,
+  state: SessionNormalizerState,
 ): readonly DomainDiagnostic[] {
   const remaining = MAX_SESSION_DIAGNOSTICS - state.decoderDiagnostics.length;
   return [
@@ -266,7 +270,7 @@ function sameMapEntries<K, V>(left: ReadonlyMap<K, V>, right: ReadonlyMap<K, V>)
   return true;
 }
 
-function interaction(state: SessionNormalizerAccumulatorState): DomainAgentInteraction {
+function interaction(state: SessionNormalizerState): DomainAgentInteraction {
   return codexInteractionFromBindingAttempt(state.bindingAttempt);
 }
 
@@ -283,8 +287,8 @@ function consumeRecord(
   items: DomainTimelineRecord[],
   directiveDetails: Map<string, DomainDirectiveDetail>,
   toolDetails: Map<string, DomainToolDetail>,
-  tools: ToolAccumulator,
-  userInputs: UserInputAccumulator,
+  pendingToolCalls: Map<string, ToolCall>,
+  pendingUserInputRequests: Map<string, UserInputRequest>,
   diagnostics: DomainDiagnostic[],
 ): void {
   const timestamp = string(record.value.timestamp);
@@ -295,8 +299,8 @@ function consumeRecord(
       items,
       directiveDetails,
       toolDetails,
-      tools,
-      userInputs,
+      pendingToolCalls,
+      pendingUserInputRequests,
       diagnostics,
     );
     return;
@@ -339,8 +343,8 @@ function consumeParsedResponse(
   items: DomainTimelineRecord[],
   directiveDetails: Map<string, DomainDirectiveDetail>,
   toolDetails: Map<string, DomainToolDetail>,
-  tools: ToolAccumulator,
-  userInputs: UserInputAccumulator,
+  pendingToolCalls: Map<string, ToolCall>,
+  pendingUserInputRequests: Map<string, UserInputRequest>,
   diagnostics: DomainDiagnostic[],
 ): void {
   switch (parsed.kind) {
@@ -354,17 +358,22 @@ function consumeParsedResponse(
       items.push(parsed.value);
       break;
     case "tool_call":
-      addTool(tools.addCall(parsed.value), items, toolDetails);
+      pendingToolCalls.set(parsed.value.callId, parsed.value);
+      addTool(normalizeToolCall(parsed.value), items, toolDetails);
       break;
-    case "tool_output":
-      if (userInputs.hasRequest(parsed.value.callId)) {
-        addUserInput(userInputs.addResponse(parsed.value), items, diagnostics);
+    case "tool_output": {
+      if (pendingUserInputRequests.delete(parsed.value.callId)) {
+        addUserInput(normalizeUserInputResponse(parsed.value), items, diagnostics);
       } else {
-        addTool(tools.addOutput(parsed.value), items, toolDetails);
+        const call = pendingToolCalls.get(parsed.value.callId);
+        pendingToolCalls.delete(parsed.value.callId);
+        addTool(normalizeToolOutput(parsed.value, call), items, toolDetails);
       }
       break;
+    }
     case "user_input_request":
-      addUserInput(userInputs.addRequest(parsed.value), items, diagnostics);
+      pendingUserInputRequests.set(parsed.value.callId, parsed.value);
+      addUserInput(normalizeUserInputRequest(parsed.value), items, diagnostics);
       break;
     case "ignored":
       break;
@@ -372,7 +381,7 @@ function consumeParsedResponse(
 }
 
 function addUserInput(
-  accumulated: AccumulatedUserInput,
+  accumulated: NormalizedUserInput,
   items: DomainTimelineRecord[],
   diagnostics: DomainDiagnostic[],
 ): void {
@@ -388,7 +397,7 @@ function addUserInput(
 }
 
 function addTool(
-  tool: AccumulatedTool,
+  tool: NormalizedTool,
   items: DomainTimelineRecord[],
   details: Map<string, DomainToolDetail>,
 ): void {

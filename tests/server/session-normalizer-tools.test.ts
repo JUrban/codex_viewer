@@ -118,6 +118,33 @@ describe("tool normalization", () => {
     });
   });
 
+  it("consumes a pending call after its first output", () => {
+    const normalized = normalizeRecords("duplicate-tool-output", [
+      toolCall(1, "duplicate", "inspect", "input"),
+      toolOutput(2, "duplicate", "first result"),
+      toolOutput(3, "duplicate", "second result"),
+    ]);
+
+    expect(normalized.timeline[1]).toMatchObject({
+      kind: "tool",
+      stage: "output",
+      toolName: "inspect",
+    });
+    expect(normalized.toolDetails.get("tool-2")).toMatchObject({
+      input: "input",
+      output: "first result",
+    });
+    expect(normalized.timeline[2]).toMatchObject({
+      kind: "tool",
+      stage: "output",
+      toolName: "unknown tool",
+    });
+    expect(normalized.toolDetails.get("tool-3")).toMatchObject({
+      input: null,
+      output: "second result",
+    });
+  });
+
   it("does not report detail truncation when only the preview is truncated", () => {
     const input = "x".repeat(MAX_PREVIEW_CHARS + 1);
     const normalized = normalizeRecords("preview-only-truncation", [

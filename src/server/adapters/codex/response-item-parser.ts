@@ -8,11 +8,11 @@ import {
   type ParsedDirective,
 } from "./message-normalizer.js";
 import { isObject } from "./rollout-decoder.js";
-import type { ToolCall, ToolOutput } from "./tool-accumulator.js";
+import type { ToolCall, ToolOutput } from "./tool-normalizer.js";
 import {
   parseUserInputQuestions,
   type UserInputRequest,
-} from "./user-input-accumulator.js";
+} from "./user-input-normalizer.js";
 
 export type ParsedResponseItem =
   | { readonly kind: "directive"; readonly value: ParsedDirective }

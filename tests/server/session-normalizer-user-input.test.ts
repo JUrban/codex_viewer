@@ -101,6 +101,28 @@ describe("request_user_input normalization", () => {
     });
   });
 
+  it("consumes a request after its first response", () => {
+    const normalized = normalizeRecords("duplicate-user-input-output", [
+      userInputRequest(1, "duplicate", QUESTIONS),
+      userInputOutput(2, "duplicate", JSON.stringify({
+        answers: { choice: { answers: ["First"] } },
+      })),
+      userInputOutput(3, "duplicate", JSON.stringify({
+        answers: { choice: { answers: ["Second"] } },
+      })),
+    ]);
+
+    expect(normalized.timeline[1]).toMatchObject({
+      kind: "user_input",
+      stage: "response",
+      outcome: "answered",
+    });
+    expect(normalized.timeline[2]).toMatchObject({
+      kind: "tool",
+      stage: "output",
+      toolName: "unknown tool",
+    });
+  });
 });
 
 function userInputRequest(ordinal: number, callId: string, argumentsValue: unknown) {

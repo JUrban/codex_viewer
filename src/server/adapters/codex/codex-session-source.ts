@@ -27,7 +27,7 @@ import {
 import {
   DefaultSessionNormalizer,
   type SessionNormalizer,
-  type SessionNormalizerAccumulatorState,
+  type SessionNormalizerState,
 } from "./session-normalizer.js";
 
 const EXPECTED_ROLLOUT_IO_ERRORS = new Set([
@@ -54,7 +54,7 @@ interface CodexCacheEntry {
   readonly origin: DomainSessionOrigin;
   readonly checkpoint: RolloutCheckpoint;
   readonly identityState: IdentityAccumulatorState;
-  readonly normalizerState: SessionNormalizerAccumulatorState;
+  readonly normalizerState: SessionNormalizerState;
 }
 
 export interface CodexRefreshTelemetry {

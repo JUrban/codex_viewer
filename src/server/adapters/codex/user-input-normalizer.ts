@@ -8,7 +8,7 @@ import {
   truncateText,
 } from "../../domain/session-text.js";
 import { isObject } from "./rollout-decoder.js";
-import type { ToolOutput } from "./tool-accumulator.js";
+import type { ToolOutput } from "./tool-normalizer.js";
 
 export interface UserInputRequest {
   readonly callId: string;
@@ -18,76 +18,63 @@ export interface UserInputRequest {
   readonly malformed: boolean;
 }
 
-export interface AccumulatedUserInput {
+export interface NormalizedUserInput {
   readonly item: DomainUserInputRecord;
   readonly malformed: boolean;
 }
 
-export class UserInputAccumulator {
-  readonly #latestRequests: Map<string, UserInputRequest>;
+export function normalizeUserInputRequest(
+  request: UserInputRequest,
+): NormalizedUserInput {
+  return {
+    item: {
+      kind: "user_input",
+      stage: "request",
+      id: `user-input-${request.ordinal}`,
+      ordinal: request.ordinal,
+      timestamp: request.timestamp,
+      callId: request.callId,
+      questions: request.questions,
+    },
+    malformed: request.malformed,
+  };
+}
 
-  constructor(latestRequests: ReadonlyMap<string, UserInputRequest> = new Map()) {
-    this.#latestRequests = new Map(latestRequests);
-  }
-
-  fork(): UserInputAccumulator {
-    return new UserInputAccumulator(this.#latestRequests);
-  }
-
-  addRequest(request: UserInputRequest): AccumulatedUserInput {
-    this.#latestRequests.set(request.callId, request);
+export function normalizeUserInputResponse(
+  output: ToolOutput,
+): NormalizedUserInput {
+  const parsed = parseResponse(output.output);
+  const base = {
+    kind: "user_input" as const,
+    stage: "response" as const,
+    id: `user-input-${output.ordinal}`,
+    ordinal: output.ordinal,
+    timestamp: output.timestamp,
+    callId: output.callId,
+  };
+  if (parsed.kind === "answered") {
     return {
-      item: {
-        kind: "user_input",
-        stage: "request",
-        id: `user-input-${request.ordinal}`,
-        ordinal: request.ordinal,
-        timestamp: request.timestamp,
-        callId: request.callId,
-        questions: request.questions,
-      },
-      malformed: request.malformed,
+      item: { ...base, outcome: "answered", answers: parsed.answers },
+      malformed: false,
     };
   }
-
-  hasRequest(callId: string): boolean {
-    return this.#latestRequests.has(callId);
-  }
-
-  addResponse(output: ToolOutput): AccumulatedUserInput {
-    const parsed = parseResponse(output.output);
-    const base = {
-      kind: "user_input" as const,
-      stage: "response" as const,
-      id: `user-input-${output.ordinal}`,
-      ordinal: output.ordinal,
-      timestamp: output.timestamp,
-      callId: output.callId,
-    };
-    if (parsed.kind === "answered") {
-      return {
-        item: { ...base, outcome: "answered", answers: parsed.answers },
-        malformed: false,
-      };
-    }
-    if (parsed.kind === "aborted") {
-      return {
-        item: { ...base, outcome: "aborted" },
-        malformed: false,
-      };
-    }
+  if (parsed.kind === "aborted") {
     return {
-      item: {
-        ...base,
-        outcome: "unavailable",
-        summary: truncateText(
-          output.output ?? "User input response was unavailable.",
-          MAX_PREVIEW_CHARS,
-        ).text,
-      },
-      malformed: true,
+      item: { ...base, outcome: "aborted" },
+      malformed: false,
     };
   }
+  return {
+    item: {
+      ...base,
+      outcome: "unavailable",
+      summary: truncateText(
+        output.output ?? "User input response was unavailable.",
+        MAX_PREVIEW_CHARS,
+      ).text,
+    },
+    malformed: true,
+  };
 }
 
 export function parseUserInputQuestions(value: unknown): readonly DomainUserInputQuestion[] | null {

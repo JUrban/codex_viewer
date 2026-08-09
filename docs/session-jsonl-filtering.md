@@ -2,7 +2,7 @@
 
 This document is the canonical summary of how rollout JSONL records become
 timeline items. Keep it synchronized with `rollout-decoder.ts`,
-`session-normalizer.ts`, `tool-accumulator.ts`, and
+`session-normalizer.ts`, `tool-normalizer.ts`, `user-input-normalizer.ts`, and
 `session-repository.ts`.
 
 ## Decode-time skips

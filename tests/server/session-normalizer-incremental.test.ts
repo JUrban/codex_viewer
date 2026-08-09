@@ -47,7 +47,7 @@ describe("incremental Codex derivation", () => {
     expect(resolver.append(after, [])).toBe(after);
   });
 
-  it("pairs tools and user input across batches without mutating the old snapshot", () => {
+  it("consumes cross-batch matches without mutating the old snapshot", () => {
     const normalizer = new DefaultSessionNormalizer();
     const firstState = normalizer.append(normalizer.create(descriptor), [
       toolCall(1, "tool", "inspect", "input"),
@@ -58,6 +58,8 @@ describe("incremental Codex derivation", () => {
     const before = normalizer.materialize(firstState, sessionMetadata());
     const oldCall = before.timeline[0];
     const oldCallDetail = before.toolDetails.get("tool-1");
+    expect(firstState.pendingToolCalls.size).toBe(1);
+    expect(firstState.pendingUserInputRequests.size).toBe(1);
 
     const secondState = normalizer.append(firstState, [
       toolOutput(5, "tool", "result"),
@@ -68,6 +70,8 @@ describe("incremental Codex derivation", () => {
     ], []);
     const after = normalizer.materialize(secondState, sessionMetadata());
 
+    expect(secondState.pendingToolCalls.size).toBe(0);
+    expect(secondState.pendingUserInputRequests.size).toBe(0);
     expect(after.timeline[0]).toBe(oldCall);
     expect(after.toolDetails.get("tool-1")).toBe(oldCallDetail);
     expect(after.timeline[4]).toMatchObject({
@@ -83,6 +87,38 @@ describe("incremental Codex derivation", () => {
     expect(before.timeline).toHaveLength(4);
     expect(before.toolDetails).toHaveLength(1);
     expect(before.interaction?.bindingAttempt).toMatchObject({ ordinal: 4, valid: true });
+
+    const forkedState = normalizer.append(firstState, [
+      toolOutput(8, "tool", "forked result"),
+      toolOutput(9, "question", JSON.stringify({
+        answers: { choice: { answers: ["First"] } },
+      })),
+    ], []);
+    const forked = normalizer.materialize(forkedState, sessionMetadata());
+    expect(firstState.pendingToolCalls.size).toBe(1);
+    expect(firstState.pendingUserInputRequests.size).toBe(1);
+    expect(forkedState.pendingToolCalls.size).toBe(0);
+    expect(forkedState.pendingUserInputRequests.size).toBe(0);
+    expect(forked.timeline[4]).toMatchObject({
+      kind: "tool", stage: "output", toolName: "inspect", preview: "forked result",
+    });
+    expect(forked.timeline[5]).toMatchObject({
+      kind: "user_input", stage: "response", outcome: "answered",
+    });
+
+    const consumedState = normalizer.append(secondState, [
+      toolOutput(8, "tool", "duplicate tool result"),
+      toolOutput(9, "question", "duplicate user-input result"),
+    ], []);
+    const consumed = normalizer.materialize(consumedState, sessionMetadata());
+    expect(consumed.timeline.slice(7)).toEqual([
+      expect.objectContaining({
+        kind: "tool", stage: "output", toolName: "unknown tool",
+      }),
+      expect.objectContaining({
+        kind: "tool", stage: "output", toolName: "unknown tool",
+      }),
+    ]);
   });
 
   it("recombines cumulative decoder diagnostics ahead of retained normalizer diagnostics", () => {
