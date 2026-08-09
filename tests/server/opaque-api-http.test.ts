@@ -3,7 +3,7 @@ import type { AddressInfo } from "node:net";
 import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { LOOPBACK_HOST, type ServerConfig } from "../../src/server/config.js";
-import { createCodexSessionRepository } from "../../src/server/create-session-repository.js";
+import { createCodexSessionReadService } from "../../src/server/create-session-read-service.js";
 import { createApiRouter } from "../../src/server/http/api-router.js";
 import { createServer } from "../../src/server/http/create-server.js";
 import { SessionLiveService } from "../../src/server/live/session-live-service.js";
@@ -26,7 +26,7 @@ async function startApi(existingHome?: string) {
     writeFile(join(clientDirectory, "index.html"), "<h1>sessions</h1>"),
     writeFile(join(clientDirectory, "session.html"), "<h1>session reader</h1>"),
   ]);
-  const repository = await createCodexSessionRepository(home);
+  const repository = await createCodexSessionReadService(home);
   const config: ServerConfig = {
     host: LOOPBACK_HOST,
     port: 0,
@@ -35,12 +35,14 @@ async function startApi(existingHome?: string) {
     tls: { enabled: false },
     interactionEnabled: false,
   };
-  const server = createServer(config, createApiRouter(repository, {
-    live: new SessionLiveService(repository, {
+  const live = new SessionLiveService(repository, {
       probeIntervalMs: 5,
       waitTimeoutMs: 15,
-    }),
-  }));
+  });
+  const server = createServer(
+    config,
+    createApiRouter({ sessions: repository, live }),
+  );
   servers.push(server);
   await new Promise<void>((done) => server.listen(0, LOOPBACK_HOST, done));
   const { port } = server.address() as AddressInfo;
@@ -94,6 +96,13 @@ describe("opaque cursor API", () => {
 
   it("pages lists with a filter-bound cursor and rejects a stale list", async () => {
     const { base, home } = await startApi();
+    const head = await fetch(
+      `${base}/api/v1/sessions?archiveScope=all&limit=1`,
+      { method: "HEAD" },
+    );
+    expect(head.status).toBe(200);
+    expect(head.headers.get("content-length")).toEqual(expect.any(String));
+    expect(await head.text()).toBe("");
     const first = await fetch(`${base}/api/v1/sessions?archiveScope=all&limit=1`)
       .then((response) => response.json());
     expect(first).toEqual(expect.objectContaining({
@@ -101,6 +110,7 @@ describe("opaque cursor API", () => {
       nextCursor: expect.any(String),
     }));
     expect(Object.keys(first).sort()).toEqual([
+      "diagnostics",
       "nextCursor",
       "projects",
       "sessions",

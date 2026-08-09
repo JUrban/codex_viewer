@@ -7,7 +7,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { LOOPBACK_HOST, type ServerConfig } from "../../src/server/config.js";
 import { createApiRouter } from "../../src/server/http/api-router.js";
 import { createServer, listenServer } from "../../src/server/http/create-server.js";
-import type { SessionRepository } from "../../src/server/repository/session-repository.js";
+import type { SessionReader } from "../../src/server/application/session-reader.js";
+import { SessionLiveService } from "../../src/server/live/session-live-service.js";
 import { createTempDirectory } from "../helpers/temp-directories.js";
 import {
   TEST_CA,
@@ -46,7 +47,7 @@ async function start() {
   return `http://${LOOPBACK_HOST}:${port}`;
 }
 
-async function startWithRepository(repository: SessionRepository, logger: {
+async function startWithRepository(repository: SessionReader, logger: {
   error(message: string, context: { readonly requestId: string; readonly error: unknown }): void;
 }) {
   const clientDirectory = await createTempDirectory("codex-reader-api-client-");
@@ -59,9 +60,10 @@ async function startWithRepository(repository: SessionRepository, logger: {
     tls: { enabled: false },
     interactionEnabled: false,
   };
+  const live = new SessionLiveService(repository);
   const server = createServer(
     config,
-    createApiRouter(repository, {
+    createApiRouter({ sessions: repository, live }, {
       logger,
       requestId: () => "request-fixture",
     }),
@@ -258,12 +260,60 @@ describe("secure HTTP foundation", () => {
     expect((await response.json()).error.code).toBe("not_found");
   });
 
+  it("returns catalog diagnostics in list responses without local paths", async () => {
+    const unavailable = async () => null;
+    const diagnostics = [
+      {
+        code: "session_root_unreadable",
+        severity: "warning" as const,
+        message: "A configured session root could not be read.",
+        ordinal: null,
+      },
+      {
+        code: "rollout_unavailable",
+        severity: "warning" as const,
+        message: "A session rollout is temporarily unavailable.",
+        ordinal: null,
+      },
+      {
+        code: "duplicate_source_session_id",
+        severity: "error" as const,
+        message: "A source returned duplicate stable session identities.",
+        ordinal: null,
+      },
+    ];
+    const sessions: SessionReader = {
+      list: vi.fn().mockResolvedValue({
+        sessions: [],
+        projects: [],
+        total: 0,
+        nextCursor: null,
+        diagnostics,
+      }),
+      getSession: unavailable,
+      getItems: unavailable,
+      getLiveSession: unavailable,
+      getToolDetail: unavailable,
+      getDirectiveDetail: unavailable,
+      getInteractionSession: unavailable,
+      refresh: vi.fn(),
+    };
+    const base = await startWithRepository(sessions, { error: vi.fn() });
+
+    const response = await fetch(`${base}/api/v1/sessions?project=%2Fprivate%2Fproject`);
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.diagnostics).toEqual(diagnostics);
+    expect(JSON.stringify(body)).not.toContain("/private/project");
+  });
+
   it("logs internal API failures and returns only an opaque request ID", async () => {
     const failure = new Error("PRIVATE_INTERNAL_FAILURE");
     const fail = async (): Promise<never> => {
       throw failure;
     };
-    const repository: SessionRepository = {
+    const repository: SessionReader = {
       list: fail,
       getSession: fail,
       getItems: fail,

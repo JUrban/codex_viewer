@@ -1,8 +1,9 @@
 import { commandLineHelp, loadConfig } from "./config.js";
+import { createCodexSessionReadService } from "./create-session-read-service.js";
 import { createApiRouter } from "./http/api-router.js";
 import { createServer, listenServer } from "./http/create-server.js";
-import { createCodexSessionRepository } from "./create-session-repository.js";
 import { SessionInteractionService } from "./interaction/interaction-service.js";
+import { SessionLiveService } from "./live/session-live-service.js";
 
 async function main(): Promise<void> {
   const command = loadConfig();
@@ -12,12 +13,16 @@ async function main(): Promise<void> {
   }
 
   const { config } = command;
-  const repository = await createCodexSessionRepository(config.codexHome);
+  const sessions = await createCodexSessionReadService(config.codexHome);
   const interaction = new SessionInteractionService(
-    repository,
+    sessions,
     config.interactionEnabled,
   );
-  const server = createServer(config, createApiRouter(repository, { interaction }));
+  const live = new SessionLiveService(sessions, { interaction });
+  const server = createServer(
+    config,
+    createApiRouter({ sessions, live, interaction }),
+  );
 
   await listenServer(server, config.port, config.host);
   const address = server.address();

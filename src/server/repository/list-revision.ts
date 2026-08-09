@@ -1,5 +1,5 @@
 import { createHmac, randomBytes } from "node:crypto";
-import type { SessionListQuery } from "../../shared/api-contract.js";
+import type { SessionListCriteria } from "./session-query-criteria.js";
 
 export interface CanonicalListFilters {
   readonly project: string | null;
@@ -13,7 +13,7 @@ export type ListRevisionFactory = (
   orderedIds: readonly string[],
 ) => string;
 
-export function canonicalListFilters(query: SessionListQuery): CanonicalListFilters {
+export function canonicalListFilters(query: SessionListCriteria): CanonicalListFilters {
   return {
     project: query.project ?? null,
     from: query.from === undefined ? null : new Date(query.from).toISOString(),

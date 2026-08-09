@@ -2,15 +2,15 @@ import { describe, expect, it, vi } from "vitest";
 import { SessionInteractionService } from "../../src/server/interaction/interaction-service.js";
 import type {
   InteractionSessionSnapshot,
-  SessionRepository,
-} from "../../src/server/repository/session-repository.js";
+  SessionReader,
+} from "../../src/server/application/session-reader.js";
 import {
   CODEX_INTERACTION_KEY_BINDINGS,
   CODEX_TMUX_ACTIVATION,
 } from "../../src/server/adapters/codex/interaction-parser.js";
 import type { TmuxInteractionService } from "../../src/server/interaction/tmux-service.js";
 
-function repository(snapshot: InteractionSessionSnapshot | null): SessionRepository {
+function repository(snapshot: InteractionSessionSnapshot | null): SessionReader {
   return {
     list: vi.fn(),
     getSession: vi.fn(),

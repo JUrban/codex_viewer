@@ -2,16 +2,16 @@ import { appendFile, cp, mkdir, readFile, rename, writeFile } from "node:fs/prom
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
-  createCodexSessionRepository,
-} from "../../src/server/create-session-repository.js";
+  createCodexSessionReadService,
+} from "../../src/server/create-session-read-service.js";
 import type {
   SessionSource,
   SourceSessionEntry,
 } from "../../src/server/source/session-source.js";
 import {
-  DefaultSessionRepository,
+  SessionReadService,
   MAX_ITEM_PAGE_BYTES,
-} from "../../src/server/repository/session-repository.js";
+} from "../../src/server/application/session-read-service.js";
 import type {
   DomainTimelineRecord,
   NormalizedSession,
@@ -21,10 +21,10 @@ import { createTempDirectory } from "../helpers/temp-directories.js";
 async function fixtureRepository() {
   const home = await createTempDirectory("codex-repository-");
   await cp(resolve("tests/fixtures/codex-home"), home, { recursive: true });
-  return { home, repository: await createCodexSessionRepository(home) };
+  return { home, repository: await createCodexSessionReadService(home) };
 }
 
-describe("DefaultSessionRepository", () => {
+describe("SessionReadService", () => {
   it("coalesces concurrent refreshes, reuses a fresh snapshot, and permits a forced refresh", async () => {
     let discoveries = 0;
     let now = 0;
@@ -45,7 +45,7 @@ describe("DefaultSessionRepository", () => {
         return { signature: "empty", sessions: [], diagnostics: [] };
       },
     };
-    const repository = new DefaultSessionRepository(
+    const repository = new SessionReadService(
       [source],
       undefined,
       () => now,
@@ -90,8 +90,11 @@ describe("DefaultSessionRepository", () => {
         };
       },
     };
-    const repository = new DefaultSessionRepository([source]);
+    const repository = new SessionReadService([source]);
     const first = await repository.list({});
+    expect(first.diagnostics).toEqual(diagnostics);
+    first.diagnostics[0]!.message = "mutated response";
+    expect(diagnostics[0]!.message).toBe("temporarily unavailable");
 
     signature = "recovered";
     diagnostics = [];
@@ -99,6 +102,101 @@ describe("DefaultSessionRepository", () => {
 
     const recovered = await repository.list({});
     expect(recovered.sessions).toEqual(first.sessions);
+    expect(recovered.diagnostics).toEqual([]);
+  });
+
+  it("returns catalog diagnostics independently of list filters and without source paths", async () => {
+    const source = {
+      ...staticSource("catalog-diagnostics", []),
+      async refresh() {
+        const duplicate = sourceEntry(
+          "duplicate",
+          normalizedSession("duplicate", "Duplicate", "/project/a", []),
+        );
+        return {
+          signature: "catalog-diagnostics",
+          sessions: [duplicate, duplicate],
+          diagnostics: [
+            {
+              code: "session_root_unreadable",
+              severity: "warning" as const,
+              message: "A configured session root could not be read.",
+              ordinal: null,
+            },
+            {
+              code: "rollout_unavailable",
+              severity: "warning" as const,
+              message: "A session rollout is temporarily unavailable.",
+              ordinal: null,
+            },
+          ],
+        };
+      },
+    };
+    const sessions = new SessionReadService([source]);
+
+    const result = await sessions.list({
+      project: "/project/missing",
+      from: "2026-06-01T00:00:00.000Z",
+      archiveScope: "archived",
+      limit: 1,
+    });
+
+    expect(result.sessions).toEqual([]);
+    expect(result.diagnostics.map(({ code }) => code)).toEqual([
+      "session_root_unreadable",
+      "rollout_unavailable",
+      "duplicate_source_session_id",
+    ]);
+    expect(JSON.stringify(result.diagnostics)).not.toContain("/private/");
+  });
+
+  it("computes project facets before applying the selected project", async () => {
+    const archived = normalizedSession(
+      "archived",
+      "Archived",
+      "/project/archived",
+      [],
+      "2026-04-01T00:00:00.000Z",
+    );
+    const sessions = new SessionReadService([staticSource("facets", [
+      sourceEntry(
+        "a",
+        normalizedSession("a", "Project A", "/project/a", [], "2026-02-01T00:00:00.000Z"),
+      ),
+      sourceEntry(
+        "b",
+        normalizedSession("b", "Project B", "/project/b", [], "2026-03-01T00:00:00.000Z"),
+      ),
+      sourceEntry(
+        "outside-date",
+        normalizedSession("outside-date", "Old", "/project/old", [], "2025-03-01T00:00:00.000Z"),
+      ),
+      sourceEntry("archived", {
+        ...archived,
+        session: { ...archived.session, archived: true },
+      }),
+    ])]);
+    const range = {
+      project: "/project/a",
+      from: "2026-01-01T00:00:00.000Z",
+      to: "2026-12-31T23:59:59.999Z",
+    } as const;
+
+    const active = await sessions.list({ ...range, archiveScope: "active" });
+    expect(active.sessions.map(({ cwd }) => cwd)).toEqual(["/project/a"]);
+    expect(active.total).toBe(1);
+    expect(active.projects).toEqual([
+      { project: "/project/a", count: 1 },
+      { project: "/project/b", count: 1 },
+    ]);
+
+    const all = await sessions.list({ ...range, archiveScope: "all" });
+    expect(all.projects).toEqual([
+      { project: "/project/a", count: 1 },
+      { project: "/project/archived", count: 1 },
+      { project: "/project/b", count: 1 },
+    ]);
   });
 
   it("publishes linked summaries, pages one immutable revision, and replaces it after append", async () => {
@@ -190,7 +288,7 @@ describe("DefaultSessionRepository", () => {
       '{"timestamp":"2026-07-28T10:00:00Z","type":"session_meta","payload":{"id":"tool-append","title":"Tool append"}}\n' +
       '{"timestamp":"2026-07-28T10:00:01Z","type":"response_item","payload":{"type":"function_call","name":"inspect","arguments":"input","call_id":"stable-call"}}\n',
     );
-    const repository = await createCodexSessionRepository(home);
+    const repository = await createCodexSessionReadService(home);
     const listed = await repository.list({});
     const sessionId = listed.sessions[0]!.id;
     const callPage = await repository.getItems(sessionId, {
@@ -257,7 +355,7 @@ describe("DefaultSessionRepository", () => {
       rollout,
       '{"timestamp":"2026-07-28T10:00:00Z","type":"session_meta","payload":{"id":"silent-tail","title":"Silent tail"}}\n',
     );
-    const repository = await createCodexSessionRepository(home);
+    const repository = await createCodexSessionReadService(home);
     const sessionId = (await repository.list({})).sessions[0]!.id;
     const before = await repository.getSession(sessionId);
     const beforePage = await repository.getItems(sessionId, {});
@@ -337,7 +435,7 @@ describe("DefaultSessionRepository", () => {
         };
       },
     };
-    const repository = new DefaultSessionRepository([source]);
+    const repository = new SessionReadService([source]);
     const list = await repository.list({});
     const sessionAId = list.sessions.find((session) => session.title === "Session A")!.id;
     const first = await repository.getItems(sessionAId, {
@@ -412,7 +510,7 @@ describe("DefaultSessionRepository", () => {
         };
       },
     };
-    const repository = new DefaultSessionRepository([source]);
+    const repository = new SessionReadService([source]);
     const firstList = await repository.list({});
     const parentId = firstList.sessions.find(
       (session) => session.title === "Parent",
@@ -483,7 +581,7 @@ describe("DefaultSessionRepository", () => {
         markdown: `Message ${index + 1}`,
       }),
     );
-    const repository = new DefaultSessionRepository(
+    const repository = new SessionReadService(
       [staticSource("timeline-default", [
         sourceEntry(
           "timeline-default",
@@ -505,7 +603,7 @@ describe("DefaultSessionRepository", () => {
       join(home, "sessions/rollout-active.jsonl"),
       '{"timestamp":"2026-07-28T10:00:00.000Z","type":"session_meta","payload":{"id":"active-session","title":"Active trace"}}\n',
     );
-    const repository = await createCodexSessionRepository(home);
+    const repository = await createCodexSessionReadService(home);
     expect((await repository.list({ archiveScope: "all" })).sessions).toHaveLength(1);
 
     await mkdir(join(home, "archived_sessions"), { recursive: true });
@@ -572,7 +670,7 @@ describe("DefaultSessionRepository", () => {
         ),
       )
     );
-    const repository = new DefaultSessionRepository(
+    const repository = new SessionReadService(
       [staticSource("large", entries)],
     );
 
@@ -607,7 +705,7 @@ describe("DefaultSessionRepository", () => {
         markdown: longText,
       }),
     );
-    const repository = new DefaultSessionRepository(
+    const repository = new SessionReadService(
       [staticSource("long", [
         sourceEntry(
           "long-session",

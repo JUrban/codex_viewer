@@ -1,4 +1,5 @@
 import type {
+  Diagnostic,
   ItemId,
   SessionDetail,
   SessionSummary,
@@ -57,6 +58,7 @@ export interface SessionListResponse {
   projects: ProjectFacet[];
   total: number;
   nextCursor: ListCursor | null;
+  diagnostics: Diagnostic[];
 }
 
 export interface SessionDetailResponse {

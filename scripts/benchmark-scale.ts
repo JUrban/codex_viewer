@@ -13,8 +13,8 @@ import { performance } from "node:perf_hooks";
 import { createCodexSessionSource } from "../src/server/adapters/codex/codex-session-source.js";
 import {
   DEFAULT_CATALOG_FRESHNESS_MS,
-  DefaultSessionRepository,
-} from "../src/server/repository/session-repository.js";
+  SessionReadService,
+} from "../src/server/application/session-read-service.js";
 import {
   deriveTimelinePrefixIndex,
   extendsTimelinePrefix,
@@ -49,7 +49,7 @@ try {
   const prefixIndexBytesBySession = new Map<string, number>();
   const timelineItemsBySession = new Map<string, number>();
   const source = await createCodexSessionSource(root);
-  const repository = new DefaultSessionRepository(
+  const repository = new SessionReadService(
     [source],
     DEFAULT_CATALOG_FRESHNESS_MS,
     performance.now.bind(performance),
@@ -491,14 +491,14 @@ function round(value: number): number {
   return Math.round(value * 10) / 10;
 }
 
-type Repository = DefaultSessionRepository;
+type Reader = SessionReadService;
 
 async function assertCursorReadable(
-  repository: Repository,
+  sessions: Reader,
   sessionId: string,
   cursor: import("../src/shared/api-contract.js").TimelineCursor,
 ): Promise<void> {
-  const page = await repository.getItems(sessionId, {
+  const page = await sessions.getItems(sessionId, {
     cursor,
     limit: 1,
   });

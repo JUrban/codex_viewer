@@ -21,6 +21,7 @@ import {
 } from "./timeline-prefix-registry.js";
 
 export const DEFAULT_CATALOG_FRESHNESS_MS = 1_500;
+export const MAX_CATALOG_DIAGNOSTICS = 50;
 
 export interface CatalogSnapshot {
   readonly signature: string;
@@ -83,10 +84,19 @@ export class CatalogSnapshotStore {
     const previous = this.#snapshot;
     if (previous?.signature === signature) return previous;
 
-    const sourceDiagnostics = loadedSources.flatMap(({ snapshot }) =>
-      snapshot.diagnostics.map((item) => ({ ...item }))
+    const sourceDiagnostics: DomainDiagnostic[] = [];
+    for (const { snapshot } of loadedSources) {
+      if (sourceDiagnostics.length >= MAX_CATALOG_DIAGNOSTICS) break;
+      for (const item of snapshot.diagnostics) {
+        if (sourceDiagnostics.length >= MAX_CATALOG_DIAGNOSTICS) break;
+        sourceDiagnostics.push({ ...item });
+      }
+    }
+    const linked = linkRelationships(
+      loadedSources,
+      this.#aggregate,
+      MAX_CATALOG_DIAGNOSTICS - sourceDiagnostics.length,
     );
-    const linked = linkRelationships(loadedSources, this.#aggregate);
     const diagnostics = [...sourceDiagnostics, ...linked.diagnostics];
     const normalizedSessions = linked.sessions;
     const orderedIds = [...normalizedSessions.values()]
@@ -182,6 +192,7 @@ function aggregateSignature(sources: readonly LoadedSource[]): string {
 function linkRelationships(
   sources: readonly LoadedSource[],
   previous: AggregateState | null,
+  diagnosticLimit: number,
 ): LinkedSessions {
   const diagnostics: DomainDiagnostic[] = [];
   const inputs = new Map<DomainSessionId, PendingSession>();
@@ -191,12 +202,14 @@ function linkRelationships(
     const localIds = new Set<string>();
     for (const entry of snapshot.sessions) {
       if (localIds.has(entry.localId)) {
-        diagnostics.push({
-          code: "duplicate_source_session_id",
-          severity: "error",
-          message: "A source returned duplicate stable session identities.",
-          ordinal: null,
-        });
+        if (diagnostics.length < diagnosticLimit) {
+          diagnostics.push({
+            code: "duplicate_source_session_id",
+            severity: "error",
+            message: "A source returned duplicate stable session identities.",
+            ordinal: null,
+          });
+        }
         continue;
       }
       localIds.add(entry.localId);

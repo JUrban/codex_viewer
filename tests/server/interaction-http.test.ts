@@ -5,7 +5,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { LOOPBACK_HOST, type ServerConfig } from "../../src/server/config.js";
 import { createApiRouter } from "../../src/server/http/api-router.js";
 import { createServer } from "../../src/server/http/create-server.js";
-import type { SessionRepository } from "../../src/server/repository/session-repository.js";
+import type { SessionReader } from "../../src/server/application/session-reader.js";
+import { SessionLiveService } from "../../src/server/live/session-live-service.js";
 import { createTempDirectory } from "../helpers/temp-directories.js";
 
 const SESSION_ID = "abcdefghijklmnopqrstuvwxyzABCDEFGH123456789";
@@ -20,7 +21,7 @@ async function start() {
   const clientDirectory = await createTempDirectory("codex-interaction-http-");
   await writeFile(join(clientDirectory, "index.html"), "viewer");
   const unavailable = async () => null;
-  const repository: SessionRepository = {
+  const repository: SessionReader = {
     list: vi.fn(),
     getSession: vi.fn().mockResolvedValue({ context: { source: "detail" } }),
     getItems: unavailable,
@@ -52,7 +53,11 @@ async function start() {
     tls: { enabled: false },
     interactionEnabled: true,
   };
-  const server = createServer(config, createApiRouter(repository, { interaction }));
+  const live = new SessionLiveService(repository);
+  const server = createServer(
+    config,
+    createApiRouter({ sessions: repository, live, interaction }),
+  );
   servers.push(server);
   await new Promise<void>((resolve) => server.listen(0, LOOPBACK_HOST, resolve));
   const { port } = server.address() as AddressInfo;

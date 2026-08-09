@@ -5,9 +5,9 @@ import type { SessionDetail } from "../../src/shared/domain.js";
 import { createProcessLiveRevisionFactory } from "../../src/server/live/live-revision.js";
 import { SessionLiveService } from "../../src/server/live/session-live-service.js";
 import type {
-  RepositoryLiveSessionSnapshot,
-  SessionRepository,
-} from "../../src/server/repository/session-repository.js";
+  LiveSessionSnapshot,
+  SessionReader,
+} from "../../src/server/application/session-reader.js";
 
 const CURSOR = "opaque.timeline.cursor" as TimelineCursor;
 const REVISION = "a".repeat(43) as LiveRevision;
@@ -127,14 +127,14 @@ function createService(
   const repository = {
     getLiveSession,
     getInteractionSession: vi.fn().mockResolvedValue(null),
-  } as unknown as SessionRepository;
+  } as unknown as SessionReader;
   return new SessionLiveService(repository, {
     createRevision: () => REVISION,
     ...options,
   });
 }
 
-function snapshot(hasMore: boolean, interaction = false): RepositoryLiveSessionSnapshot {
+function snapshot(hasMore: boolean, interaction = false): LiveSessionSnapshot {
   return {
     session: SESSION,
     cursor: CURSOR,

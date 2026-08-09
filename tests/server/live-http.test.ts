@@ -8,7 +8,7 @@ import { LOOPBACK_HOST, type ServerConfig } from "../../src/server/config.js";
 import { createApiRouter } from "../../src/server/http/api-router.js";
 import { createServer } from "../../src/server/http/create-server.js";
 import { SessionLiveService } from "../../src/server/live/session-live-service.js";
-import type { SessionRepository } from "../../src/server/repository/session-repository.js";
+import type { SessionReader } from "../../src/server/application/session-reader.js";
 import { createTempDirectory } from "../helpers/temp-directories.js";
 
 const SESSION_ID = "abcdefghijklmnopqrstuvwx";
@@ -25,8 +25,28 @@ afterEach(async () => {
 });
 
 describe("Live update HTTP API", () => {
+  it("closes the injected Live service when the API router closes", () => {
+    const unavailable = async () => null;
+    const sessions = {
+      list: vi.fn(),
+      getSession: unavailable,
+      getItems: unavailable,
+      getLiveSession: unavailable,
+      getToolDetail: unavailable,
+      getDirectiveDetail: unavailable,
+      getInteractionSession: unavailable,
+      refresh: vi.fn(),
+    } satisfies SessionReader;
+    const live = new SessionLiveService(sessions);
+    const close = vi.spyOn(live, "close");
+
+    createApiRouter({ sessions, live }).close?.();
+
+    expect(close).toHaveBeenCalledOnce();
+  });
+
   it("returns 200, 204, 400, and 404 with no-store semantics", async () => {
-    const getLiveSession = vi.fn<SessionRepository["getLiveSession"]>()
+    const getLiveSession = vi.fn<SessionReader["getLiveSession"]>()
       .mockResolvedValue(snapshot(false));
     const { base } = await start(getLiveSession, { waitTimeoutMs: 12, probeIntervalMs: 4 });
     const changed = await fetch(url(base, OTHER_REVISION));
@@ -48,7 +68,7 @@ describe("Live update HTTP API", () => {
   });
 
   it("returns 429 at capacity and releases the slot when the client disconnects", async () => {
-    const getLiveSession = vi.fn<SessionRepository["getLiveSession"]>()
+    const getLiveSession = vi.fn<SessionReader["getLiveSession"]>()
       .mockResolvedValue(snapshot(false));
     const { base } = await start(getLiveSession, {
       waitTimeoutMs: 5_000,
@@ -74,7 +94,7 @@ describe("Live update HTTP API", () => {
 });
 
 async function start(
-  getLiveSession: SessionRepository["getLiveSession"],
+  getLiveSession: SessionReader["getLiveSession"],
   options: ConstructorParameters<typeof SessionLiveService>[1],
 ) {
   const clientDirectory = await createTempDirectory("codex-live-http-");
@@ -89,7 +109,7 @@ async function start(
     getDirectiveDetail: unavailable,
     getInteractionSession: unavailable,
     refresh: vi.fn(),
-  } satisfies SessionRepository;
+  } satisfies SessionReader;
   const live = new SessionLiveService(repository, {
     createRevision: () => REVISION,
     ...options,
@@ -102,7 +122,10 @@ async function start(
     tls: { enabled: false },
     interactionEnabled: false,
   };
-  const server = createServer(config, createApiRouter(repository, { live }));
+  const server = createServer(
+    config,
+    createApiRouter({ sessions: repository, live }),
+  );
   servers.push(server);
   await new Promise<void>((resolve) => server.listen(0, LOOPBACK_HOST, resolve));
   const { port } = server.address() as AddressInfo;

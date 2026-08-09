@@ -20,7 +20,7 @@ import {
 import { JsonlCatalogSource } from "./jsonl-catalog-source.js";
 import { DECODER_VERSION, NORMALIZER_VERSION } from "./limits.js";
 import {
-  WholeFileRolloutDecoder,
+  CheckpointedRolloutDecoder,
   type RolloutCheckpoint,
   type RolloutDecoder,
 } from "./rollout-decoder.js";
@@ -91,7 +91,7 @@ export class CodexSessionSource implements SessionSource {
   constructor(
     private readonly codexHome: string,
     instanceKey: string,
-    private readonly decoder: RolloutDecoder = new WholeFileRolloutDecoder(),
+    private readonly decoder: RolloutDecoder = new CheckpointedRolloutDecoder(),
     private readonly identity = new IdentityResolver(),
     private readonly normalizer: SessionNormalizer = new DefaultSessionNormalizer(),
   ) {

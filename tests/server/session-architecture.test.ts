@@ -9,12 +9,13 @@ import type {
 } from "../../src/server/domain/session-domain.js";
 import {
   CatalogSnapshotStore,
+  MAX_CATALOG_DIAGNOSTICS,
   type CatalogSnapshot,
 } from "../../src/server/repository/catalog-snapshot-store.js";
 import {
   RepositoryQueryError,
-  SessionQueryService,
-} from "../../src/server/repository/session-query-service.js";
+  SessionQueries,
+} from "../../src/server/repository/session-queries.js";
 import { deriveTimelinePrefixIndex } from "../../src/server/repository/timeline-prefix-index.js";
 import type {
   SessionSource,
@@ -80,6 +81,7 @@ const normalized: NormalizedSession = {
 describe("server architecture boundaries", () => {
   it("keeps generic server modules independent from the Codex adapter", async () => {
     const genericDirectories = [
+      "application",
       "api",
       "domain",
       "http",
@@ -103,13 +105,39 @@ describe("server architecture boundaries", () => {
     }
   });
 
+  it("keeps repository queries independent from API contracts and mapping", async () => {
+    const repositoryFiles = await typescriptFiles(resolve("src/server/repository"));
+    for (const file of repositoryFiles) {
+      const source = await readFile(file, "utf8");
+      expect(source, file).not.toMatch(/shared\/api-contract|server\/api|SessionApiMapper/);
+    }
+
+    const application = await readFile(
+      resolve("src/server/application/session-read-service.ts"),
+      "utf8",
+    );
+    expect(application).toContain("SessionApiMapper");
+    expect(application).toContain("CatalogSnapshotStore");
+    expect(application).toContain("SessionQueries");
+  });
+
   it("maps domain values exactly without leaking private summary fields or mutable references", () => {
     const mapper = new SessionApiMapper();
-    const queries = new SessionQueryService();
+    const queries = new SessionQueries();
     const read = queries.session(snapshotOf(normalized), "session-one")!;
     const detail = mapper.detail(read);
     const summary = mapper.summary(session);
     const item = mapper.timelineItem(timeline[0]!);
+    const catalogDiagnostic = {
+      code: "catalog_warning",
+      severity: "warning" as const,
+      message: "Catalog warning",
+      ordinal: null,
+    };
+    const catalog = mapper.list(
+      queries.list(snapshotOf(normalized), {}),
+      [catalogDiagnostic],
+    );
 
     expect(summary).toEqual({
       id: "session-one",
@@ -147,14 +175,17 @@ describe("server architecture boundaries", () => {
         itemCount: 1,
       },
     });
+    expect(catalog.diagnostics).toEqual([catalogDiagnostic]);
 
     summary.childIds.push("mutated");
     detail.session.diagnostics[0]!.message = "mutated";
+    catalog.diagnostics[0]!.message = "mutated";
     if (item.kind === "token" && item.tokenUsage.total) {
       item.tokenUsage.total.totalTokens = 99;
     }
     expect(session.childIds).toEqual(["child"]);
     expect(session.diagnostics[0]!.message).toBe("Partial");
+    expect(catalogDiagnostic.message).toBe("Catalog warning");
     expect(
       timeline[0]?.kind === "token"
         ? timeline[0].tokenUsage.total?.totalTokens
@@ -162,8 +193,36 @@ describe("server architecture boundaries", () => {
     ).toBe(10);
   });
 
+  it("limits catalog diagnostics while preserving their order", async () => {
+    const diagnostics = Array.from(
+      { length: MAX_CATALOG_DIAGNOSTICS + 1 },
+      (_, index) => ({
+        code: `catalog_warning_${index + 1}`,
+        severity: "warning" as const,
+        message: `Catalog warning ${index + 1}`,
+        ordinal: null,
+      }),
+    );
+    const source = {
+      ...testSource("catalog-diagnostics", []),
+      async refresh() {
+        return {
+          signature: "catalog-diagnostics",
+          sessions: [],
+          diagnostics,
+        };
+      },
+    };
+
+    const snapshot = await new CatalogSnapshotStore([source]).current();
+
+    expect(snapshot.diagnostics).toEqual(
+      diagnostics.slice(0, MAX_CATALOG_DIAGNOSTICS),
+    );
+  });
+
   it("rejects a cursor after its confirmed timeline prefix changes", () => {
-    const queries = new SessionQueryService();
+    const queries = new SessionQueries();
     const first = queries.items(snapshotOf(normalized), session.id, {})!;
     const changed: NormalizedSession = {
       ...normalized,
@@ -222,7 +281,7 @@ describe("server architecture boundaries", () => {
     expect(first.signature).toBe(reordered.signature);
     expect(first.signature).toBe(reorderedEntries.signature);
     expect(first.orderedIds).toEqual(reordered.orderedIds);
-    const queries = new SessionQueryService();
+    const queries = new SessionQueries();
     expect(queries.list(first, { archiveScope: "all" }).sessions)
       .toEqual(queries.list(reordered, { archiveScope: "all" }).sessions);
     expect([...first.sessions.keys()].sort()).toEqual(
@@ -257,7 +316,7 @@ describe("server architecture boundaries", () => {
     const reversed = await new CatalogSnapshotStore([sourceB, sourceA]).current();
 
     expect(first.orderedIds).toEqual(reversed.orderedIds);
-    const queries = new SessionQueryService();
+    const queries = new SessionQueries();
     const firstResult = queries.list(first, {});
     const reversedResult = queries.list(reversed, {});
     expect(firstResult.sessions.map(({ id }) => id)).toEqual(

@@ -1,3 +1,4 @@
+import { DiagnosticNotice } from "./components/DiagnosticNotice";
 import { EmptyState } from "./components/EmptyState";
 import { ErrorState } from "./components/ErrorState";
 import { SessionFilters } from "./components/SessionFilters";
@@ -37,6 +38,10 @@ export function App() {
           filters={filterState.filters}
           projects={catalog.list?.projects ?? []}
           onChange={filterState.setFilters}
+        />
+        <DiagnosticNotice
+          diagnostics={catalog.list?.diagnostics ?? []}
+          label="Catalog diagnostics"
         />
         {catalog.listError
           ? <ErrorState title="Could not load sessions" message={catalog.listError} onDismiss={catalog.clearListError} />

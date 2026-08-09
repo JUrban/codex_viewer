@@ -1,8 +1,10 @@
 import type {
   DirectiveDetailResponse,
   ItemPageResponse,
+  ListCursor,
   SessionDetailResponse,
   SessionListResponse,
+  TimelineCursor,
   ToolDetailResponse,
 } from "../../shared/api-contract.js";
 import type {
@@ -21,15 +23,19 @@ import type {
   ItemPageResult,
   SessionListResult,
   ToolDetailResult,
-} from "../repository/session-query-service.js";
+} from "../repository/session-queries.js";
 
 export class SessionApiMapper {
-  list(result: SessionListResult): SessionListResponse {
+  list(
+    result: SessionListResult,
+    diagnostics: readonly DomainDiagnostic[],
+  ): SessionListResponse {
     return {
       sessions: result.sessions.map((session) => this.summary(session)),
       projects: result.projects.map((facet) => ({ ...facet })),
       total: result.total,
-      nextCursor: result.nextCursor,
+      nextCursor: result.nextCursor as ListCursor | null,
+      diagnostics: diagnostics.map((item) => this.diagnostic(item)),
     };
   }
 
@@ -40,7 +46,7 @@ export class SessionApiMapper {
   itemPage(result: ItemPageResult): Omit<ItemPageResponse, "interaction" | "liveRevision"> {
     return {
       session: this.sessionDetail(result.context.session),
-      cursor: result.context.cursor,
+      cursor: result.context.cursor as TimelineCursor,
       hasMore: result.context.hasMore,
       items: result.items.map((item) => this.timelineItem(item)),
     };

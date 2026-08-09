@@ -1,12 +1,12 @@
 import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { WholeFileRolloutDecoder } from "../../src/server/adapters/codex/rollout-decoder.js";
+import { CheckpointedRolloutDecoder } from "../../src/server/adapters/codex/rollout-decoder.js";
 import { MAX_JSONL_LINE_BYTES } from "../../src/server/adapters/codex/limits.js";
 import { PathPolicy } from "../../src/server/adapters/codex/path-policy.js";
 import { createTempDirectory } from "../helpers/temp-directories.js";
 
-describe("WholeFileRolloutDecoder", () => {
+describe("CheckpointedRolloutDecoder", () => {
   it("keeps physical ordinals, continues after malformed records, and ignores a partial tail", async () => {
     const home = await createTempDirectory("codex-decode-");
     const directory = join(home, "sessions", "2026", "07", "28");
@@ -18,7 +18,7 @@ describe("WholeFileRolloutDecoder", () => {
     const descriptor = await policy.register(path);
     expect(descriptor).not.toBeNull();
 
-    const decoded = await new WholeFileRolloutDecoder().decode(descriptor!);
+    const decoded = await new CheckpointedRolloutDecoder().decode(descriptor!);
     expect(decoded.records.map((record) => [record.ordinal, record.value.type])).toEqual([
       [1, "one"],
       [3, "three"],
@@ -39,7 +39,7 @@ describe("WholeFileRolloutDecoder", () => {
       Buffer.from('{"type":"committed"}\n'),
       tail,
     ]));
-    const decoder = new WholeFileRolloutDecoder();
+    const decoder = new CheckpointedRolloutDecoder();
     const before = await decoder.decode(descriptor);
     expect(before.records.map((record) => record.value.type)).toEqual(["committed"]);
     expect(before.diagnostics).toEqual([]);
@@ -64,7 +64,7 @@ describe("WholeFileRolloutDecoder", () => {
   it("warns about an oversized line only after its terminating newline arrives", async () => {
     const oversized = Buffer.alloc(8 * 1024 * 1024 + 1, 0x78);
     const { path, descriptor } = await rollout("oversized-tail", oversized);
-    const decoder = new WholeFileRolloutDecoder();
+    const decoder = new CheckpointedRolloutDecoder();
 
     const before = await decoder.decode(descriptor);
     expect(before.diagnostics).toEqual([]);
@@ -83,7 +83,7 @@ describe("WholeFileRolloutDecoder", () => {
     const { path, descriptor } = await rollout("crlf-limit", "");
     await appendFile(path, `${line}\r\n`);
 
-    const decoded = await new WholeFileRolloutDecoder().decode(descriptor);
+    const decoded = await new CheckpointedRolloutDecoder().decode(descriptor);
     const value = decoded.records[0]?.value.value;
 
     expect(decoded.mode).toBe("full");
@@ -99,7 +99,7 @@ describe("WholeFileRolloutDecoder", () => {
       "crlf-append",
       '{"type":"first"}\n',
     );
-    const decoder = new WholeFileRolloutDecoder();
+    const decoder = new CheckpointedRolloutDecoder();
     const before = await decoder.decode(descriptor);
     await appendFile(path, '{"type":"second"}\r\n');
 
@@ -129,7 +129,7 @@ describe("WholeFileRolloutDecoder", () => {
     const descriptor = await policy.register(path);
     expect(descriptor).not.toBeNull();
 
-    const decoded = await new WholeFileRolloutDecoder().decode(descriptor!);
+    const decoded = await new CheckpointedRolloutDecoder().decode(descriptor!);
 
     expect(decoded.diagnostics).toHaveLength(50);
     expect(decoded.diagnostics.map((diagnostic) => diagnostic.ordinal)).toEqual(
@@ -145,7 +145,7 @@ describe("WholeFileRolloutDecoder", () => {
       '{"type":"one"}\nmalformed\n{"type":"pending"}',
     );
     const { path, descriptor } = await rollout("checkpoint-append", initial);
-    const decoder = new WholeFileRolloutDecoder();
+    const decoder = new CheckpointedRolloutDecoder();
     const before = await decoder.decode(descriptor);
 
     expect(before.mode).toBe("full");
@@ -187,7 +187,7 @@ describe("WholeFileRolloutDecoder", () => {
       "checkpoint-tail",
       '{"type":"one"}\nmalformed',
     );
-    const decoder = new WholeFileRolloutDecoder();
+    const decoder = new CheckpointedRolloutDecoder();
     const first = await decoder.decode(descriptor);
     expect(first.records).toEqual([
       expect.objectContaining({ ordinal: 1, value: { type: "one" } }),
@@ -218,7 +218,7 @@ describe("WholeFileRolloutDecoder", () => {
     async (probe) => {
       const prefix = `${'{"type":"first"}\n'}${" ".repeat(9_000)}`;
       const { path, descriptor } = await rollout("checkpoint-probe", prefix);
-      const decoder = new WholeFileRolloutDecoder();
+      const decoder = new CheckpointedRolloutDecoder();
       const first = await decoder.decode(descriptor);
       const changed = Buffer.from(prefix);
       const position = probe === "head" ? 0 : changed.length - 1;
@@ -246,7 +246,7 @@ describe("WholeFileRolloutDecoder", () => {
       "checkpoint-compatibility",
       '{"type":"one"}\n',
     );
-    const decoder = new WholeFileRolloutDecoder();
+    const decoder = new CheckpointedRolloutDecoder();
     const first = await decoder.decode(descriptor);
 
     expect((await decoder.decode(descriptor, first.checkpoint)).mode).toBe("full");
@@ -267,7 +267,7 @@ describe("WholeFileRolloutDecoder", () => {
       "checkpoint-diagnostics",
       `${firstLines}\n`,
     );
-    const decoder = new WholeFileRolloutDecoder();
+    const decoder = new CheckpointedRolloutDecoder();
     const first = await decoder.decode(descriptor);
     expect(first.diagnostics).toHaveLength(49);
 

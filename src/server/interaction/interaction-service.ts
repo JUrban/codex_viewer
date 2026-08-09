@@ -6,8 +6,8 @@ import type {
 import type { InteractionBindingAttempt } from "../domain/session-domain.js";
 import type {
   InteractionSessionSnapshot,
-  SessionRepository,
-} from "../repository/session-repository.js";
+  SessionReader,
+} from "../application/session-reader.js";
 import {
   TmuxInteractionError,
   TmuxInteractionService,
@@ -38,17 +38,19 @@ interface ResolvedBinding extends CachedBinding {
   readonly keyBindings: NonNullable<InteractionSessionSnapshot["interaction"]>["keyBindings"];
 }
 
+type InteractionSessionReader = Pick<SessionReader, "getInteractionSession">;
+
 export class SessionInteractionService {
   readonly #bindings = new Map<string, CachedBinding>();
 
   constructor(
-    private readonly repository: SessionRepository,
+    private readonly sessions: InteractionSessionReader,
     private readonly enabled: boolean,
     private readonly tmux = new TmuxInteractionService(),
   ) {}
 
   async describe(sessionId: string): Promise<InteractionResponse | null> {
-    const session = await this.repository.getInteractionSession(sessionId);
+    const session = await this.sessions.getInteractionSession(sessionId);
     if (session === null) return null;
     return this.describeSnapshot(sessionId, session);
   }
@@ -99,7 +101,7 @@ export class SessionInteractionService {
   }
 
   async #resolve(sessionId: string): Promise<ResolvedBinding> {
-    const session = await this.repository.getInteractionSession(sessionId);
+    const session = await this.sessions.getInteractionSession(sessionId);
     if (session === null) {
       throw new SessionInteractionError("session_not_found", "Session not found");
     }

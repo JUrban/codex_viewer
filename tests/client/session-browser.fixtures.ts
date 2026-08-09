@@ -34,6 +34,7 @@ export const listBody = {
   sessions: [baseSession],
   projects: [{ project: "/project/reader", count: 1 }],
   total: 1, nextCursor: null,
+  diagnostics: [],
 };
 
 const sessionDetail = {

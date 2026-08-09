@@ -3,7 +3,10 @@ import type {
   SessionLiveQuery,
   SessionLiveResponse,
 } from "../../shared/api-contract.js";
-import type { InteractionSessionSnapshot, SessionRepository } from "../repository/session-repository.js";
+import type {
+  InteractionSessionSnapshot,
+  SessionReader,
+} from "../application/session-reader.js";
 import type { SessionInteractionService } from "../interaction/interaction-service.js";
 import {
   createProcessLiveRevisionFactory,
@@ -50,6 +53,11 @@ interface WaiterEntry {
   readonly externalAbort: () => void;
 }
 
+type LiveSessionReader = Pick<
+  SessionReader,
+  "getLiveSession" | "getInteractionSession"
+>;
+
 export class SessionLiveService {
   readonly #createRevision: LiveRevisionFactory;
   readonly #probeIntervalMs: number;
@@ -64,7 +72,7 @@ export class SessionLiveService {
   #closed = false;
 
   constructor(
-    private readonly repository: SessionRepository,
+    private readonly sessions: LiveSessionReader,
     private readonly options: SessionLiveServiceOptions = {},
   ) {
     this.#createRevision = options.createRevision ?? createProcessLiveRevisionFactory();
@@ -81,7 +89,7 @@ export class SessionLiveService {
   }
 
   async describe(sessionId: string): Promise<InteractionResponse> {
-    const input = await this.repository.getInteractionSession(sessionId);
+    const input = await this.sessions.getInteractionSession(sessionId);
     return input === null ? { supported: false } : this.#describeInteraction(sessionId, input);
   }
 
@@ -118,7 +126,7 @@ export class SessionLiveService {
 
   async #probe(sessionId: string, query: SessionLiveQuery): Promise<SessionLiveResponse> {
     this.#throwIfAborted();
-    const snapshot = await this.repository.getLiveSession(sessionId, query.cursor);
+    const snapshot = await this.sessions.getLiveSession(sessionId, query.cursor);
     if (snapshot === null) {
       throw new SessionLiveError("session_not_found", "Session not found");
     }

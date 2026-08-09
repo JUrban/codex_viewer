@@ -1,11 +1,4 @@
 import type {
-  DirectiveDetailQuery,
-  ItemPageQuery,
-  SessionListQuery,
-  TimelineCursor,
-  ToolDetailQuery,
-} from "../../shared/api-contract.js";
-import type {
   DomainDirectiveDetail,
   DomainSession,
   DomainTimelineRecord,
@@ -20,6 +13,12 @@ import {
   type ListRevisionFactory,
 } from "./list-revision.js";
 import { OpaqueCursorCodec } from "./opaque-cursor.js";
+import type {
+  DirectiveDetailCriteria,
+  ItemPageCriteria,
+  SessionListCriteria,
+  ToolDetailCriteria,
+} from "./session-query-criteria.js";
 
 const DEFAULT_LIST_LIMIT = 100;
 const MAX_LIST_LIMIT = 300;
@@ -43,7 +42,7 @@ export interface SessionListResult {
   readonly sessions: readonly DomainSession[];
   readonly projects: readonly ProjectFacet[];
   readonly total: number;
-  readonly nextCursor: import("../../shared/api-contract.js").ListCursor | null;
+  readonly nextCursor: string | null;
 }
 
 export interface ProjectFacet {
@@ -53,7 +52,7 @@ export interface ProjectFacet {
 
 export interface TimelinePageContext {
   readonly session: DomainSession;
-  readonly cursor: TimelineCursor;
+  readonly cursor: string;
   readonly hasMore: boolean;
 }
 
@@ -70,14 +69,14 @@ export interface DirectiveDetailResult {
   readonly detail: DomainDirectiveDetail;
 }
 
-export class SessionQueryService {
+export class SessionQueries {
   constructor(
     private readonly createListRevision: ListRevisionFactory =
       createProcessListRevisionFactory(),
     private readonly cursors = new OpaqueCursorCodec(),
   ) {}
 
-  list(snapshot: CatalogSnapshot, query: SessionListQuery): SessionListResult {
+  list(snapshot: CatalogSnapshot, query: SessionListCriteria): SessionListResult {
     validateListQuery(query);
     const cursorResult = query.cursor === undefined
       ? null
@@ -100,11 +99,12 @@ export class SessionQueryService {
     const projects = new Map<string, number>();
     for (const id of snapshot.orderedIds) {
       const normalized = snapshot.sessions.get(id)?.normalized;
-      if (normalized === undefined || !passesStructuralFilters(normalized.session, query)) {
+      if (normalized === undefined || !passesFacetFilters(normalized.session, query)) {
         continue;
       }
       const session = normalized.session;
       if (session.cwd !== null) projects.set(session.cwd, (projects.get(session.cwd) ?? 0) + 1);
+      if (query.project !== undefined && session.cwd !== query.project) continue;
       matchedSessions.push(session);
     }
     const listRevision = this.createListRevision(
@@ -141,7 +141,7 @@ export class SessionQueryService {
   items(
     snapshot: CatalogSnapshot,
     id: string,
-    query: ItemPageQuery,
+    query: ItemPageCriteria,
   ): ItemPageResult | null {
     validateItemQuery(query);
     const versioned = snapshot.sessions.get(id);
@@ -175,7 +175,7 @@ export class SessionQueryService {
   live(
     snapshot: CatalogSnapshot,
     id: string,
-    cursor: TimelineCursor,
+    cursor: string,
   ): TimelinePageContext | null {
     const versioned = snapshot.sessions.get(id);
     if (versioned === undefined) return null;
@@ -187,7 +187,7 @@ export class SessionQueryService {
     snapshot: CatalogSnapshot,
     id: string,
     itemId: string,
-    query: ToolDetailQuery,
+    query: ToolDetailCriteria,
   ): ToolDetailResult | null {
     const versioned = snapshot.sessions.get(id);
     if (versioned === undefined) return null;
@@ -207,7 +207,7 @@ export class SessionQueryService {
     snapshot: CatalogSnapshot,
     id: string,
     itemId: string,
-    query: DirectiveDetailQuery,
+    query: DirectiveDetailCriteria,
   ): DirectiveDetailResult | null {
     const versioned = snapshot.sessions.get(id);
     if (versioned === undefined) return null;
@@ -226,7 +226,7 @@ export class SessionQueryService {
   #resolveReadBoundary(
     id: string,
     versioned: IndexedSession,
-    cursor: TimelineCursor | undefined,
+    cursor: string | undefined,
   ) {
     const { normalized, timelinePrefixIndex } = versioned;
     if (cursor === undefined) return timelinePrefixIndex.boundaryAt(normalized.timeline, 0)!;
@@ -296,9 +296,8 @@ function assertItemConfirmed(
   }
 }
 
-function passesStructuralFilters(session: DomainSession, query: SessionListQuery): boolean {
+function passesFacetFilters(session: DomainSession, query: SessionListCriteria): boolean {
   const archiveScope = query.archiveScope ?? "active";
-  if (query.project !== undefined && session.cwd !== query.project) return false;
   if (archiveScope !== "all" && session.archived !== (archiveScope === "archived")) {
     return false;
   }
@@ -309,7 +308,7 @@ function passesStructuralFilters(session: DomainSession, query: SessionListQuery
   return true;
 }
 
-function validateListQuery(query: SessionListQuery): void {
+function validateListQuery(query: SessionListCriteria): void {
   if (
     query.archiveScope !== undefined &&
     query.archiveScope !== "active" &&
@@ -343,7 +342,7 @@ function validateListQuery(query: SessionListQuery): void {
   }
 }
 
-function validateItemQuery(query: ItemPageQuery): void {
+function validateItemQuery(query: ItemPageCriteria): void {
   if (query.limit !== undefined &&
     (!Number.isInteger(query.limit) || query.limit < 1 || query.limit > MAX_ITEM_LIMIT)) {
     throw new RepositoryQueryError("invalid_query", `limit must be between 1 and ${MAX_ITEM_LIMIT}`);

@@ -18,9 +18,9 @@ import {
 } from "../../src/server/adapters/codex/codex-session-source.js";
 import { JsonlCatalogSource } from "../../src/server/adapters/codex/jsonl-catalog-source.js";
 import { PathPolicy } from "../../src/server/adapters/codex/path-policy.js";
-import { WholeFileRolloutDecoder } from "../../src/server/adapters/codex/rollout-decoder.js";
+import { CheckpointedRolloutDecoder } from "../../src/server/adapters/codex/rollout-decoder.js";
 import { DefaultSessionNormalizer } from "../../src/server/adapters/codex/session-normalizer.js";
-import { DefaultSessionRepository } from "../../src/server/repository/session-repository.js";
+import { SessionReadService } from "../../src/server/application/session-read-service.js";
 import { createTempDirectory } from "../helpers/temp-directories.js";
 
 describe("catalog discovery", () => {
@@ -94,7 +94,7 @@ describe("catalog discovery", () => {
     const sessionsLink = join(home, "sessions");
     await symlink(firstRoot, sessionsLink);
 
-    const decoder = new WholeFileRolloutDecoder();
+    const decoder = new CheckpointedRolloutDecoder();
     const decodedPaths: string[] = [];
     const source = new CodexSessionSource(home, "codex-cache-identity", {
       async decode(descriptor) {
@@ -140,7 +140,7 @@ describe("catalog discovery", () => {
       join(home, "sessions/rollout-error.jsonl"),
       '{"type":"session_meta","payload":{"id":"error"}}\n',
     );
-    const decoder = new WholeFileRolloutDecoder();
+    const decoder = new CheckpointedRolloutDecoder();
     let attempts = 0;
     const recovering = new CodexSessionSource(home, "codex-errors", {
       async decode(descriptor) {
@@ -161,10 +161,11 @@ describe("catalog discovery", () => {
     ]);
     expect(JSON.stringify(unavailable.diagnostics)).not.toContain(home);
 
-    const repository = new DefaultSessionRepository([recovering]);
+    const repository = new SessionReadService([recovering]);
     await expect(repository.list({})).resolves.toMatchObject({
       sessions: [],
       total: 0,
+      diagnostics: [expect.objectContaining({ code: "rollout_unavailable" })],
     });
 
     await repository.refresh();

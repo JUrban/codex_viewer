@@ -1,10 +1,6 @@
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
-import type {
-  ListCursor,
-  SessionListQuery,
-  TimelineCursor,
-} from "../../shared/api-contract.js";
 import { canonicalListFilters, type CanonicalListFilters } from "./list-revision.js";
+import type { SessionListCriteria } from "./session-query-criteria.js";
 
 const SIGNATURE_BYTES = 24;
 const SIGNATURE_CHARS = 32;
@@ -32,28 +28,28 @@ interface TimelineCursorPayload {
 export class OpaqueCursorCodec {
   constructor(private readonly key: Uint8Array = randomBytes(32)) {}
 
-  encodeList(query: SessionListQuery, offset: number, revision: string): ListCursor {
+  encodeList(query: SessionListCriteria, offset: number, revision: string): string {
     return this.#encode({
       v: 1,
       filters: canonicalListFilters(query),
       o: offset,
       r: revision,
-    }) as ListCursor;
+    });
   }
 
-  decodeList(cursor: ListCursor): CursorDecodeResult<ListCursorPayload> {
+  decodeList(cursor: string): CursorDecodeResult<ListCursorPayload> {
     return this.#decode(cursor, isListCursorPayload);
   }
 
-  listQueryMatches(cursor: ListCursorPayload, query: SessionListQuery): boolean {
+  listQueryMatches(cursor: ListCursorPayload, query: SessionListCriteria): boolean {
     return JSON.stringify(cursor.filters) === JSON.stringify(canonicalListFilters(query));
   }
 
-  encodeTimeline(sessionId: string, ordinal: number, prefix: string): TimelineCursor {
-    return this.#encode({ v: 1, s: sessionId, o: ordinal, p: prefix }) as TimelineCursor;
+  encodeTimeline(sessionId: string, ordinal: number, prefix: string): string {
+    return this.#encode({ v: 1, s: sessionId, o: ordinal, p: prefix });
   }
 
-  decodeTimeline(cursor: TimelineCursor): CursorDecodeResult<TimelineCursorPayload> {
+  decodeTimeline(cursor: string): CursorDecodeResult<TimelineCursorPayload> {
     return this.#decode(cursor, isTimelineCursorPayload);
   }
 

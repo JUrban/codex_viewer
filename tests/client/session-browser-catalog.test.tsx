@@ -24,6 +24,53 @@ describe("session catalog state", () => {
     expect(fetchMock.mock.calls[1]?.[0]).toContain("cursor=next-page");
   });
 
+  it("shows catalog diagnostics and replaces them with the latest page or refresh", async () => {
+    const first = response([baseSession], "next-page", "First diagnostic");
+    first.total = 2;
+    const secondSession = {
+      ...baseSession,
+      id: "secondabcdefghijklmnopq",
+      title: "Second",
+    };
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(json(first))
+      .mockResolvedValueOnce(json(response(
+        [baseSession, secondSession],
+        null,
+        "Page diagnostic",
+      )))
+      .mockResolvedValueOnce(json(response(
+        [baseSession, secondSession],
+        null,
+        "Refresh diagnostic",
+      )));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<App />);
+
+    const notice = await screen.findByLabelText("Catalog diagnostics");
+    expect(notice).toHaveTextContent("First diagnostic");
+    fireEvent.click(screen.getByRole("button", { name: /Load more sessions/ }));
+    await waitFor(() => {
+      expect(screen.getByLabelText("Catalog diagnostics"))
+        .toHaveTextContent("Page diagnostic");
+    });
+    expect(screen.queryByText("First diagnostic")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Refresh sessions" }));
+    await waitFor(() => {
+      expect(screen.getByLabelText("Catalog diagnostics"))
+        .toHaveTextContent("Refresh diagnostic");
+    });
+    expect(screen.queryByText("Page diagnostic")).not.toBeInTheDocument();
+  });
+
+  it("does not render an empty catalog diagnostic notice", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(json(listBody)));
+    render(<App />);
+    await screen.findByRole("link", { name: /Reader work/ });
+    expect(screen.queryByLabelText("Catalog diagnostics")).not.toBeInTheDocument();
+  });
+
   it("aborts and ignores an obsolete list request after filters change", async () => {
     let resolveInitial!: (value: Response) => void;
     const initial = new Promise<Response>((resolve) => { resolveInitial = resolve; });
@@ -76,11 +123,20 @@ describe("session catalog state", () => {
 function response(
   sessions: typeof baseSession[],
   nextCursor: string | null,
+  diagnosticMessage?: string,
 ): SessionListResponse {
   return {
     sessions: sessions.map(entry),
     projects: [{ project: "/project/reader", count: sessions.length }],
     total: sessions.length,
     nextCursor: nextCursor as ListCursor | null,
+    diagnostics: diagnosticMessage === undefined
+      ? []
+      : [{
+          code: "catalog_test",
+          severity: "warning",
+          message: diagnosticMessage,
+          ordinal: null,
+        }],
   };
 }

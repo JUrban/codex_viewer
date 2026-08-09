@@ -60,7 +60,7 @@ export interface RolloutDecoder {
   ): Promise<IncrementalDecodedRollout>;
 }
 
-export class WholeFileRolloutDecoder implements RolloutDecoder {
+export class CheckpointedRolloutDecoder implements RolloutDecoder {
   async decode(
     descriptor: RolloutDescriptor,
     checkpoint?: RolloutCheckpoint,
