@@ -136,7 +136,7 @@ describe("interaction panel", () => {
     expect(textarea).toHaveValue("   ");
   });
 
-  it("dispatches interaction controls and disables them while busy", async () => {
+  it("dispatches interaction controls and locks only action buttons while busy", async () => {
     const handlers = props(interaction("connected"));
     const user = userEvent.setup();
     const { rerender } = render(<InteractionPanel {...handlers} />);
@@ -152,10 +152,32 @@ describe("interaction panel", () => {
     expect(handlers.onSendKeys).toHaveBeenNthCalledWith(2, ["plan"]);
     expect(handlers.onSendKeys).toHaveBeenCalledTimes(2);
 
-    rerender(<InteractionPanel {...props(interaction("connected"))} interactionBusy />);
-    expect(screen.getByRole("textbox")).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Interrupt" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Plan" })).toBeDisabled();
+    const interrupt = screen.getByRole("button", { name: "Interrupt" });
+    interrupt.focus();
+    handlers.onSendKeys.mockClear();
+    rerender(<InteractionPanel {...handlers} interactionBusy />);
+
+    expect(screen.getByRole("textbox")).toBeEnabled();
+    expect(interrupt).toHaveFocus();
+    expect(interrupt).toBeEnabled();
+    expect(interrupt).toHaveAttribute("aria-disabled", "true");
+    expect(screen.getByRole("button", { name: "Plan" })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+    expect(screen.getByRole("button", { name: "Terminal preview" })).not.toHaveAttribute(
+      "aria-disabled",
+    );
+    await user.click(interrupt);
+    await user.click(screen.getByRole("button", { name: "Plan" }));
+    expect(handlers.onSendKeys).not.toHaveBeenCalled();
+
+    await user.type(screen.getByRole("textbox"), "still editable");
+    const send = screen.getByRole("button", { name: "Send" });
+    expect(send).toBeEnabled();
+    expect(send).toHaveAttribute("aria-disabled", "true");
+    await user.click(send);
+    expect(handlers.onSendMessage).not.toHaveBeenCalled();
   });
 
   it("loads from the unified header and opens at the bottom", async () => {
@@ -394,8 +416,13 @@ describe("interaction panel", () => {
     ]);
 
     rerender(<InteractionPanel {...handlers} interactionBusy />);
+    handlers.onSendKeys.mockClear();
     for (const name of ["Up", "Left", "Enter", "Right", "Down"]) {
-      expect(screen.getByRole("button", { name })).toBeDisabled();
+      const button = screen.getByRole("button", { name });
+      expect(button).toBeEnabled();
+      expect(button).toHaveAttribute("aria-disabled", "true");
+      await user.click(button);
     }
+    expect(handlers.onSendKeys).not.toHaveBeenCalled();
   });
 });

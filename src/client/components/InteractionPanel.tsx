@@ -121,6 +121,10 @@ export function InteractionPanel({
     await onSendMessage(message);
     setMessage("");
   };
+  const sendKeys = (keys: readonly InteractionKey[]) => {
+    if (interactionBusy) return;
+    void onSendKeys(keys).catch(() => undefined);
+  };
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key !== "Enter" || !event.shiftKey || event.nativeEvent.isComposing) return;
     event.preventDefault();
@@ -261,8 +265,8 @@ export function InteractionPanel({
                               type="button"
                               className={`terminal-key terminal-key-${key}`}
                               aria-label={label}
-                              disabled={interactionBusy}
-                              onClick={() => void onSendKeys([key]).catch(() => undefined)}
+                              aria-disabled={interactionBusy}
+                              onClick={() => sendKeys([key])}
                             >
                               <span aria-hidden="true">{glyph}</span>
                             </button>
@@ -279,7 +283,6 @@ export function InteractionPanel({
                   rows={3}
                   maxLength={MAX_INTERACTION_MESSAGE_BYTES}
                   placeholder="Send a prompt… Enter for a new line, Shift+Enter to send"
-                  disabled={interactionBusy}
                   onChange={(event) => setMessage(event.target.value)}
                   onKeyDown={onKeyDown}
                 />
@@ -295,22 +298,23 @@ export function InteractionPanel({
                   <button
                     type="button"
                     className="interaction-send"
-                    disabled={interactionBusy || messageIsBlank || messageTooLarge}
+                    disabled={messageIsBlank || messageTooLarge}
+                    aria-disabled={interactionBusy}
                     onClick={() => void send().catch(() => undefined)}
                   >
                     Send
                   </button>
                   <button
                     type="button"
-                    disabled={interactionBusy}
-                    onClick={() => void onSendKeys(["interrupt"]).catch(() => undefined)}
+                    aria-disabled={interactionBusy}
+                    onClick={() => sendKeys(["interrupt"])}
                   >
                     Interrupt
                   </button>
                   <button
                     type="button"
-                    disabled={interactionBusy}
-                    onClick={() => void onSendKeys(["plan"]).catch(() => undefined)}
+                    aria-disabled={interactionBusy}
+                    onClick={() => sendKeys(["plan"])}
                   >
                     Plan
                   </button>
