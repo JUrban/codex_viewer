@@ -11,7 +11,6 @@ import { DEFAULT_TIMELINE_VISIBILITY } from "../../src/client/state/timeline-vis
 import {
   baseSession,
   CHILD_ID,
-  entry,
   firstPage,
   SESSION_ID,
 } from "./session-browser.fixtures";
@@ -106,15 +105,15 @@ describe("session browser components", () => {
   });
 
   it("groups children and preserves missing-parent sessions", () => {
-    const child = entry({ ...baseSession, id: CHILD_ID, parentId: SESSION_ID, title: "Child" });
-    const grandchild = entry({
+    const child = { ...baseSession, id: CHILD_ID, parentId: SESSION_ID, title: "Child" };
+    const grandchild = {
       ...baseSession,
       id: "grandchildabcdefghijklmn",
       parentId: CHILD_ID,
       title: "Grandchild",
-    });
-    const orphan = entry({ ...baseSession, id: "orphanabcdefghijklmnopqr", parentId: "missingabcdefghijklmnop", title: "Orphan" });
-    const groups = groupSessions([entry(baseSession), child, grandchild, orphan]);
+    };
+    const orphan = { ...baseSession, id: "orphanabcdefghijklmnopqr", parentId: "missingabcdefghijklmnop", title: "Orphan" };
+    const groups = groupSessions([baseSession, child, grandchild, orphan]);
     expect(groups).toHaveLength(2);
     expect(groups[0]?.children[0]?.root.title).toBe("Child");
     expect(groups[0]?.children[0]?.children[0]?.root.title).toBe("Grandchild");
@@ -132,7 +131,7 @@ describe("session browser components", () => {
     };
     const { unmount } = render(
       <SessionTree
-        entries={[entry(versioned)]}
+        entries={[versioned]}
       />,
     );
     expect(screen.getByText("Codex", { selector: ".source-label" })).toBeInTheDocument();
@@ -177,14 +176,14 @@ describe("session browser components", () => {
   });
 
   it("collapses child sessions and presents structured agent task identity", async () => {
-    const child = entry({
+    const child = {
       ...baseSession,
       id: CHILD_ID,
       parentId: SESSION_ID,
       title: "Inspect the repository implementation",
       agent: { taskName: "repository_review", nickname: "Sagan", role: "reviewer" },
-    });
-    const entries = [entry({ ...baseSession, childIds: [CHILD_ID] }), child];
+    };
+    const entries = [{ ...baseSession, childIds: [CHILD_ID] }, child];
     const user = userEvent.setup();
     const { rerender } = render(
       <SessionTree entries={entries} />,

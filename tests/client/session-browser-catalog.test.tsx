@@ -4,7 +4,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { App } from "../../src/client/App";
 import type { ListCursor, SessionListResponse } from "../../src/shared/api-contract";
-import { baseSession, entry, json, listBody } from "./session-browser.fixtures";
+import { baseSession, json, listBody } from "./session-browser.fixtures";
 
 describe("session catalog state", () => {
   it("accumulates cursor pages without duplicating sessions", async () => {
@@ -126,7 +126,7 @@ function response(
   diagnosticMessage?: string,
 ): SessionListResponse {
   return {
-    sessions: sessions.map(entry),
+    sessions,
     projects: [{ project: "/project/reader", count: sessions.length }],
     total: sessions.length,
     nextCursor: nextCursor as ListCursor | null,

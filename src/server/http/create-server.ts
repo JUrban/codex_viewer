@@ -1,5 +1,5 @@
-import { createReadStream, readFileSync } from "node:fs";
-import { stat } from "node:fs/promises";
+import { createReadStream, readFileSync, realpathSync } from "node:fs";
+import { realpath, stat } from "node:fs/promises";
 import { createServer as createHttpServer, type RequestListener, type ServerResponse } from "node:http";
 import { createServer as createHttpsServer } from "node:https";
 import type { Server as NetServer } from "node:net";
@@ -46,6 +46,8 @@ async function serveFile(
 }
 
 export function createServer(config: ServerConfig, apiRouter: ApiRouter = emptyApiRouter) {
+  const clientRoot = realpathSync(config.clientDirectory);
+  const clientRootPrefix = `${clientRoot}${sep}`;
   const requestListener: RequestListener = async (request, response) => {
     applySecurityHeaders(response);
     const headOnly = request.method === "HEAD";
@@ -67,10 +69,19 @@ export function createServer(config: ServerConfig, apiRouter: ApiRouter = emptyA
         : sessionPage
         ? "session.html"
         : decodedPath.slice(1);
-      const requestedPath = resolve(config.clientDirectory, relativePath);
-      const rootPrefix = `${resolve(config.clientDirectory)}${sep}`;
+      const requestedPath = resolve(clientRoot, relativePath);
+      let canonicalPath: string;
+      try {
+        canonicalPath = await realpath(requestedPath);
+      } catch {
+        sendText(response, 404, "Not found", headOnly);
+        return;
+      }
 
-      if (requestedPath.startsWith(rootPrefix) && (await serveFile(response, requestedPath, headOnly))) {
+      if (
+        canonicalPath.startsWith(clientRootPrefix) &&
+        (await serveFile(response, canonicalPath, headOnly))
+      ) {
         return;
       }
       sendText(response, 404, "Not found", headOnly);

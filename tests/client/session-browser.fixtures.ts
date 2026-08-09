@@ -83,10 +83,6 @@ export const firstPage: ItemPageResponse = {
   ],
 };
 
-export function entry(session: SessionSummary): SessionSummary {
-  return session;
-}
-
 export function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,

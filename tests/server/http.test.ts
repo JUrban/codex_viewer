@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, symlink, writeFile } from "node:fs/promises";
 import { request } from "node:http";
 import { request as secureRequest } from "node:https";
 import type { AddressInfo } from "node:net";
@@ -185,6 +185,33 @@ describe("secure HTTP foundation", () => {
     expect(response.headers.get("referrer-policy")).toBe("no-referrer");
     expect(response.headers.has("access-control-allow-origin")).toBe(false);
     expect((await fetch(`${base}/unknown`)).status).toBe(404);
+  });
+
+  it("does not serve a static-file symlink whose target is outside the client root", async () => {
+    const clientDirectory = await createTempDirectory("codex-reader-client-root-");
+    const outsideDirectory = await createTempDirectory("codex-reader-client-outside-");
+    await writeFile(join(clientDirectory, "index.html"), "viewer");
+    await writeFile(join(outsideDirectory, "secret.txt"), "STATIC_ESCAPE_CANARY");
+    await symlink(
+      join(outsideDirectory, "secret.txt"),
+      join(clientDirectory, "leak.txt"),
+    );
+    const server = createServer({
+      host: LOOPBACK_HOST,
+      port: 0,
+      codexHome: "/unused",
+      clientDirectory,
+      tls: { enabled: false },
+      interactionEnabled: false,
+    });
+    servers.push(server);
+    await listenServer(server, 0, LOOPBACK_HOST);
+    const { port } = server.address() as AddressInfo;
+
+    const response = await fetch(`http://${LOOPBACK_HOST}:${port}/leak.txt`);
+
+    expect(response.status).toBe(404);
+    expect(await response.text()).not.toContain("STATIC_ESCAPE_CANARY");
   });
 
   it("serves HTTPS and does not accept plaintext HTTP on the TLS port", async () => {
