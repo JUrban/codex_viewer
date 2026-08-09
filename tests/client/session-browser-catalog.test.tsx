@@ -118,6 +118,25 @@ describe("session catalog state", () => {
     expect(screen.getByRole("radio", { name: "All" })).toBeChecked();
   });
 
+  it("keeps a selected project visible when the query has no matching sessions", async () => {
+    sessionStorage.setItem("codex-sessions-reader.filters.v1", JSON.stringify({
+      project: "/project/empty",
+      from: "",
+      to: "",
+      state: "active",
+    }));
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(json({
+      ...response([], null),
+      projects: [],
+    })));
+
+    render(<App />);
+
+    await screen.findByText("No active sessions match");
+    expect(screen.getByRole("combobox", { name: "Project" })).toHaveValue("/project/empty");
+    expect(screen.getByRole("option", { name: "/project/empty (0)" })).toBeInTheDocument();
+  });
+
 });
 
 function response(

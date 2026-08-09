@@ -107,6 +107,9 @@ export class SessionQueries {
       if (query.project !== undefined && session.cwd !== query.project) continue;
       matchedSessions.push(session);
     }
+    if (query.project !== undefined && !projects.has(query.project)) {
+      projects.set(query.project, 0);
+    }
     const listRevision = this.createListRevision(
       canonicalListFilters(query),
       matchedSessions.map(({ id }) => id),

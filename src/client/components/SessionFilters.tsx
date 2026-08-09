@@ -52,6 +52,10 @@ export function SessionFilters({ filters, projects, onChange }: SessionFiltersPr
     onChange({ ...filters, from: fromDraft, to: toDraft });
     setDatePickerOpen(false);
   };
+  const projectOptions = filters.project && !projects.some(({ project }) => project === filters.project)
+    ? [...projects, { project: filters.project, count: 0 }]
+        .sort((left, right) => left.project.localeCompare(right.project))
+    : projects;
 
   return (
     <div className="filters">
@@ -62,7 +66,7 @@ export function SessionFilters({ filters, projects, onChange }: SessionFiltersPr
         onChange={(event) => patch({ project: event.target.value })}
       >
         <option value="">All projects</option>
-        {projects.map(({ project, count }) => (
+        {projectOptions.map(({ project, count }) => (
           <option value={project} key={project}>{project} ({count})</option>
         ))}
       </select>

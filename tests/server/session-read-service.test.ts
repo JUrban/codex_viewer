@@ -203,6 +203,18 @@ describe("SessionReadService", () => {
       { project: "/project/b", count: 1 },
     ]);
 
+    const emptySelectedProject = await sessions.list({
+      ...range,
+      project: "/project/archived",
+      archiveScope: "active",
+    });
+    expect(emptySelectedProject.sessions).toEqual([]);
+    expect(emptySelectedProject.projects).toEqual([
+      { project: "/project/a", count: 1 },
+      { project: "/project/archived", count: 0 },
+      { project: "/project/b", count: 1 },
+    ]);
+
     const all = await sessions.list({ ...range, archiveScope: "all" });
     expect(all.projects).toEqual([
       { project: "/project/a", count: 1 },
