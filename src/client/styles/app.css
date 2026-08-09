@@ -287,6 +287,24 @@
   padding: .48rem .72rem; color: var(--current); background: transparent;
   border: 1px solid var(--current); cursor: pointer;
 }
+.trace-event article .plan-toggle {
+  display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+  width: 100%; padding: 0 0 .55rem; color: var(--current); background: transparent;
+  border: 0; text-align: left;
+}
+.plan-toggle .event-label { margin: 0; }
+.plan-toggle-action {
+  display: inline-flex; flex: 0 0 auto; align-items: center; gap: .35rem;
+  color: var(--ink-soft); font-family: var(--mono-font); font-size: .68rem;
+  letter-spacing: .03em; text-transform: uppercase;
+}
+.plan-toggle-mark { font-size: 1.15rem; line-height: 1; transform: rotate(0); }
+.plan-toggle[aria-expanded="true"] .plan-toggle-mark { transform: rotate(90deg); }
+.plan-preview {
+  display: -webkit-box; margin: 0; overflow: hidden; color: var(--ink-soft);
+  white-space: pre-line; overflow-wrap: anywhere;
+  -webkit-box-orient: vertical; -webkit-line-clamp: 3;
+}
 .tool-detail { margin-top: .8rem; }
 .tool-call-id { color: var(--ink-soft); font-size: .72rem; }
 .tool-call-id code { font-family: var(--mono-font); overflow-wrap: anywhere; }
@@ -389,9 +407,10 @@
 }
 .interaction-composer textarea:disabled { color: var(--ink-soft); background: #e7eeee; }
 .interaction-actions {
-  display: flex; justify-content: flex-end; gap: .3rem; padding: .3rem .4rem;
+  display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: .3rem .4rem;
   background: var(--paper-deep); border-top: 1px solid var(--mist);
 }
+.interaction-primary-actions { display: flex; gap: .3rem; }
 .interaction-actions button {
   min-height: 1.75rem; padding: .2rem .5rem; color: var(--current); background: transparent;
   border: 1px solid transparent; cursor: pointer;
@@ -556,6 +575,7 @@
 @media (prefers-reduced-motion: no-preference) {
   .trace-event::before { animation: trace-draw 240ms ease-out both; transform-origin: top; }
   .disclosure-mark { transition: transform 140ms ease-out; }
+  .plan-toggle-mark { transition: transform 140ms ease-out; }
   .auto-refresh-thumb { transition: transform 140ms ease; }
   .refresh-mark.active { animation: refresh-turn 800ms linear infinite; }
   .page-jump-control { transition: opacity 180ms ease, transform 180ms ease, color 120ms ease, background 120ms ease, border-color 120ms ease; }

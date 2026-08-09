@@ -136,7 +136,7 @@ describe("interaction panel", () => {
     expect(textarea).toHaveValue("   ");
   });
 
-  it("dispatches interaction controls and locks only action buttons while busy", async () => {
+  it("dispatches interaction controls and locks the composer and action buttons while busy", async () => {
     const handlers = props(interaction("connected"));
     const user = userEvent.setup();
     const { rerender } = render(<InteractionPanel {...handlers} />);
@@ -144,6 +144,11 @@ describe("interaction panel", () => {
     expect(screen.getByRole("textbox")).toBeEnabled();
     expect(screen.getByRole("button", { name: "Interrupt" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "Plan" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Rebind" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Rebind" }).parentElement)
+      .toHaveClass("interaction-actions");
+    expect(screen.getByRole("button", { name: "Send" }).parentElement)
+      .toHaveClass("interaction-primary-actions");
     expect(screen.queryByRole("button", { name: "Esc" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Terminal preview" })).toBeEnabled();
     await user.click(screen.getByRole("button", { name: "Interrupt" }));
@@ -151,17 +156,26 @@ describe("interaction panel", () => {
     await user.click(screen.getByRole("button", { name: "Plan" }));
     expect(handlers.onSendKeys).toHaveBeenNthCalledWith(2, ["plan"]);
     expect(handlers.onSendKeys).toHaveBeenCalledTimes(2);
+    await user.click(screen.getByRole("button", { name: "Rebind" }));
+    expect(handlers.onSendMessage).toHaveBeenCalledWith(activation);
 
+    await user.type(screen.getByRole("textbox"), "draft");
     const interrupt = screen.getByRole("button", { name: "Interrupt" });
     interrupt.focus();
     handlers.onSendKeys.mockClear();
+    handlers.onSendMessage.mockClear();
     rerender(<InteractionPanel {...handlers} interactionBusy />);
 
-    expect(screen.getByRole("textbox")).toBeEnabled();
+    expect(screen.getByRole("textbox")).toBeDisabled();
+    expect(screen.getByRole("textbox")).toHaveValue("draft");
     expect(interrupt).toHaveFocus();
     expect(interrupt).toBeEnabled();
     expect(interrupt).toHaveAttribute("aria-disabled", "true");
     expect(screen.getByRole("button", { name: "Plan" })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+    expect(screen.getByRole("button", { name: "Rebind" })).toHaveAttribute(
       "aria-disabled",
       "true",
     );
@@ -170,9 +184,10 @@ describe("interaction panel", () => {
     );
     await user.click(interrupt);
     await user.click(screen.getByRole("button", { name: "Plan" }));
+    await user.click(screen.getByRole("button", { name: "Rebind" }));
     expect(handlers.onSendKeys).not.toHaveBeenCalled();
+    expect(handlers.onSendMessage).not.toHaveBeenCalled();
 
-    await user.type(screen.getByRole("textbox"), "still editable");
     const send = screen.getByRole("button", { name: "Send" });
     expect(send).toBeEnabled();
     expect(send).toHaveAttribute("aria-disabled", "true");

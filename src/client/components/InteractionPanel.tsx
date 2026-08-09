@@ -280,6 +280,7 @@ export function InteractionPanel({
                 <textarea
                   aria-label="Message to agent"
                   value={message}
+                  disabled={interactionBusy}
                   rows={3}
                   maxLength={MAX_INTERACTION_MESSAGE_BYTES}
                   placeholder="Send a prompt… Enter for a new line, Shift+Enter to send"
@@ -297,27 +298,39 @@ export function InteractionPanel({
                 <div className="interaction-actions">
                   <button
                     type="button"
-                    className="interaction-send"
-                    disabled={messageIsBlank || messageTooLarge}
                     aria-disabled={interactionBusy}
-                    onClick={() => void send().catch(() => undefined)}
+                    onClick={() => {
+                      if (interactionBusy) return;
+                      void onSendMessage(interaction.activation).catch(() => undefined);
+                    }}
                   >
-                    Send
+                    Rebind
                   </button>
-                  <button
-                    type="button"
-                    aria-disabled={interactionBusy}
-                    onClick={() => sendKeys(["interrupt"])}
-                  >
-                    Interrupt
-                  </button>
-                  <button
-                    type="button"
-                    aria-disabled={interactionBusy}
-                    onClick={() => sendKeys(["plan"])}
-                  >
-                    Plan
-                  </button>
+                  <div className="interaction-primary-actions">
+                    <button
+                      type="button"
+                      className="interaction-send"
+                      disabled={messageIsBlank || messageTooLarge}
+                      aria-disabled={interactionBusy}
+                      onClick={() => void send().catch(() => undefined)}
+                    >
+                      Send
+                    </button>
+                    <button
+                      type="button"
+                      aria-disabled={interactionBusy}
+                      onClick={() => sendKeys(["interrupt"])}
+                    >
+                      Interrupt
+                    </button>
+                    <button
+                      type="button"
+                      aria-disabled={interactionBusy}
+                      onClick={() => sendKeys(["plan"])}
+                    >
+                      Plan
+                    </button>
+                  </div>
                 </div>
               </div>
             </>

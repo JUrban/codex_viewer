@@ -3,7 +3,11 @@
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
-import { MessageItem, safeUrlTransform } from "../../src/client/components/MessageItem";
+import {
+  MessageItem,
+  planPreview,
+  safeUrlTransform,
+} from "../../src/client/components/MessageItem";
 import { SessionHeader } from "../../src/client/components/SessionHeader";
 import { groupSessions, SessionTree } from "../../src/client/components/SessionTree";
 import { Timeline } from "../../src/client/components/Timeline";
@@ -252,11 +256,85 @@ describe("session browser components", () => {
     expect(screen.queryByText(/Assistant final/)).toBeNull();
   });
 
-  it("shows the completed item type in the message label", () => {
+  it("previews completed plans collapsed and toggles their full Markdown", async () => {
+    const user = userEvent.setup();
     render(<MessageItem item={{
       kind: "message", id: "message-plan", ordinal: 12, timestamp: null,
-      role: "assistant", phase: "final", itemType: "Plan", markdown: "# Plan",
+      role: "assistant", phase: "final", itemType: "Plan",
+      markdown: "<proposed_plan>\n# Release plan\n\n- First **important** step\n- Read the [docs](https://example.com)\n</proposed_plan>",
     }} />);
-    expect(screen.getByText("Assistant final · Plan · 12")).toBeInTheDocument();
+
+    const toggle = screen.getByRole("button", { name: /Assistant final · Plan · 12.*Show/ });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(document.querySelector(".plan-preview")).toHaveTextContent(
+      "Release plan First important step Read the docs",
+    );
+    expect(document.querySelector(".plan-preview")).not.toHaveTextContent("proposed_plan");
+    expect(screen.queryByRole("heading", { name: "Release plan" })).toBeNull();
+    const contentId = toggle.getAttribute("aria-controls");
+    const fullContent = contentId === null ? null : document.getElementById(contentId);
+    expect(fullContent).toHaveAttribute("hidden");
+    expect(document.querySelector(".plan-preview")).not.toHaveAttribute("id");
+
+    await user.click(toggle);
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    expect(fullContent).not.toHaveAttribute("hidden");
+    expect(screen.getByRole("heading", { name: "Release plan" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "docs" })).toBeInTheDocument();
+    expect(document.querySelector(".plan-preview")).toBeNull();
+
+    await user.click(toggle);
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(document.querySelector(".plan-preview")).toBeInTheDocument();
+    expect(fullContent).toHaveAttribute("hidden");
+  });
+
+  it("keeps multiple plan disclosures independent", async () => {
+    const user = userEvent.setup();
+    render(<>
+      <MessageItem item={{
+        kind: "message", id: "message-plan-1", ordinal: 12, timestamp: null,
+        role: "assistant", phase: "final", itemType: "Plan", markdown: "# First plan",
+      }} />
+      <MessageItem item={{
+        kind: "message", id: "message-plan-2", ordinal: 13, timestamp: null,
+        role: "assistant", phase: "final", itemType: "Plan", markdown: "# Second plan",
+      }} />
+    </>);
+
+    const first = screen.getByRole("button", { name: /Plan · 12.*Show/ });
+    const second = screen.getByRole("button", { name: /Plan · 13.*Show/ });
+    await user.click(first);
+    expect(first).toHaveAttribute("aria-expanded", "true");
+    expect(second).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("renders non-plan final messages without a disclosure", () => {
+    render(<MessageItem item={{
+      kind: "message", id: "message-final", ordinal: 14, timestamp: null,
+      role: "assistant", phase: "final", itemType: null, markdown: "# Final answer",
+    }} />);
+
+    expect(screen.getByRole("heading", { name: "Final answer" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /plan/i })).toBeNull();
+  });
+
+  it("creates a plain-text plan preview", () => {
+    expect(planPreview("<proposed_plan>\n# Plan\n\n- **One**\n- [Two](https://example.com)\n</proposed_plan>"))
+      .toBe("Plan\nOne\nTwo");
+  });
+
+  it("uses GFM rules for task lists, strikethrough, and tables in plan previews", () => {
+    expect(planPreview([
+      "- [x] ~~Old step~~ Done",
+      "",
+      "| Status | Owner |",
+      "| --- | --- |",
+      "| Ready | Codex |",
+    ].join("\n"))).toBe([
+      "Old step Done",
+      "Status · Owner",
+      "Ready · Codex",
+    ].join("\n"));
   });
 });
