@@ -23,7 +23,7 @@ function props(value: InteractionResponse | null) {
     interaction: value,
     itemCount: 12,
     updatedAt: "2026-08-08T12:00:00.000Z",
-    busy: false,
+    interactionBusy: false,
     error: null,
     onDismissError: vi.fn(),
     onSendMessage: vi.fn().mockResolvedValue(undefined),
@@ -152,7 +152,7 @@ describe("interaction panel", () => {
     expect(handlers.onSendKeys).toHaveBeenNthCalledWith(2, ["plan"]);
     expect(handlers.onSendKeys).toHaveBeenCalledTimes(2);
 
-    rerender(<InteractionPanel {...props(interaction("connected"))} busy />);
+    rerender(<InteractionPanel {...props(interaction("connected"))} interactionBusy />);
     expect(screen.getByRole("textbox")).toBeDisabled();
     expect(screen.getByRole("button", { name: "Interrupt" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Plan" })).toBeDisabled();
@@ -393,7 +393,7 @@ describe("interaction panel", () => {
       [["down"]],
     ]);
 
-    rerender(<InteractionPanel {...handlers} busy />);
+    rerender(<InteractionPanel {...handlers} interactionBusy />);
     for (const name of ["Up", "Left", "Enter", "Right", "Down"]) {
       expect(screen.getByRole("button", { name })).toBeDisabled();
     }

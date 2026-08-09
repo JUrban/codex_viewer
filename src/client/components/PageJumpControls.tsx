@@ -13,8 +13,9 @@ export function PageJumpControls() {
   const [visible, setVisible] = useState(hiddenControls);
 
   useEffect(() => {
+    let pageHeight = document.documentElement.scrollHeight;
+    let animationFrame: number | null = null;
     const updateVisibility = () => {
-      const pageHeight = document.documentElement.scrollHeight;
       const viewportBottom = window.scrollY + window.innerHeight;
       const next = {
         top: window.scrollY > EDGE_DISTANCE_PX,
@@ -25,17 +26,37 @@ export function PageJumpControls() {
         current.top === next.top && current.bottom === next.bottom ? current : next
       ));
     };
+    const scheduleVisibilityUpdate = () => {
+      if (typeof window.requestAnimationFrame !== "function") {
+        updateVisibility();
+        return;
+      }
+      if (animationFrame !== null) return;
+      animationFrame = window.requestAnimationFrame(() => {
+        animationFrame = null;
+        updateVisibility();
+      });
+    };
+    const updatePageGeometry = () => {
+      pageHeight = document.documentElement.scrollHeight;
+      scheduleVisibilityUpdate();
+    };
 
     updateVisibility();
-    window.addEventListener("scroll", updateVisibility, { passive: true });
-    window.addEventListener("resize", updateVisibility);
     const resizeObserver = typeof ResizeObserver === "undefined"
       ? null
-      : new ResizeObserver(updateVisibility);
+      : new ResizeObserver(updatePageGeometry);
+    const onScroll = () => {
+      if (resizeObserver === null) pageHeight = document.documentElement.scrollHeight;
+      scheduleVisibilityUpdate();
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("resize", updatePageGeometry);
     resizeObserver?.observe(document.documentElement);
     return () => {
-      window.removeEventListener("scroll", updateVisibility);
-      window.removeEventListener("resize", updateVisibility);
+      window.removeEventListener("scroll", onScroll);
+      window.removeEventListener("resize", updatePageGeometry);
+      if (animationFrame !== null) window.cancelAnimationFrame(animationFrame);
       resizeObserver?.disconnect();
     };
   }, []);

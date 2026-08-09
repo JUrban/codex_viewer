@@ -14,8 +14,7 @@ import { EmptyState } from "./EmptyState";
 import { ErrorState } from "./ErrorState";
 import { SessionHeader } from "./SessionHeader";
 import { Timeline } from "./Timeline";
-import { InteractionPanel } from "./InteractionPanel";
-import { useSessionInteraction } from "../state/use-session-interaction";
+import { SessionInteraction } from "./SessionInteraction";
 import type { ReaderContext } from "../state/session-reader-state";
 
 interface SessionReaderProps {
@@ -24,14 +23,14 @@ interface SessionReaderProps {
   interaction: InteractionResponse | null;
   visibility: TimelineVisibility;
   onVisibilityChange: (key: TimelineVisibilityKey, visible: boolean) => void;
-  loading: boolean;
-  busy: boolean;
+  readerLoading: boolean;
+  readerBusy: boolean;
   autoRefreshEnabled: boolean;
   onAutoRefreshChange: (enabled: boolean) => void;
   onLoadMore: () => void;
-  onConflict: () => void;
-  prefixChanged: boolean;
-  timelineGeneration: number;
+  onTimelineConflict: () => void;
+  timelineConflict: boolean;
+  timelineRenderGeneration: number;
   onRefreshLatest: () => Promise<unknown>;
   error?: string | null;
   onDismissError?: () => void;
@@ -43,14 +42,14 @@ export function SessionReader({
   interaction,
   visibility,
   onVisibilityChange,
-  loading,
-  busy,
+  readerLoading,
+  readerBusy,
   autoRefreshEnabled,
   onAutoRefreshChange,
   onLoadMore,
-  onConflict,
-  prefixChanged,
-  timelineGeneration,
+  onTimelineConflict,
+  timelineConflict,
+  timelineRenderGeneration,
   onRefreshLatest,
   error,
   onDismissError,
@@ -60,10 +59,6 @@ export function SessionReader({
     [items, visibility],
   );
   const hasMore = context.hasMore;
-  const previewAvailable = interaction?.supported === true &&
-    interaction.state === "connected";
-  const interactionController = useSessionInteraction(context.session.id, previewAvailable);
-
   return (
     <section className="reader" aria-labelledby="session-title">
       <SessionHeader
@@ -77,7 +72,7 @@ export function SessionReader({
         diagnostics={context.session.diagnostics}
         label="Session diagnostics"
       />
-      {visibleItems.length === 0 && !loading
+      {visibleItems.length === 0 && !readerLoading
         ? (
             <EmptyState title="This session has no visible events">
               {emptyStateMessage(visibility, hasMore)}
@@ -87,36 +82,26 @@ export function SessionReader({
       {visibleItems.length > 0 || hasMore
         ? (
             <Timeline
-              key={timelineGeneration}
+              key={timelineRenderGeneration}
               items={visibleItems}
               sessionId={context.session.id}
               cursor={context.cursor}
               hasMore={hasMore}
-              loading={loading}
-              busy={busy}
-              paginationFrozen={prefixChanged}
+              loading={readerLoading}
+              readerBusy={readerBusy}
+              paginationFrozen={timelineConflict}
               onLoadMore={onLoadMore}
-              onConflict={onConflict}
+              onTimelineConflict={onTimelineConflict}
             />
           )
         : null}
       {autoRefreshEnabled && !context.session.archived
         ? (
-            <InteractionPanel
+            <SessionInteraction
               interaction={interaction}
+              sessionId={context.session.id}
               itemCount={context.session.itemCount}
               updatedAt={context.session.updatedAt}
-              busy={interactionController.busy}
-              error={interactionController.error}
-              onDismissError={interactionController.clearError}
-              onSendMessage={interactionController.sendMessage}
-              onSendKeys={interactionController.sendKeys}
-              preview={interactionController.preview}
-              previewBusy={interactionController.previewBusy}
-              previewError={interactionController.previewError}
-              onDismissPreviewError={interactionController.clearPreviewError}
-              onPreviewTerminal={interactionController.previewTerminal}
-              onCancelPreviewTerminal={interactionController.cancelPreviewTerminal}
             />
           )
         : null}
@@ -129,14 +114,14 @@ export function SessionReader({
             />
           )
         : null}
-      {prefixChanged
+      {timelineConflict
         ? (
             <aside className="continuity-notice" role="alert">
               <div>
                 <strong>Session 内容已变化</strong>
                 <p>已保留当前阅读位置。重新载入会从第一页读取最新版本。</p>
               </div>
-              <button type="button" disabled={busy} onClick={onRefreshLatest}>
+              <button type="button" disabled={readerBusy} onClick={onRefreshLatest}>
                 重新载入最新版本
               </button>
             </aside>

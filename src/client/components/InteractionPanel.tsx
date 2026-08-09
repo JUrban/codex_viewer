@@ -17,7 +17,7 @@ interface InteractionPanelProps {
   interaction: InteractionResponse | null;
   itemCount: number;
   updatedAt: string | null;
-  busy: boolean;
+  interactionBusy: boolean;
   error: string | null;
   onDismissError: () => void;
   onSendMessage: (message: string) => Promise<void>;
@@ -34,7 +34,7 @@ export function InteractionPanel({
   interaction,
   itemCount,
   updatedAt,
-  busy,
+  interactionBusy,
   error,
   onDismissError,
   onSendMessage,
@@ -117,7 +117,7 @@ export function InteractionPanel({
   if (interaction == null || !interaction.supported) return null;
 
   const send = async () => {
-    if (busy || messageIsBlank || messageTooLarge) return;
+    if (interactionBusy || messageIsBlank || messageTooLarge) return;
     await onSendMessage(message);
     setMessage("");
   };
@@ -261,7 +261,7 @@ export function InteractionPanel({
                               type="button"
                               className={`terminal-key terminal-key-${key}`}
                               aria-label={label}
-                              disabled={busy}
+                              disabled={interactionBusy}
                               onClick={() => void onSendKeys([key]).catch(() => undefined)}
                             >
                               <span aria-hidden="true">{glyph}</span>
@@ -279,7 +279,7 @@ export function InteractionPanel({
                   rows={3}
                   maxLength={MAX_INTERACTION_MESSAGE_BYTES}
                   placeholder="Send a prompt… Enter for a new line, Shift+Enter to send"
-                  disabled={busy}
+                  disabled={interactionBusy}
                   onChange={(event) => setMessage(event.target.value)}
                   onKeyDown={onKeyDown}
                 />
@@ -295,21 +295,21 @@ export function InteractionPanel({
                   <button
                     type="button"
                     className="interaction-send"
-                    disabled={busy || messageIsBlank || messageTooLarge}
+                    disabled={interactionBusy || messageIsBlank || messageTooLarge}
                     onClick={() => void send().catch(() => undefined)}
                   >
                     Send
                   </button>
                   <button
                     type="button"
-                    disabled={busy}
+                    disabled={interactionBusy}
                     onClick={() => void onSendKeys(["interrupt"]).catch(() => undefined)}
                   >
                     Interrupt
                   </button>
                   <button
                     type="button"
-                    disabled={busy}
+                    disabled={interactionBusy}
                     onClick={() => void onSendKeys(["plan"]).catch(() => undefined)}
                   >
                     Plan

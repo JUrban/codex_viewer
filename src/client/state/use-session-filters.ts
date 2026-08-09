@@ -3,14 +3,14 @@ import type { ArchiveScope } from "../../shared/api-contract";
 
 const STORAGE_KEY = "codex-sessions-reader.filters.v1";
 
-export interface BrowserFilters {
+export interface SessionCatalogFilters {
   project: string;
   from: string;
   to: string;
   archiveScope: ArchiveScope;
 }
 
-const DEFAULT_FILTERS: BrowserFilters = {
+const DEFAULT_FILTERS: SessionCatalogFilters = {
   project: "",
   from: "",
   to: "",
@@ -25,9 +25,9 @@ interface StoredFilters {
 }
 
 export function useSessionFilters() {
-  const [filters, setFiltersState] = useState<BrowserFilters>(readFilters);
+  const [filters, setFiltersState] = useState<SessionCatalogFilters>(readFilters);
 
-  const setFilters = useCallback((next: BrowserFilters) => {
+  const setFilters = useCallback((next: SessionCatalogFilters) => {
     const normalized = normalizeFilters(next);
     setFiltersState((current) => sameFilters(current, normalized) ? current : normalized);
     writeFilters(normalized);
@@ -36,7 +36,7 @@ export function useSessionFilters() {
   return { filters, setFilters };
 }
 
-function readFilters(): BrowserFilters {
+function readFilters(): SessionCatalogFilters {
   try {
     const value: unknown = JSON.parse(sessionStorage.getItem(STORAGE_KEY) ?? "null");
     if (!isStoredFilters(value)) return DEFAULT_FILTERS;
@@ -51,7 +51,7 @@ function readFilters(): BrowserFilters {
   }
 }
 
-function writeFilters(filters: BrowserFilters): void {
+function writeFilters(filters: SessionCatalogFilters): void {
   const stored: StoredFilters = {
     project: filters.project,
     from: filters.from,
@@ -65,7 +65,7 @@ function writeFilters(filters: BrowserFilters): void {
   }
 }
 
-function normalizeFilters(filters: BrowserFilters): BrowserFilters {
+function normalizeFilters(filters: SessionCatalogFilters): SessionCatalogFilters {
   const from = validDate(filters.from) ? filters.from : "";
   const to = validDate(filters.to) ? filters.to : "";
   return {
@@ -100,7 +100,7 @@ function validDate(value: string): boolean {
     date.toISOString().slice(0, 10) === value;
 }
 
-function sameFilters(left: BrowserFilters, right: BrowserFilters): boolean {
+function sameFilters(left: SessionCatalogFilters, right: SessionCatalogFilters): boolean {
   return left.project === right.project &&
     left.from === right.from &&
     left.to === right.to &&

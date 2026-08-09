@@ -26,7 +26,7 @@ describe("session interaction state", () => {
       "session-a",
       ["interrupt", "plan", "left"],
     );
-    expect(result.current.busy).toBe(false);
+    expect(result.current.interactionBusy).toBe(false);
     expect(result.current.error).toBeNull();
   });
 
@@ -46,16 +46,16 @@ describe("session interaction state", () => {
     rerender({ sessionId: "session-b" });
     let operationB!: Promise<void>;
     act(() => { operationB = result.current.sendMessage("second"); });
-    expect(result.current.busy).toBe(true);
+    expect(result.current.interactionBusy).toBe(true);
 
     await act(async () => sessionA.reject(new Error("session A failed")));
     await expect(operationAResult).resolves.toMatchObject({ message: "session A failed" });
-    expect(result.current.busy).toBe(true);
+    expect(result.current.interactionBusy).toBe(true);
     expect(result.current.error).toBeNull();
 
     await act(async () => sessionB.resolve());
     await expect(operationB).resolves.toBeUndefined();
-    expect(result.current.busy).toBe(false);
+    expect(result.current.interactionBusy).toBe(false);
     expect(result.current.error).toBeNull();
   });
 
@@ -73,7 +73,7 @@ describe("session interaction state", () => {
 
     await act(async () => result.current.previewTerminal());
     expect(result.current.preview).toEqual(captured);
-    expect(result.current.busy).toBe(false);
+    expect(result.current.interactionBusy).toBe(false);
 
     rerender({ available: false });
     expect(result.current.preview).toBeNull();
@@ -98,6 +98,28 @@ describe("session interaction state", () => {
     expect(result.current.preview).toEqual(captured);
     expect(result.current.previewError).toBe("temporary capture failure");
     expect(result.current.previewBusy).toBe(false);
+  });
+
+  it("reuses unchanged terminal preview content across captures", async () => {
+    const first = {
+      content: "unchanged output",
+      truncated: false,
+      capturedAt: "2026-08-08T12:00:00.000Z",
+    };
+    const second = {
+      ...first,
+      capturedAt: "2026-08-08T12:00:01.000Z",
+    };
+    vi.spyOn(api, "terminalPreview")
+      .mockResolvedValueOnce(first)
+      .mockResolvedValueOnce(second);
+    const { result } = renderHook(() => useSessionInteraction("session-a", true));
+
+    await act(async () => result.current.previewTerminal());
+    const renderedPreview = result.current.preview;
+    await act(async () => result.current.previewTerminal());
+
+    expect(result.current.preview).toBe(renderedPreview);
   });
 
   it("cancels an active terminal preview without reporting an error", async () => {

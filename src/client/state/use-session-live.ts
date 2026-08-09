@@ -5,7 +5,7 @@ import type {
   TimelineCursor,
 } from "../../shared/api-contract";
 import { api, ApiClientError } from "../api/client";
-import { isAbort, isTimelineChanged } from "./request-errors";
+import { isAbort, isTimelineConflict } from "./request-errors";
 
 const INITIAL_RETRY_MS = 1_000;
 const MAX_RETRY_MS = 30_000;
@@ -21,7 +21,7 @@ interface SessionLiveOptions {
   readonly enabled: boolean;
   readonly snapshot: LiveSnapshot | null;
   readonly onUpdate: (response: SessionLiveResponse, expected: LiveSnapshot) => Promise<void> | void;
-  readonly onConflict: () => void;
+  readonly onTimelineConflict: () => void;
   readonly onError: (reason: unknown, terminal: boolean) => void;
   readonly onSuccess?: () => void;
 }
@@ -31,12 +31,12 @@ export function useSessionLive({
   enabled,
   snapshot,
   onUpdate,
-  onConflict,
+  onTimelineConflict,
   onError,
   onSuccess,
 }: SessionLiveOptions): void {
-  const callbacks = useRef({ onUpdate, onConflict, onError, onSuccess });
-  callbacks.current = { onUpdate, onConflict, onError, onSuccess };
+  const callbacks = useRef({ onUpdate, onTimelineConflict, onError, onSuccess });
+  callbacks.current = { onUpdate, onTimelineConflict, onError, onSuccess };
 
   useEffect(() => {
     if (!enabled || snapshot === null) return;
@@ -76,8 +76,8 @@ export function useSessionLive({
         } catch (reason) {
           if (disposed) return;
           if (isAbort(reason)) continue;
-          if (isTimelineChanged(reason)) {
-            callbacks.current.onConflict();
+          if (isTimelineConflict(reason)) {
+            callbacks.current.onTimelineConflict();
             return;
           }
           const retryable = !(reason instanceof ApiClientError) ||

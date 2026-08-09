@@ -133,7 +133,7 @@ function SessionBranch({
               </button>
             )
           : <span className="session-disclosure-spacer" aria-hidden="true" />}
-        <SessionButton
+        <SessionLink
           session={group.root}
           child={child}
         />
@@ -158,12 +158,12 @@ function SessionBranch({
   );
 }
 
-interface SessionButtonProps {
+interface SessionLinkProps {
   session: SessionSummary;
   child?: boolean;
 }
 
-function SessionButton({ session, child = false }: SessionButtonProps) {
+function SessionLink({ session, child = false }: SessionLinkProps) {
   const taskName = child ? session.agent?.taskName ?? null : null;
   const displayTitle = taskName ?? session.title;
   const showOriginalTitle = taskName !== null && taskName !== session.title;

@@ -28,7 +28,7 @@ describe("session reader items", () => {
         hasDetail: false, text: "Inline policy", charCount: 13 }}
       sessionId={SESSION_ID}
       cursor={TIMELINE_CURSOR}
-      onConflict={vi.fn()}
+      onTimelineConflict={vi.fn()}
     />);
     expect(screen.getByText("Inline policy")).toBeInTheDocument();
     expect(fetchMock).not.toHaveBeenCalled();
@@ -41,9 +41,9 @@ describe("session reader items", () => {
     vi.stubGlobal("fetch", fetchMock);
     render(<>
       <ToolItem item={{ ...toolItem, id: "tool-call", stage: "call" }} sessionId={SESSION_ID}
-        cursor={TIMELINE_CURSOR} onConflict={vi.fn()} />
+        cursor={TIMELINE_CURSOR} onTimelineConflict={vi.fn()} />
       <ToolItem item={{ ...toolItem, id: "tool-output", stage: "output", status: "failed" }} sessionId={SESSION_ID}
-        cursor={TIMELINE_CURSOR} onConflict={vi.fn()} />
+        cursor={TIMELINE_CURSOR} onTimelineConflict={vi.fn()} />
     </>);
 
     fireEvent.click(screen.getAllByRole("button", { name: "Show tool detail" })[0]!);
@@ -90,7 +90,7 @@ describe("session reader items", () => {
       hasMore
       loading={false}
       onLoadMore={vi.fn()}
-      onConflict={vi.fn()}
+      onTimelineConflict={vi.fn()}
     />);
     expect(screen.getByRole("button", { name: "Load more events" })).toBeEnabled();
   });
@@ -100,8 +100,8 @@ describe("session reader items", () => {
     const fetchMock = vi.fn((_input: RequestInfo | URL) => new Promise<Response>((resolve) => pending.push(resolve)));
     vi.stubGlobal("fetch", fetchMock);
     render(<>
-      <ToolItem item={toolItem} sessionId={SESSION_ID} cursor={TIMELINE_CURSOR} onConflict={vi.fn()} />
-      <DirectiveItem item={directiveItem} sessionId={SESSION_ID} cursor={TIMELINE_CURSOR} onConflict={vi.fn()} />
+      <ToolItem item={toolItem} sessionId={SESSION_ID} cursor={TIMELINE_CURSOR} onTimelineConflict={vi.fn()} />
+      <DirectiveItem item={directiveItem} sessionId={SESSION_ID} cursor={TIMELINE_CURSOR} onTimelineConflict={vi.fn()} />
     </>);
 
     fireEvent.click(screen.getByRole("button", { name: "Show tool detail" }));
@@ -118,14 +118,14 @@ describe("session reader items", () => {
     let resolveDetail!: (response: Response) => void;
     const pendingDetail = new Promise<Response>((resolve) => { resolveDetail = resolve; });
     const fetchMock = vi.fn().mockReturnValueOnce(pendingDetail);
-    const onConflict = vi.fn();
+    const onTimelineConflict = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
     const view = render(<ToolItem item={toolItem} sessionId={SESSION_ID}
-      cursor={TIMELINE_CURSOR} onConflict={onConflict} />);
+      cursor={TIMELINE_CURSOR} onTimelineConflict={onTimelineConflict} />);
     fireEvent.click(screen.getByRole("button", { name: "Show tool detail" }));
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
     view.rerender(<ToolItem item={toolItem} sessionId={SESSION_ID}
-      cursor={NEXT_TIMELINE_CURSOR} onConflict={onConflict} />);
+      cursor={NEXT_TIMELINE_CURSOR} onTimelineConflict={onTimelineConflict} />);
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect((fetchMock.mock.calls[0]?.[1] as RequestInit).signal?.aborted).toBe(false);
     resolveDetail(json({ itemId: toolItem.id, input: "loaded detail", output: null, truncated: false }));
@@ -137,7 +137,7 @@ describe("session reader items", () => {
       new Promise<Response>(() => {}));
     vi.stubGlobal("fetch", fetchMock);
     render(<ToolItem item={toolItem} sessionId={SESSION_ID}
-      cursor={TIMELINE_CURSOR} onConflict={vi.fn()} />);
+      cursor={TIMELINE_CURSOR} onTimelineConflict={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: "Show tool detail" }));
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
 

@@ -253,7 +253,7 @@
 }
 .event-toggle { flex: 0 0 auto; margin-top: 0; }
 .timeline { padding: 2.5rem 0 0; margin: 0; list-style: none; }
-.trace-event { --trace-color: var(--current); position: relative; display: grid; grid-template-columns: 2.25rem minmax(0, 1fr); padding-bottom: 2.5rem; }
+.trace-event { --trace-color: var(--current); position: relative; display: grid; grid-template-columns: 2.25rem minmax(0, 1fr); padding-bottom: 2.5rem; content-visibility: auto; contain-intrinsic-size: auto 12rem; }
 .trace-event::before { content: ""; position: absolute; left: .45rem; top: .85rem; bottom: -.85rem; width: 1px; background: var(--mist); }
 .trace-event:last-child::before { display: none; }
 .trace-event.human { --trace-color: var(--human); }

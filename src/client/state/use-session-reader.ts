@@ -6,7 +6,7 @@ import type {
 } from "../../shared/api-contract";
 import type { TimelineItem } from "../../shared/domain";
 import { api, ApiClientError } from "../api/client";
-import { isAbort, isTimelineChanged, messageFor } from "./request-errors";
+import { isAbort, isTimelineConflict, messageFor } from "./request-errors";
 import { useSessionLive, type LiveSnapshot } from "./use-session-live";
 import type { ReaderContext } from "./session-reader-state";
 
@@ -21,8 +21,8 @@ interface ReaderState {
   interaction: InteractionResponse | null;
   error: string | null;
   missing: boolean;
-  timelineChanged: boolean;
-  timelineGeneration: number;
+  timelineConflict: boolean;
+  timelineRenderGeneration: number;
 }
 
 type ReaderAction =
@@ -31,7 +31,7 @@ type ReaderAction =
   | { type: "live-success"; response: SessionLiveResponse }
   | { type: "live-error"; error: string }
   | { type: "failure"; error: string; missing: boolean }
-  | { type: "timeline-changed" }
+  | { type: "timeline-conflict" }
   | { type: "clear-error" };
 
 interface ActiveRequest {
@@ -51,8 +51,8 @@ const initialState: ReaderState = {
   interaction: null,
   error: null,
   missing: false,
-  timelineChanged: false,
-  timelineGeneration: 0,
+  timelineConflict: false,
+  timelineRenderGeneration: 0,
 };
 
 export function useSessionReader(sessionId: string) {
@@ -63,11 +63,11 @@ export function useSessionReader(sessionId: string) {
   const stateRef = useRef(state);
   stateRef.current = state;
 
-  const markTimelineChanged = useCallback(() => {
+  const markTimelineConflict = useCallback(() => {
     generation.current += 1;
     active.current?.controller.abort();
     active.current = null;
-    dispatch({ type: "timeline-changed" });
+    dispatch({ type: "timeline-conflict" });
   }, []);
 
   const isCurrent = useCallback((request: ActiveRequest) => (
@@ -98,8 +98,8 @@ export function useSessionReader(sessionId: string) {
       return true;
     } catch (reason) {
       if (!isCurrent(request) || isAbort(reason)) return false;
-      if (isTimelineChanged(reason)) {
-        markTimelineChanged();
+      if (isTimelineConflict(reason)) {
+        markTimelineConflict();
         return false;
       }
       const missing = reason instanceof ApiClientError &&
@@ -109,7 +109,7 @@ export function useSessionReader(sessionId: string) {
     } finally {
       if (active.current === request) active.current = null;
     }
-  }, [isCurrent, markTimelineChanged, sessionId]);
+  }, [isCurrent, markTimelineConflict, sessionId]);
 
   useEffect(() => {
     setAutoRefreshEnabled(false);
@@ -129,7 +129,7 @@ export function useSessionReader(sessionId: string) {
 
   const loadMore = useCallback(() => {
     const current = stateRef.current;
-    if (current.context === null || !current.context.hasMore || current.timelineChanged) {
+    if (current.context === null || !current.context.hasMore || current.timelineConflict) {
       return Promise.resolve(false);
     }
     return requestPage("page", current.context.cursor, {
@@ -158,7 +158,7 @@ export function useSessionReader(sessionId: string) {
     expected: LiveSnapshot,
   ) => {
     const current = stateRef.current;
-    if (current.context === null || current.timelineChanged ||
+    if (current.context === null || current.timelineConflict ||
       current.context.cursor !== expected.cursor ||
       current.context.liveRevision !== expected.liveRevision ||
       response.cursor !== expected.cursor) return;
@@ -177,13 +177,13 @@ export function useSessionReader(sessionId: string) {
     enabled: autoRefreshEnabled && state.operation === null &&
       state.context !== null && state.context.session.id === sessionId &&
       !state.context.session.archived &&
-      !state.timelineChanged,
+      !state.timelineConflict,
     snapshot: state.context === null ? null : {
       cursor: state.context.cursor,
       liveRevision: state.context.liveRevision,
     },
     onUpdate: onLiveUpdate,
-    onConflict: markTimelineChanged,
+    onTimelineConflict: markTimelineConflict,
     onError: (reason, terminal) => {
       dispatch({ type: "live-error", error: messageFor(reason) });
       if (terminal) setAutoRefreshEnabled(false);
@@ -200,14 +200,14 @@ export function useSessionReader(sessionId: string) {
       state.operation === "reload",
     readerError: state.error,
     missing: state.missing,
-    prefixChanged: state.timelineChanged,
-    timelineGeneration: state.timelineGeneration,
+    timelineConflict: state.timelineConflict,
+    timelineRenderGeneration: state.timelineRenderGeneration,
     clearReaderError: () => dispatch({ type: "clear-error" }),
     autoRefreshEnabled,
     setAutoRefreshEnabled,
     loadMore,
     retryOpen,
-    markTimelineChanged,
+    markTimelineConflict,
     refreshLatest: reloadLatest,
   };
 }
@@ -217,7 +217,11 @@ function reducer(state: ReaderState, action: ReaderAction): ReaderState {
     case "start":
       return action.preserve
         ? { ...state, operation: action.operation, error: null }
-        : { ...initialState, operation: action.operation, timelineGeneration: state.timelineGeneration };
+        : {
+            ...initialState,
+            operation: action.operation,
+            timelineRenderGeneration: state.timelineRenderGeneration,
+          };
     case "success": {
       const context: ReaderContext = {
         session: action.page.session,
@@ -233,10 +237,10 @@ function reducer(state: ReaderState, action: ReaderAction): ReaderState {
         interaction: action.page.interaction,
         error: null,
         missing: false,
-        timelineChanged: false,
-        timelineGeneration: action.replace && state.timelineChanged
-          ? state.timelineGeneration + 1
-          : state.timelineGeneration,
+        timelineConflict: false,
+        timelineRenderGeneration: action.replace && state.timelineConflict
+          ? state.timelineRenderGeneration + 1
+          : state.timelineRenderGeneration,
       };
     }
     case "live-success":
@@ -257,8 +261,8 @@ function reducer(state: ReaderState, action: ReaderAction): ReaderState {
       return { ...state, error: action.error };
     case "failure":
       return { ...state, operation: null, error: action.error, missing: action.missing };
-    case "timeline-changed":
-      return { ...state, operation: null, error: null, timelineChanged: true };
+    case "timeline-conflict":
+      return { ...state, operation: null, error: null, timelineConflict: true };
     case "clear-error":
       return state.error === null ? state : { ...state, error: null };
   }

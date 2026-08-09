@@ -14,6 +14,6 @@ export function isStaleListCursor(reason: unknown): reason is ApiClientError {
   return reason instanceof ApiClientError && reason.code === "stale_list_cursor";
 }
 
-export function isTimelineChanged(reason: unknown): reason is ApiClientError {
+export function isTimelineConflict(reason: unknown): reason is ApiClientError {
   return reason instanceof ApiClientError && reason.code === "timeline_changed";
 }

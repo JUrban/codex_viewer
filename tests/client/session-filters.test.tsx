@@ -81,7 +81,8 @@ describe("session filters", () => {
   });
 
   it("opens the date range as a popover and closes it with Escape", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(json(listBody)));
+    const fetchMock = vi.fn().mockResolvedValue(json(listBody));
+    vi.stubGlobal("fetch", fetchMock);
     const user = userEvent.setup();
     render(<App />);
     await screen.findByRole("link", { name: /Reader work/ });
@@ -92,10 +93,28 @@ describe("session filters", () => {
     expect(trigger).toHaveAttribute("aria-expanded", "true");
     expect(screen.getByRole("group", { name: "Date range" })).toBeVisible();
 
+    fireEvent.change(screen.getByLabelText("From"), {
+      target: { value: "2026-07-01" },
+    });
+    expect(trigger).toHaveTextContent("From 2026-07-01");
+
     await user.keyboard("{Escape}");
     expect(trigger).toHaveAttribute("aria-expanded", "false");
+    expect(trigger).toHaveTextContent("Date range");
+    expect(screen.getByLabelText("From")).toHaveValue("");
     expect(trigger).toHaveFocus();
     expect(screen.queryByRole("group", { name: "Date range" })).toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    await user.click(trigger);
+    fireEvent.change(screen.getByLabelText("To"), {
+      target: { value: "2026-07-10" },
+    });
+    fireEvent.pointerDown(document.body);
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+    expect(trigger).toHaveTextContent("Date range");
+    expect(screen.getByLabelText("To")).toHaveValue("");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it("restores applied filters on remount and safely rejects malformed storage", async () => {

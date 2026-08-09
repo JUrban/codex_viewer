@@ -5,7 +5,7 @@ import type {
 } from "../../shared/api-contract";
 import { api } from "../api/client";
 import { isStaleListCursor, messageFor } from "./request-errors";
-import type { BrowserFilters } from "./use-session-filters";
+import type { SessionCatalogFilters } from "./use-session-filters";
 
 const LIST_PAGE_SIZE = 300;
 
@@ -43,7 +43,7 @@ const initialState: ListState = {
   error: null,
 };
 
-export function useSessionList(filters: BrowserFilters) {
+export function useSessionList(filters: SessionCatalogFilters) {
   const [state, dispatch] = useReducer(reducer, initialState);
   const active = useRef<ActiveRequest | null>(null);
   const filtersRef = useRef(filters);
@@ -210,7 +210,7 @@ function reducer(state: ListState, action: ListAction): ListState {
   }
 }
 
-function listQuery(filters: BrowserFilters): SessionListQuery {
+function listQuery(filters: SessionCatalogFilters): SessionListQuery {
   return {
     project: filters.project || undefined,
     from: filters.from ? new Date(`${filters.from}T00:00:00`).toISOString() : undefined,
@@ -220,7 +220,7 @@ function listQuery(filters: BrowserFilters): SessionListQuery {
   };
 }
 
-function filtersKey(filters: BrowserFilters): string {
+function filtersKey(filters: SessionCatalogFilters): string {
   return JSON.stringify([
     filters.project,
     filters.from,

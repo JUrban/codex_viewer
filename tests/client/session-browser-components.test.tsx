@@ -32,7 +32,7 @@ describe("session browser components", () => {
       hasMore={false}
       loading={false}
       onLoadMore={vi.fn()}
-      onConflict={vi.fn()}
+      onTimelineConflict={vi.fn()}
     />);
   
     expect(screen.getByText("Internal · 3")).toBeInTheDocument();
@@ -71,7 +71,7 @@ describe("session browser components", () => {
       hasMore={false}
       loading={false}
       onLoadMore={vi.fn()}
-      onConflict={vi.fn()}
+      onTimelineConflict={vi.fn()}
     />);
   
     const total = screen.getByRole("region", { name: "Total token usage" });
@@ -99,7 +99,7 @@ describe("session browser components", () => {
       hasMore={false}
       loading={false}
       onLoadMore={vi.fn()}
-      onConflict={vi.fn()}
+      onTimelineConflict={vi.fn()}
     />);
   
     expect(screen.getAllByText("Unavailable")).toHaveLength(2);

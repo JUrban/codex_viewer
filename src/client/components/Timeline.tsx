@@ -1,3 +1,4 @@
+import { memo, useMemo } from "react";
 import type { TimelineCursor } from "../../shared/api-contract";
 import type { TimelineItem } from "../../shared/domain";
 import type { UserInputItem as UserInputTimelineItem } from "../../shared/domain";
@@ -18,24 +19,24 @@ interface TimelineProps {
   cursor: TimelineCursor;
   hasMore: boolean;
   loading: boolean;
-  busy?: boolean;
+  readerBusy?: boolean;
   paginationFrozen?: boolean;
   onLoadMore: () => void;
-  onConflict: () => void;
+  onTimelineConflict: () => void;
 }
 
-export function Timeline({
+export const Timeline = memo(function Timeline({
   items,
   sessionId,
   cursor,
   hasMore,
   loading,
-  busy = loading,
+  readerBusy = loading,
   paginationFrozen = false,
   onLoadMore,
-  onConflict,
+  onTimelineConflict,
 }: TimelineProps) {
-  const entries = projectUserInputCards(items);
+  const entries = useMemo(() => projectUserInputCards(items), [items]);
   return (
     <>
       <ol className="timeline" aria-label="Session timeline">
@@ -49,7 +50,7 @@ export function Timeline({
               item={item}
               sessionId={sessionId}
               cursor={cursor}
-              onConflict={onConflict}
+              onTimelineConflict={onTimelineConflict}
             />
           </li>
         ))}
@@ -59,7 +60,7 @@ export function Timeline({
             <button
               className="load-more"
               type="button"
-              disabled={busy || paginationFrozen}
+              disabled={readerBusy || paginationFrozen}
               onClick={onLoadMore}
             >
               {loading ? "Loading…" : "Load more events"}
@@ -68,14 +69,14 @@ export function Timeline({
         : null}
     </>
   );
-}
+});
 
 function TimelineContent({
   item,
   sessionId,
   cursor,
-  onConflict,
-}: Pick<TimelineProps, "sessionId" | "cursor" | "onConflict"> & {
+  onTimelineConflict,
+}: Pick<TimelineProps, "sessionId" | "cursor" | "onTimelineConflict"> & {
   item: TimelineEntry;
 }) {
   switch (item.kind) {
@@ -87,7 +88,7 @@ function TimelineContent({
           item={item}
           sessionId={sessionId}
           cursor={cursor}
-          onConflict={onConflict}
+          onTimelineConflict={onTimelineConflict}
         />
       );
     case "tool":
@@ -96,7 +97,7 @@ function TimelineContent({
           item={item}
           sessionId={sessionId}
           cursor={cursor}
-          onConflict={onConflict}
+          onTimelineConflict={onTimelineConflict}
         />
       );
     case "user_input":

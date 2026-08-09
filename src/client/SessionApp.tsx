@@ -34,14 +34,14 @@ function SessionPage({ sessionId }: { sessionId: string }) {
               interaction={reader.interaction}
               visibility={timelineVisibility.visibility}
               onVisibilityChange={timelineVisibility.setVisibility}
-              loading={reader.readerLoading}
-              busy={reader.operation !== null}
+              readerLoading={reader.readerLoading}
+              readerBusy={reader.operation !== null}
               autoRefreshEnabled={reader.autoRefreshEnabled}
               onAutoRefreshChange={reader.setAutoRefreshEnabled}
               onLoadMore={reader.loadMore}
-              onConflict={reader.markTimelineChanged}
-              prefixChanged={reader.prefixChanged}
-              timelineGeneration={reader.timelineGeneration}
+              onTimelineConflict={reader.markTimelineConflict}
+              timelineConflict={reader.timelineConflict}
+              timelineRenderGeneration={reader.timelineRenderGeneration}
               onRefreshLatest={reader.refreshLatest}
               error={reader.readerError}
               onDismissError={reader.clearReaderError}

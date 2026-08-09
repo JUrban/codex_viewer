@@ -7,7 +7,7 @@ import { api } from "../api/client";
 import { messageFor } from "./request-errors";
 
 export function useSessionInteraction(sessionId: string, previewAvailable: boolean) {
-  const [busy, setBusy] = useState(false);
+  const [interactionBusy, setInteractionBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const activeSessionId = useRef(sessionId);
   const generation = useRef(0);
@@ -31,7 +31,7 @@ export function useSessionInteraction(sessionId: string, previewAvailable: boole
 
   useEffect(() => {
     setError(null);
-    setBusy(false);
+    setInteractionBusy(false);
     setPreview(null);
     setPreviewError(null);
     setPreviewBusy(false);
@@ -48,7 +48,7 @@ export function useSessionInteraction(sessionId: string, previewAvailable: boole
 
   const act = useCallback(async (operation: () => Promise<void>) => {
     const operationGeneration = ++generation.current;
-    setBusy(true);
+    setInteractionBusy(true);
     setError(null);
     try {
       await operation();
@@ -59,7 +59,7 @@ export function useSessionInteraction(sessionId: string, previewAvailable: boole
       throw reason;
     } finally {
       if (generation.current === operationGeneration) {
-        setBusy(false);
+        setInteractionBusy(false);
       }
     }
   }, []);
@@ -72,7 +72,9 @@ export function useSessionInteraction(sessionId: string, previewAvailable: boole
     setPreviewError(null);
     try {
       const result = await api.terminalPreview(sessionId, controller.signal);
-      if (previewRequest.current === controller) setPreview(result);
+      if (previewRequest.current === controller) {
+        setPreview((current) => samePreviewContent(current, result) ? current : result);
+      }
     } catch (reason) {
       if (previewRequest.current === controller && !controller.signal.aborted) {
         setPreviewError(messageFor(reason));
@@ -89,7 +91,7 @@ export function useSessionInteraction(sessionId: string, previewAvailable: boole
   useEffect(() => () => cancelPreviewTerminal(), [cancelPreviewTerminal]);
 
   return {
-    busy,
+    interactionBusy,
     error,
     clearError: () => setError(null),
     sendMessage: (message: string) => act(() => api.sendMessage(sessionId, message)),
@@ -101,4 +103,12 @@ export function useSessionInteraction(sessionId: string, previewAvailable: boole
     cancelPreviewTerminal,
     clearPreviewError: () => setPreviewError(null),
   };
+}
+
+function samePreviewContent(
+  current: TerminalPreviewResponse | null,
+  next: TerminalPreviewResponse,
+): boolean {
+  return current !== null && current.content === next.content &&
+    current.truncated === next.truncated;
 }

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { PageJumpControls } from "../../src/client/components/PageJumpControls";
 
@@ -9,7 +9,7 @@ describe("page jump controls", () => {
     setPageMetrics({ scrollY: 0, innerHeight: 768, scrollHeight: 768 });
   });
 
-  it("shows only the controls that move away from the nearest edge", () => {
+  it("shows only the controls that move away from the nearest edge", async () => {
     setPageMetrics({ scrollY: 0, innerHeight: 800, scrollHeight: 3_000 });
     render(<PageJumpControls />);
 
@@ -20,7 +20,7 @@ describe("page jump controls", () => {
       setPageMetrics({ scrollY: 1_100, innerHeight: 800, scrollHeight: 3_000 });
       fireEvent.scroll(window);
     });
-    expect(screen.getByRole("button", { name: "Back to top" })).toBeVisible();
+    expect(await screen.findByRole("button", { name: "Back to top" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Jump to bottom" })).toBeVisible();
 
     act(() => {
@@ -28,7 +28,9 @@ describe("page jump controls", () => {
       fireEvent.scroll(window);
     });
     expect(screen.getByRole("button", { name: "Back to top" })).toBeVisible();
-    expect(screen.queryByRole("button", { name: "Jump to bottom" })).toBeNull();
+    await waitFor(() => {
+      expect(screen.queryByRole("button", { name: "Jump to bottom" })).toBeNull();
+    });
   });
 
   it("jumps to either page edge", () => {
@@ -57,7 +59,7 @@ describe("page jump controls", () => {
     expect(scrollTo).toHaveBeenCalledWith({ top: 3_000, behavior: "auto" });
   });
 
-  it("updates when the document height changes and disconnects its observer", () => {
+  it("updates when the document height changes and disconnects its observer", async () => {
     let notifyResize!: ResizeObserverCallback;
     const disconnect = vi.fn();
     vi.stubGlobal("ResizeObserver", class {
@@ -77,10 +79,33 @@ describe("page jump controls", () => {
       setPageMetrics({ scrollY: 0, innerHeight: 800, scrollHeight: 2_000 });
       notifyResize([], {} as ResizeObserver);
     });
-    expect(screen.getByRole("button", { name: "Jump to bottom" })).toBeVisible();
+    expect(await screen.findByRole("button", { name: "Jump to bottom" })).toBeVisible();
 
     view.unmount();
     expect(disconnect).toHaveBeenCalledOnce();
+  });
+
+  it("coalesces repeated scroll events into one animation frame", () => {
+    let runFrame!: FrameRequestCallback;
+    const requestAnimationFrame = vi.fn((callback: FrameRequestCallback) => {
+      runFrame = callback;
+      return 7;
+    });
+    const cancelAnimationFrame = vi.fn();
+    vi.stubGlobal("requestAnimationFrame", requestAnimationFrame);
+    vi.stubGlobal("cancelAnimationFrame", cancelAnimationFrame);
+    setPageMetrics({ scrollY: 0, innerHeight: 800, scrollHeight: 3_000 });
+    render(<PageJumpControls />);
+
+    act(() => {
+      setPageMetrics({ scrollY: 1_100, innerHeight: 800, scrollHeight: 3_000 });
+      fireEvent.scroll(window);
+      fireEvent.scroll(window);
+    });
+    expect(requestAnimationFrame).toHaveBeenCalledOnce();
+
+    act(() => runFrame(16));
+    expect(screen.getByRole("button", { name: "Back to top" })).toBeVisible();
   });
 });
 

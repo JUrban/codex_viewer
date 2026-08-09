@@ -98,7 +98,7 @@ function timeline(items: UserInputItem[]) {
       hasMore={false}
       loading={false}
       onLoadMore={vi.fn()}
-      onConflict={vi.fn()}
+      onTimelineConflict={vi.fn()}
     />
   );
 }

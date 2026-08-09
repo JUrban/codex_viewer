@@ -1,3 +1,4 @@
+import { memo } from "react";
 import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
 import rehypeKatex from "rehype-katex";
 import remarkGfm from "remark-gfm";
@@ -5,6 +6,18 @@ import remarkMath from "remark-math";
 import type { MessageItem as Message } from "../../shared/domain";
 
 const SAFE_PROTOCOLS = new Set(["http:", "https:", "mailto:"]);
+const REMARK_PLUGINS = [remarkGfm, remarkMath];
+const REHYPE_PLUGINS = [rehypeKatex];
+const MARKDOWN_COMPONENTS = {
+  a: ({ href, children }: React.ComponentProps<"a">) => href
+    ? <a href={href} target="_blank" rel="noreferrer noopener">{children}</a>
+    : <span>{children}</span>,
+  img: ({ alt }: React.ComponentProps<"img">) => (
+    <span className="image-placeholder">
+      [Image omitted{alt ? `: ${alt}` : ""}]
+    </span>
+  ),
+};
 
 export function safeUrlTransform(url: string): string {
   try {
@@ -15,7 +28,7 @@ export function safeUrlTransform(url: string): string {
   }
 }
 
-export function MessageItem({ item }: { item: Message }) {
+export const MessageItem = memo(function MessageItem({ item }: { item: Message }) {
   const itemType = item.itemType === null ? "" : ` · ${item.itemType}`;
   return (
     <article className="message-body">
@@ -23,30 +36,21 @@ export function MessageItem({ item }: { item: Message }) {
       <MarkdownContent markdown={item.markdown} />
     </article>
   );
-}
+});
 
-export function MarkdownContent({ markdown }: { markdown: string }) {
+export const MarkdownContent = memo(function MarkdownContent({ markdown }: { markdown: string }) {
   return (
     <ReactMarkdown
-      remarkPlugins={[remarkGfm, remarkMath]}
-      rehypePlugins={[rehypeKatex]}
+      remarkPlugins={REMARK_PLUGINS}
+      rehypePlugins={REHYPE_PLUGINS}
       skipHtml
       urlTransform={safeUrlTransform}
-      components={{
-        a: ({ href, children }) => href
-          ? <a href={href} target="_blank" rel="noreferrer noopener">{children}</a>
-          : <span>{children}</span>,
-        img: ({ alt }) => (
-          <span className="image-placeholder">
-            [Image omitted{alt ? `: ${alt}` : ""}]
-          </span>
-        ),
-      }}
+      components={MARKDOWN_COMPONENTS}
     >
       {markdown}
     </ReactMarkdown>
   );
-}
+});
 
 function messageLabel(item: Message): string {
   if (item.role === "user") return "User";

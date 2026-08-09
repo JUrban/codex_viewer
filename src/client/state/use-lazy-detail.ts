@@ -7,7 +7,7 @@ interface LazyDetailOptions<T> {
   cursor: TimelineCursor;
   load: (cursor: TimelineCursor, signal: AbortSignal) => Promise<T>;
   unavailableMessage: string;
-  onConflict: () => void;
+  onTimelineConflict: () => void;
 }
 
 export function useLazyDetail<T>({
@@ -15,7 +15,7 @@ export function useLazyDetail<T>({
   cursor,
   load,
   unavailableMessage,
-  onConflict,
+  onTimelineConflict,
 }: LazyDetailOptions<T>) {
   const [detail, setDetail] = useState<T | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
@@ -32,13 +32,13 @@ export function useLazyDetail<T>({
         if (controller.signal.aborted) return;
         if (reason instanceof ApiClientError && reason.code === "timeline_changed") {
           setFailure(unavailableMessage);
-          onConflict();
+          onTimelineConflict();
           return;
         }
         setFailure(reason instanceof Error ? reason.message : unavailableMessage);
       });
     return () => controller.abort();
-  }, [detail, enabled, load, onConflict, unavailableMessage]);
+  }, [detail, enabled, load, onTimelineConflict, unavailableMessage]);
 
   return { detail, error: failure };
 }

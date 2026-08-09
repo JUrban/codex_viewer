@@ -11,14 +11,14 @@ interface DirectiveItemProps {
   item: Directive;
   sessionId: string;
   cursor: TimelineCursor;
-  onConflict: () => void;
+  onTimelineConflict: () => void;
 }
 
 export function DirectiveItem({
   item,
   sessionId,
   cursor,
-  onConflict,
+  onTimelineConflict,
 }: DirectiveItemProps) {
   if (!item.hasDetail) {
     return <InlineDirective item={item} />;
@@ -28,7 +28,7 @@ export function DirectiveItem({
       item={item}
       sessionId={sessionId}
       cursor={cursor}
-      onConflict={onConflict}
+      onTimelineConflict={onTimelineConflict}
     />
   );
 }
@@ -46,7 +46,7 @@ function LazyDirective({
   item,
   sessionId,
   cursor,
-  onConflict,
+  onTimelineConflict,
 }: DirectiveItemProps & { item: Extract<Directive, { hasDetail: true }> }) {
   const [open, setOpen] = useState(false);
   const loadDetail = useCallback(
@@ -59,7 +59,7 @@ function LazyDirective({
     cursor,
     load: loadDetail,
     unavailableMessage: "Directive unavailable",
-    onConflict,
+    onTimelineConflict,
   });
 
   return (

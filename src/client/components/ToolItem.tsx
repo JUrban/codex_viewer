@@ -11,14 +11,14 @@ interface ToolItemProps {
   item: Tool;
   sessionId: string;
   cursor: TimelineCursor;
-  onConflict: () => void;
+  onTimelineConflict: () => void;
 }
 
 export function ToolItem({
   item,
   sessionId,
   cursor,
-  onConflict,
+  onTimelineConflict,
 }: ToolItemProps) {
   const [open, setOpen] = useState(false);
   const loadDetail = useCallback(
@@ -31,7 +31,7 @@ export function ToolItem({
     cursor,
     load: loadDetail,
     unavailableMessage: "Tool detail unavailable",
-    onConflict,
+    onTimelineConflict,
   });
 
   return (

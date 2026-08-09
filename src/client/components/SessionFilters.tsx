@@ -1,19 +1,24 @@
-import { useEffect, useRef, useState } from "react";
-import type { BrowserFilters } from "../state/use-session-filters";
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { SessionCatalogFilters } from "../state/use-session-filters";
 import type { ProjectFacet } from "../../shared/api-contract";
 
 interface SessionFiltersProps {
-  filters: BrowserFilters;
+  filters: SessionCatalogFilters;
   projects: ProjectFacet[];
-  onChange: (filters: BrowserFilters) => void;
+  onChange: (filters: SessionCatalogFilters) => void;
 }
 
 export function SessionFilters({ filters, projects, onChange }: SessionFiltersProps) {
   const [fromDraft, setFromDraft] = useState(filters.from);
   const [toDraft, setToDraft] = useState(filters.to);
   const [datePickerOpen, setDatePickerOpen] = useState(false);
-  const datePickerRef = useRef<HTMLDivElement>(null);
+  const dateControlsRef = useRef<HTMLDivElement>(null);
   const dateTriggerRef = useRef<HTMLButtonElement>(null);
+  const discardDateDrafts = useCallback(() => {
+    setFromDraft(filters.from);
+    setToDraft(filters.to);
+    setDatePickerOpen(false);
+  }, [filters.from, filters.to]);
 
   useEffect(() => {
     setFromDraft(filters.from);
@@ -22,13 +27,13 @@ export function SessionFilters({ filters, projects, onChange }: SessionFiltersPr
   useEffect(() => {
     if (!datePickerOpen) return;
     const closeOnOutsidePointer = (event: PointerEvent) => {
-      if (!datePickerRef.current?.contains(event.target as Node)) {
-        setDatePickerOpen(false);
+      if (!dateControlsRef.current?.contains(event.target as Node)) {
+        discardDateDrafts();
       }
     };
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
-      setDatePickerOpen(false);
+      discardDateDrafts();
       dateTriggerRef.current?.focus();
     };
     document.addEventListener("pointerdown", closeOnOutsidePointer);
@@ -37,9 +42,9 @@ export function SessionFilters({ filters, projects, onChange }: SessionFiltersPr
       document.removeEventListener("pointerdown", closeOnOutsidePointer);
       document.removeEventListener("keydown", closeOnEscape);
     };
-  }, [datePickerOpen]);
+  }, [datePickerOpen, discardDateDrafts]);
 
-  const patch = (value: Partial<BrowserFilters>) => onChange({ ...filters, ...value });
+  const patch = (value: Partial<SessionCatalogFilters>) => onChange({ ...filters, ...value });
   const invalidDateRange = Boolean(fromDraft && toDraft && fromDraft > toDraft);
   const datesChanged = fromDraft !== filters.from || toDraft !== filters.to;
   const applyDates = () => {
@@ -61,15 +66,15 @@ export function SessionFilters({ filters, projects, onChange }: SessionFiltersPr
           <option value={project} key={project}>{project} ({count})</option>
         ))}
       </select>
-      <div className="date-grid">
-        <div className="date-picker" ref={datePickerRef}>
+      <div className="date-grid" ref={dateControlsRef}>
+        <div className="date-picker">
           <button
             ref={dateTriggerRef}
             className="date-trigger"
             type="button"
             aria-expanded={datePickerOpen}
             aria-controls="date-range-popover"
-            onClick={() => setDatePickerOpen((open) => !open)}
+            onClick={() => datePickerOpen ? discardDateDrafts() : setDatePickerOpen(true)}
           >
             <span className="date-trigger-value">
               {dateRangeLabel(fromDraft, toDraft)}
