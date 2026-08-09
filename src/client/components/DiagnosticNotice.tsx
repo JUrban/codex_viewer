@@ -1,8 +1,7 @@
 import type { Diagnostic } from "../../shared/domain";
-import type { ApiWarning } from "../../shared/api-contract";
 
 interface DiagnosticNoticeProps {
-  diagnostics: Array<Diagnostic | ApiWarning>;
+  diagnostics: Diagnostic[];
   label: string;
 }
 

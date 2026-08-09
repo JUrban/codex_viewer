@@ -1,8 +1,8 @@
 import { useMemo, useState } from "react";
-import type { SessionListEntry } from "../../shared/api-contract";
+import type { SessionSummary } from "../../shared/domain";
 
 export interface SessionGroup {
-  root: SessionListEntry;
+  root: SessionSummary;
   children: SessionGroup[];
   orphan: boolean;
 }
@@ -12,59 +12,55 @@ interface ExpansionOverrides {
   collapsed: ReadonlySet<string>;
 }
 
-export function groupSessions(entries: SessionListEntry[]): SessionGroup[] {
-  const byId = new Map(entries.map((entry) => [entry.session.id, entry]));
-  const childrenByParent = new Map<string, SessionListEntry[]>();
+export function groupSessions(entries: SessionSummary[]): SessionGroup[] {
+  const byId = new Map(entries.map((session) => [session.id, session]));
+  const childrenByParent = new Map<string, SessionSummary[]>();
 
-  for (const entry of entries) {
-    if (entry.session.parentId && byId.has(entry.session.parentId)) {
-      const siblings = childrenByParent.get(entry.session.parentId) ?? [];
-      siblings.push(entry);
-      childrenByParent.set(entry.session.parentId, siblings);
+  for (const session of entries) {
+    if (session.parentId && byId.has(session.parentId)) {
+      const siblings = childrenByParent.get(session.parentId) ?? [];
+      siblings.push(session);
+      childrenByParent.set(session.parentId, siblings);
     }
   }
 
   const visited = new Set<string>();
   const build = (
-    root: SessionListEntry,
+    root: SessionSummary,
     orphan: boolean,
     ancestors: ReadonlySet<string>,
   ): SessionGroup => {
-    visited.add(root.session.id);
-    const lineage = new Set(ancestors).add(root.session.id);
+    visited.add(root.id);
+    const lineage = new Set(ancestors).add(root.id);
     return {
       root,
       orphan,
-      children: (childrenByParent.get(root.session.id) ?? [])
-        .filter((child) => !lineage.has(child.session.id))
+      children: (childrenByParent.get(root.id) ?? [])
+        .filter((child) => !lineage.has(child.id))
         .map((child) => build(child, false, lineage)),
     };
   };
 
   const groups = entries
-    .filter((entry) => !entry.session.parentId || !byId.has(entry.session.parentId))
+    .filter((session) => !session.parentId || !byId.has(session.parentId))
     .map((root) => build(
       root,
-      Boolean(root.session.parentId && !byId.has(root.session.parentId)),
+      Boolean(root.parentId && !byId.has(root.parentId)),
       new Set(),
     ));
 
-  for (const entry of entries) {
-    if (!visited.has(entry.session.id)) groups.push(build(entry, true, new Set()));
+  for (const session of entries) {
+    if (!visited.has(session.id)) groups.push(build(session, true, new Set()));
   }
 
   return groups;
 }
 
 interface SessionTreeProps {
-  entries: SessionListEntry[];
-  revealMatches?: boolean;
+  entries: SessionSummary[];
 }
 
-export function SessionTree({
-  entries,
-  revealMatches = false,
-}: SessionTreeProps) {
+export function SessionTree({ entries }: SessionTreeProps) {
   const groups = useMemo(() => groupSessions(entries), [entries]);
   const [expansion, setExpansion] = useState<ExpansionOverrides>(() => ({
     expanded: new Set(),
@@ -86,11 +82,10 @@ export function SessionTree({
       <ul className="session-list">
         {groups.map((group) => (
           <SessionBranch
-            key={group.root.session.id}
+            key={group.root.id}
             group={group}
             expanded={expansion.expanded}
             collapsed={expansion.collapsed}
-            revealMatches={revealMatches}
             onToggle={onToggle}
           />
         ))}
@@ -103,7 +98,6 @@ interface SessionBranchProps {
   group: SessionGroup;
   expanded: ReadonlySet<string>;
   collapsed: ReadonlySet<string>;
-  revealMatches: boolean;
   onToggle: (id: string, open: boolean) => void;
   child?: boolean;
 }
@@ -112,14 +106,12 @@ function SessionBranch({
   group,
   expanded,
   collapsed,
-  revealMatches,
   onToggle,
   child = false,
 }: SessionBranchProps) {
-  const { id, title } = group.root.session;
+  const { id, title } = group.root;
   const hasChildren = group.children.length > 0;
-  const open = hasChildren && !collapsed.has(id) &&
-    (expanded.has(id) || revealMatches);
+  const open = hasChildren && !collapsed.has(id) && expanded.has(id);
   const childListId = `session-children-${id.replaceAll(/[^A-Za-z0-9_-]/g, "-")}`;
 
   return (
@@ -142,7 +134,7 @@ function SessionBranch({
             )
           : <span className="session-disclosure-spacer" aria-hidden="true" />}
         <SessionButton
-          entry={group.root}
+          session={group.root}
           child={child}
         />
       </div>
@@ -151,11 +143,10 @@ function SessionBranch({
             <ul className="child-list" id={childListId}>
               {group.children.map((nested) => (
                 <SessionBranch
-                  key={nested.root.session.id}
+                  key={nested.root.id}
                   group={nested}
                   expanded={expanded}
                   collapsed={collapsed}
-                  revealMatches={revealMatches}
                   onToggle={onToggle}
                   child
                 />
@@ -168,12 +159,11 @@ function SessionBranch({
 }
 
 interface SessionButtonProps {
-  entry: SessionListEntry;
+  session: SessionSummary;
   child?: boolean;
 }
 
-function SessionButton({ entry, child = false }: SessionButtonProps) {
-  const { session, matches } = entry;
+function SessionButton({ session, child = false }: SessionButtonProps) {
   const taskName = child ? session.agent?.taskName ?? null : null;
   const displayTitle = taskName ?? session.title;
   const showOriginalTitle = taskName !== null && taskName !== session.title;
@@ -208,7 +198,6 @@ function SessionButton({ entry, child = false }: SessionButtonProps) {
                 : session.cwd ?? "Project unavailable"}
             </small>
           )}
-      {matches[0] ? <small className="match">{matches[0].excerpt}</small> : null}
     </a>
   );
 }

@@ -24,7 +24,7 @@ describe("session catalog state", () => {
     expect(fetchMock.mock.calls[1]?.[0]).toContain("cursor=next-page");
   });
 
-  it("aborts and ignores an obsolete query after filters change", async () => {
+  it("aborts and ignores an obsolete list request after filters change", async () => {
     let resolveInitial!: (value: Response) => void;
     const initial = new Promise<Response>((resolve) => { resolveInitial = resolve; });
     const fetchMock = vi.fn((input: RequestInfo | URL, _init?: RequestInit) => {
@@ -82,7 +82,5 @@ function response(
     projects: [{ project: "/project/reader", count: sessions.length }],
     total: sessions.length,
     nextCursor: nextCursor as ListCursor | null,
-    partial: false,
-    warnings: [],
   };
 }

@@ -85,7 +85,7 @@ restart the server after replacing them.
 
 - Browse active and archived Codex sessions.
 - Open each session at a stable `/sessions/:id` URL.
-- Search session titles, project paths, and visible user and assistant messages.
+- Filter sessions by project, date range, and archive state.
 - Render Markdown, GitHub-flavored Markdown, and KaTeX math.
 - Continue reading rollout files while Codex is writing them.
 - Enable Live updates for individual active sessions.
@@ -174,10 +174,6 @@ npm run benchmark:scale
 
 Pass `--codex-home` with the directory containing `sessions/`, not `sessions/`
 itself. Session files must be regular files named `rollout-*.jsonl`.
-
-**Search returns partial results**
-
-Narrow the search with a project or date filter, or use a more specific phrase.
 
 **The port is already in use**
 

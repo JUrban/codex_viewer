@@ -116,9 +116,9 @@ describe("session browser components", () => {
     const orphan = entry({ ...baseSession, id: "orphanabcdefghijklmnopqr", parentId: "missingabcdefghijklmnop", title: "Orphan" });
     const groups = groupSessions([entry(baseSession), child, grandchild, orphan]);
     expect(groups).toHaveLength(2);
-    expect(groups[0]?.children[0]?.root.session.title).toBe("Child");
-    expect(groups[0]?.children[0]?.children[0]?.root.session.title).toBe("Grandchild");
-    expect(groups[1]).toMatchObject({ orphan: true, root: { session: { title: "Orphan" } } });
+    expect(groups[0]?.children[0]?.root.title).toBe("Child");
+    expect(groups[0]?.children[0]?.children[0]?.root.title).toBe("Grandchild");
+    expect(groups[1]).toMatchObject({ orphan: true, root: { title: "Orphan" } });
   });
 
   it("shows normalized source metadata in the catalog and session detail", () => {
@@ -202,19 +202,6 @@ describe("session browser components", () => {
   
     rerender(<SessionTree entries={[...entries]} />);
     expect(screen.getByRole("link", { name: /repository_review/ })).toBeInTheDocument();
-  });
-
-  it("reveals nested branches for search results", () => {
-    const child = entry({ ...baseSession, id: CHILD_ID, parentId: SESSION_ID, title: "Child" });
-    const grandchild = entry({
-      ...baseSession,
-      id: "grandchildabcdefghijklmn",
-      parentId: CHILD_ID,
-      title: "Grandchild",
-    });
-    const entries = [entry(baseSession), child, grandchild];
-    render(<SessionTree entries={entries} revealMatches />);
-    expect(screen.getByRole("link", { name: /Grandchild/ })).toBeInTheDocument();
   });
 
   it("renders Markdown without raw HTML, external images, or dangerous links", () => {

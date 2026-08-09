@@ -212,7 +212,6 @@ function reducer(state: ListState, action: ListAction): ListState {
 
 function listQuery(filters: BrowserFilters): SessionListQuery {
   return {
-    q: filters.q || undefined,
     project: filters.project || undefined,
     from: filters.from ? new Date(`${filters.from}T00:00:00`).toISOString() : undefined,
     to: filters.to ? new Date(`${filters.to}T23:59:59.999`).toISOString() : undefined,
@@ -223,7 +222,6 @@ function listQuery(filters: BrowserFilters): SessionListQuery {
 
 function filtersKey(filters: BrowserFilters): string {
   return JSON.stringify([
-    filters.q,
     filters.project,
     filters.from,
     filters.to,
@@ -235,12 +233,12 @@ function mergePage(
   current: SessionListResponse,
   next: SessionListResponse,
 ): SessionListResponse {
-  const seen = new Set(current.sessions.map((entry) => entry.session.id));
+  const seen = new Set(current.sessions.map((session) => session.id));
   return {
     ...next,
     sessions: [
       ...current.sessions,
-      ...next.sessions.filter((entry) => !seen.has(entry.session.id)),
+      ...next.sessions.filter((session) => !seen.has(session.id)),
     ],
   };
 }

@@ -4,7 +4,6 @@ import type { ArchiveScope } from "../../shared/api-contract";
 const STORAGE_KEY = "codex-sessions-reader.filters.v1";
 
 export interface BrowserFilters {
-  q: string;
   project: string;
   from: string;
   to: string;
@@ -12,7 +11,6 @@ export interface BrowserFilters {
 }
 
 const DEFAULT_FILTERS: BrowserFilters = {
-  q: "",
   project: "",
   from: "",
   to: "",
@@ -20,7 +18,6 @@ const DEFAULT_FILTERS: BrowserFilters = {
 };
 
 interface StoredFilters {
-  query: string;
   project: string;
   from: string;
   to: string;
@@ -44,7 +41,6 @@ function readFilters(): BrowserFilters {
     const value: unknown = JSON.parse(sessionStorage.getItem(STORAGE_KEY) ?? "null");
     if (!isStoredFilters(value)) return DEFAULT_FILTERS;
     return normalizeFilters({
-      q: value.query,
       project: value.project,
       from: value.from,
       to: value.to,
@@ -57,7 +53,6 @@ function readFilters(): BrowserFilters {
 
 function writeFilters(filters: BrowserFilters): void {
   const stored: StoredFilters = {
-    query: filters.q,
     project: filters.project,
     from: filters.from,
     to: filters.to,
@@ -74,7 +69,6 @@ function normalizeFilters(filters: BrowserFilters): BrowserFilters {
   const from = validDate(filters.from) ? filters.from : "";
   const to = validDate(filters.to) ? filters.to : "";
   return {
-    q: filters.q.trim(),
     project: filters.project,
     from: from && to && from > to ? "" : from,
     to,
@@ -85,7 +79,7 @@ function normalizeFilters(filters: BrowserFilters): BrowserFilters {
 function isStoredFilters(value: unknown): value is StoredFilters {
   if (typeof value !== "object" || value === null) return false;
   const candidate = value as Record<string, unknown>;
-  return typeof candidate.query === "string" &&
+  return Object.keys(candidate).length === 4 &&
     typeof candidate.project === "string" &&
     typeof candidate.from === "string" &&
     typeof candidate.to === "string" &&
@@ -107,8 +101,7 @@ function validDate(value: string): boolean {
 }
 
 function sameFilters(left: BrowserFilters, right: BrowserFilters): boolean {
-  return left.q === right.q &&
-    left.project === right.project &&
+  return left.project === right.project &&
     left.from === right.from &&
     left.to === right.to &&
     left.archiveScope === right.archiveScope;

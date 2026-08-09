@@ -14,10 +14,6 @@ import type { DomainAgentInteraction } from "../domain/session-domain.js";
 import { SessionApiMapper } from "../api/session-api-mapper.js";
 import type { SessionSource } from "../source/session-source.js";
 import {
-  DEFAULT_SEARCH_BUDGET,
-  type SearchBudget,
-} from "../search/search-document.js";
-import {
   CatalogSnapshotStore,
   type CatalogSnapshotStoreDependencies,
   DEFAULT_CATALOG_FRESHNESS_MS,
@@ -78,7 +74,6 @@ export class DefaultSessionRepository implements SessionRepository {
 
   constructor(
     sources: readonly SessionSource[],
-    searchBudget: SearchBudget = DEFAULT_SEARCH_BUDGET,
     freshnessMs = DEFAULT_CATALOG_FRESHNESS_MS,
     now: () => number = performance.now.bind(performance),
     storeDependencies?: CatalogSnapshotStoreDependencies,
@@ -89,7 +84,7 @@ export class DefaultSessionRepository implements SessionRepository {
       now,
       storeDependencies,
     );
-    this.#queries = new SessionQueryService(searchBudget);
+    this.#queries = new SessionQueryService();
   }
 
   async refresh(): Promise<void> {

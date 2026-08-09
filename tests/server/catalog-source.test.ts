@@ -165,7 +165,6 @@ describe("catalog discovery", () => {
     await expect(repository.list({})).resolves.toMatchObject({
       sessions: [],
       total: 0,
-      warnings: [],
     });
 
     await repository.refresh();

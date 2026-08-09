@@ -1,4 +1,3 @@
-import { DiagnosticNotice } from "./components/DiagnosticNotice";
 import { EmptyState } from "./components/EmptyState";
 import { ErrorState } from "./components/ErrorState";
 import { SessionFilters } from "./components/SessionFilters";
@@ -39,9 +38,6 @@ export function App() {
           projects={catalog.list?.projects ?? []}
           onChange={filterState.setFilters}
         />
-        {catalog.list?.warnings.length
-          ? <DiagnosticNotice diagnostics={catalog.list.warnings} label="Search warnings" />
-          : null}
         {catalog.listError
           ? <ErrorState title="Could not load sessions" message={catalog.listError} onDismiss={catalog.clearListError} />
           : null}
@@ -52,7 +48,7 @@ export function App() {
                 {emptyMessage(filterState.filters.archiveScope)}
               </EmptyState>
             )
-          : <SessionTree entries={sessions} revealMatches={filterState.filters.q.length > 0} />}
+          : <SessionTree entries={sessions} />}
         {catalog.list?.nextCursor
           ? (
               <button
@@ -67,9 +63,6 @@ export function App() {
               </button>
             )
           : null}
-        {catalog.list?.partial
-          ? <p className="partial-notice">Results are partial because the safe search budget was reached.</p>
-          : null}
       </aside>
     </main>
   );
@@ -83,6 +76,6 @@ function emptyTitle(scope: "active" | "archived" | "all"): string {
 
 function emptyMessage(scope: "active" | "archived" | "all"): string {
   return scope === "all"
-    ? "Clear a filter or search for a different phrase."
+    ? "Clear a filter to see more sessions."
     : "Try All sessions, or clear another filter.";
 }

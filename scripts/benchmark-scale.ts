@@ -20,7 +20,6 @@ import {
   extendsTimelinePrefix,
   extendTimelinePrefixIndex,
 } from "../src/server/repository/timeline-prefix-index.js";
-import { buildSearchDocument } from "../src/server/search/search-document.js";
 
 const SESSION_COUNT = 3_000;
 const MIN_CORPUS_BYTES = 100 * 1024 * 1024;
@@ -44,21 +43,19 @@ try {
     throw new Error(`Synthetic corpus was only ${totalBytes} bytes`);
   }
 
-  const derivationCalls = { prefixIndex: 0, searchDocument: 0 };
+  let derivationCalls = 0;
   const prefixCalls = { full: 0, append: 0 };
   const prefixMs = { full: 0, append: 0 };
-  let searchDocumentBuildMs = 0;
   const prefixIndexBytesBySession = new Map<string, number>();
   const timelineItemsBySession = new Map<string, number>();
   const source = await createCodexSessionSource(root);
   const repository = new DefaultSessionRepository(
     [source],
-    undefined,
     DEFAULT_CATALOG_FRESHNESS_MS,
     performance.now.bind(performance),
     {
       timelinePrefixIndexBuilder(normalized, prefixKey, previous) {
-        derivationCalls.prefixIndex += 1;
+        derivationCalls += 1;
         const startedAt = performance.now();
         const append = previous !== undefined &&
           extendsTimelinePrefix(previous.normalized, normalized) &&
@@ -92,25 +89,18 @@ try {
         );
         return result;
       },
-      searchDocumentBuilder(normalized) {
-        derivationCalls.searchDocument += 1;
-        const startedAt = performance.now();
-        const result = buildSearchDocument(normalized);
-        searchDocumentBuildMs += performance.now() - startedAt;
-        return result;
-      },
     },
   );
   const coldCatalog = await measure(() => repository.list({ limit: 200 }));
   const coldSourceTelemetry = source.lastRefreshTelemetry();
   assertDerivationDelta(
     "cold catalog",
-    { prefixIndex: 0, searchDocument: 0 },
+    0,
     derivationCalls,
     SESSION_COUNT,
   );
   const firstList = coldCatalog.value;
-  const beforeNoChangeDerivations = { ...derivationCalls };
+  const beforeNoChangeDerivations = derivationCalls;
   const noChangeRefresh = await measure(() => repository.refresh());
   const noChangeSourceTelemetry = source.lastRefreshTelemetry();
   assertDerivationDelta(
@@ -123,42 +113,39 @@ try {
   if (afterNoChangeList.nextCursor !== firstList.nextCursor) {
     throw new Error("A no-change refresh changed the opaque list cursor");
   }
-  const search = await measure(() =>
+  const projectFilter = await measure(() =>
     repository.list({
-      q: "needle-scale",
       project: "/synthetic/project-0",
       limit: 200,
     }));
-  const absentSearch = await measure(() =>
-    repository.list({ q: "absent-search-value", limit: 200 }));
-  const selected = search.value.sessions[0];
+  const selected = projectFilter.value.sessions.find(
+    (session) => session.title === "Synthetic scale session 00000",
+  );
   if (selected === undefined) {
     throw new Error(
-      "Scale search did not find the special session: " +
+      "Project filter did not find the special session: " +
         JSON.stringify({
-          search: search.value,
-          firstTitles: firstList.sessions.slice(0, 3).map(
-            ({ session }) => session.title,
-          ),
+          projectFilter: projectFilter.value,
+          firstTitles: firstList.sessions.slice(0, 3).map(({ title }) => title),
           derivationCalls,
         }),
     );
   }
-  const unrelated = firstList.sessions.find((entry) => entry.session.id !== selected.session.id);
+  const unrelated = firstList.sessions.find((session) => session.id !== selected.id);
   if (unrelated === undefined) throw new Error("Scale catalog did not contain an unrelated session");
   const detailFirstPage = await measure(async () => {
-    const items = await repository.getItems(selected.session.id, {
+    const items = await repository.getItems(selected.id, {
       limit: 50,
     });
     if (items === null) throw new Error("Scale session item page disappeared");
     return items;
   });
-  const unrelatedPage = await repository.getItems(unrelated.session.id, { limit: 1 });
+  const unrelatedPage = await repository.getItems(unrelated.id, { limit: 1 });
   if (unrelatedPage === null) throw new Error("Unrelated scale session disappeared");
   const tool = detailFirstPage.value.items.find((item) => item.kind === "tool");
   if (tool?.kind !== "tool") throw new Error("Large tool was not normalized");
   const toolDetail = await repository.getToolDetail(
-    selected.session.id,
+    selected.id,
     tool.id,
     { cursor: detailFirstPage.value.cursor },
   );
@@ -186,7 +173,7 @@ try {
       },
     })}\n`,
   );
-  const beforeAppendDerivations = { ...derivationCalls };
+  const beforeAppendDerivations = derivationCalls;
   const appendRefresh = await measure(() => repository.refresh());
   const appendSourceTelemetry = source.lastRefreshTelemetry();
   const appendedBytes = (await stat(specialPath)).size - beforeAppendBytes;
@@ -211,17 +198,17 @@ try {
     1,
   );
   const afterAppendList = await repository.list({ limit: 200 });
-  await assertCursorReadable(repository, selected.session.id, beforeMutatedCursor);
+  await assertCursorReadable(repository, selected.id, beforeMutatedCursor);
   await assertCursorReadable(
     repository,
-    unrelated.session.id,
+    unrelated.id,
     unrelatedCursor,
   );
 
   const replacement = `${specialPath}.replacement`;
   await writeFile(replacement, `${await rollout(0, "atomic-replacement", 256)}\n`);
   await rename(replacement, specialPath);
-  const beforeReplacementDerivations = { ...derivationCalls };
+  const beforeReplacementDerivations = derivationCalls;
   const replaceRefresh = await measure(() => repository.refresh());
   const replaceSourceTelemetry = source.lastRefreshTelemetry();
   assertDerivationDelta(
@@ -233,7 +220,7 @@ try {
   const afterReplaceList = await repository.list({ limit: 200 });
   let replacementConflict = false;
   try {
-    await repository.getItems(selected.session.id, { cursor: beforeMutatedCursor, limit: 1 });
+    await repository.getItems(selected.id, { cursor: beforeMutatedCursor, limit: 1 });
   } catch (error) {
     replacementConflict = error instanceof Error &&
       "code" in error && error.code === "timeline_changed";
@@ -241,7 +228,7 @@ try {
   if (!replacementConflict) throw new Error("Replacement did not reject the old timeline cursor");
   await assertCursorReadable(
     repository,
-    unrelated.session.id,
+    unrelated.id,
     unrelatedCursor,
   );
 
@@ -249,7 +236,7 @@ try {
   try {
     await chmod(specialPath, 0);
     await repository.refresh();
-    const unavailable = await repository.getSession(selected.session.id);
+    const unavailable = await repository.getSession(selected.id);
     if (unavailable === null) permissionProbe = "hidden";
   } finally {
     await chmod(specialPath, 0o600);
@@ -266,8 +253,7 @@ try {
       noChangeRefresh: round(noChangeRefresh.measurement.milliseconds),
       singleSessionAppendRefresh: round(appendRefresh.measurement.milliseconds),
       singleSessionReplaceRefresh: round(replaceRefresh.measurement.milliseconds),
-      search: round(search.measurement.milliseconds),
-      boundedAbsentSearch: round(absentSearch.measurement.milliseconds),
+      projectFilter: round(projectFilter.measurement.milliseconds),
       detailFirstPage: round(detailFirstPage.measurement.milliseconds),
       decode: {
         cold: round(coldSourceTelemetry.decodeMs),
@@ -280,7 +266,6 @@ try {
         replace: round(replaceSourceTelemetry.normalizeMs),
       },
       prefix: { full: round(prefixMs.full), append: round(prefixMs.append) },
-      searchDocumentBuild: round(searchDocumentBuildMs),
     },
     baselineComparison: {
       priorSingleSessionAppendMs: PRIOR_SINGLE_APPEND_BASELINE_MS,
@@ -301,7 +286,7 @@ try {
       noChangeRefreshRssAfterBytes: noChangeRefresh.measurement.rssAfterBytes,
       appendRefreshRssAfterBytes: appendRefresh.measurement.rssAfterBytes,
       replaceRefreshRssAfterBytes: replaceRefresh.measurement.rssAfterBytes,
-      searchRssAfterBytes: search.measurement.rssAfterBytes,
+      projectFilterRssAfterBytes: projectFilter.measurement.rssAfterBytes,
       detailFirstPageRssAfterBytes: detailFirstPage.measurement.rssAfterBytes,
       timelinePrefixIndexes: {
         bytes: sum(prefixIndexBytesBySession.values()),
@@ -328,14 +313,12 @@ try {
     },
     responseBytes: {
       firstList: jsonBytes(firstList),
-      search: jsonBytes(search.value),
+      projectFilter: jsonBytes(projectFilter.value),
       firstItemPage: jsonBytes(detailFirstPage.value),
     },
     bounds: {
       catalogHasMore: firstList.nextCursor !== null,
       catalogTotal: firstList.total,
-      searchPartial: search.value.partial,
-      absentSearchPartial: absentSearch.value.partial,
       toolDetailLimitExercised: toolDetail.truncated,
       longMessageLimitExercised: message.markdown.length === 1_000_000,
       partialTailExercised: true,
@@ -346,7 +329,7 @@ try {
         append: appendSourceTelemetry,
         replace: replaceSourceTelemetry,
       },
-      appendHistoricalTimelineItems: selected.session.itemCount,
+      appendHistoricalTimelineItems: detailFirstPage.value.session.itemCount,
     },
     mutations: {
       opaqueListCursor: {
@@ -377,16 +360,15 @@ try {
 
 function assertDerivationDelta(
   label: string,
-  before: Readonly<{ prefixIndex: number; searchDocument: number }>,
-  after: Readonly<{ prefixIndex: number; searchDocument: number }>,
+  before: number,
+  after: number,
   expected: number,
 ): void {
-  const prefixIndex = after.prefixIndex - before.prefixIndex;
-  const searchDocument = after.searchDocument - before.searchDocument;
-  if (prefixIndex !== expected || searchDocument !== expected) {
+  const prefixIndex = after - before;
+  if (prefixIndex !== expected) {
     throw new Error(
       `${label} derivation calls: expected ${expected}, got ` +
-        `prefixIndex=${prefixIndex}, searchDocument=${searchDocument}`,
+        `prefixIndex=${prefixIndex}`,
     );
   }
 }

@@ -15,7 +15,7 @@ The immutable catalog snapshot used one global generation for both session-list 
 
 - Let an unchanged session continue paging while unrelated sessions update.
 - Reject old ordinals and item IDs when the requested session itself changes.
-- Keep catalog-list offsets consistent with global sorting, search, facets, and membership.
+- Keep catalog-list offsets consistent with global sorting, facets, and membership.
 - Preserve the source-adapter boundary and avoid making adapters authoritative for aggregate session versions.
 - Avoid exposing source fingerprints, content equality, or process-local counters through the API.
 

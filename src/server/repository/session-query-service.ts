@@ -12,18 +12,10 @@ import type {
   DomainToolDetail,
   NormalizedSession,
 } from "../domain/session-domain.js";
-import {
-  DEFAULT_SEARCH_BUDGET,
-  MAX_SEARCH_QUERY_CHARS,
-  searchDocuments,
-  type SearchBudget,
-  type SearchMatch,
-  type SearchWarning,
-} from "../search/search-document.js";
 import type { CatalogSnapshot } from "./catalog-snapshot-store.js";
 import type { IndexedSession } from "./timeline-prefix-registry.js";
 import {
-  canonicalListQuery,
+  canonicalListFilters,
   createProcessListRevisionFactory,
   type ListRevisionFactory,
 } from "./list-revision.js";
@@ -48,15 +40,10 @@ export class RepositoryQueryError extends Error {
 }
 
 export interface SessionListResult {
-  readonly sessions: readonly {
-    readonly session: DomainSession;
-    readonly matches: readonly SearchMatch[];
-  }[];
+  readonly sessions: readonly DomainSession[];
   readonly projects: readonly ProjectFacet[];
   readonly total: number;
   readonly nextCursor: import("../../shared/api-contract.js").ListCursor | null;
-  readonly partial: boolean;
-  readonly warnings: readonly SearchWarning[];
 }
 
 export interface ProjectFacet {
@@ -85,7 +72,6 @@ export interface DirectiveDetailResult {
 
 export class SessionQueryService {
   constructor(
-    private readonly searchBudget: SearchBudget = DEFAULT_SEARCH_BUDGET,
     private readonly createListRevision: ListRevisionFactory =
       createProcessListRevisionFactory(),
     private readonly cursors = new OpaqueCursorCodec(),
@@ -110,34 +96,20 @@ export class SessionQueryService {
       throw new RepositoryQueryError("invalid_query", "cursor does not match the list query");
     }
     const offset = decodedCursor?.o ?? 0;
-    const structurallyEligible: NormalizedSession[] = [];
-    const eligibleIds = new Set<string>();
+    const matchedSessions: DomainSession[] = [];
+    const projects = new Map<string, number>();
     for (const id of snapshot.orderedIds) {
       const normalized = snapshot.sessions.get(id)?.normalized;
       if (normalized === undefined || !passesStructuralFilters(normalized.session, query)) {
         continue;
       }
-      structurallyEligible.push(normalized);
-      eligibleIds.add(id);
-    }
-    const search = query.q === undefined
-      ? { matches: null, partial: false, warnings: [] }
-      : searchDocuments(
-          snapshot.documents.filter((document) => eligibleIds.has(document.sessionId)),
-          query.q,
-          this.searchBudget,
-        );
-    const matchedSessions: NormalizedSession[] = [];
-    const projects = new Map<string, number>();
-    for (const normalized of structurallyEligible) {
       const session = normalized.session;
-      if (search.matches !== null && !search.matches.has(session.id)) continue;
       if (session.cwd !== null) projects.set(session.cwd, (projects.get(session.cwd) ?? 0) + 1);
-      matchedSessions.push(normalized);
+      matchedSessions.push(session);
     }
     const listRevision = this.createListRevision(
-      canonicalListQuery(query),
-      matchedSessions.map(({ session }) => session.id),
+      canonicalListFilters(query),
+      matchedSessions.map(({ id }) => id),
     );
     if (decodedCursor !== null && decodedCursor.r !== listRevision) {
       throw new RepositoryQueryError(
@@ -146,10 +118,7 @@ export class SessionQueryService {
       );
     }
     const limit = query.limit ?? DEFAULT_LIST_LIMIT;
-    const sessions = matchedSessions.slice(offset, offset + limit).map((normalized) => ({
-      session: normalized.session,
-      matches: search.matches?.get(normalized.session.id) ?? [],
-    }));
+    const sessions = matchedSessions.slice(offset, offset + limit);
     const nextOffset = offset + sessions.length;
     const hasMore = nextOffset < matchedSessions.length;
     return {
@@ -161,8 +130,6 @@ export class SessionQueryService {
       nextCursor: hasMore
         ? this.cursors.encodeList(query, nextOffset, listRevision)
         : null,
-      partial: search.partial,
-      warnings: search.warnings,
     };
   }
 
@@ -353,12 +320,6 @@ function validateListQuery(query: SessionListQuery): void {
       "invalid_query",
       "archiveScope must be active, archived, or all",
     );
-  }
-  if (query.q !== undefined) {
-    const trimmed = query.q.trim();
-    if (trimmed.length === 0 || trimmed.length > MAX_SEARCH_QUERY_CHARS) {
-      throw new RepositoryQueryError("invalid_query", `q must contain 1-${MAX_SEARCH_QUERY_CHARS} characters`);
-    }
   }
   if (query.project !== undefined && (query.project.length === 0 || query.project.length > 4_096)) {
     throw new RepositoryQueryError("invalid_query", "project is invalid");

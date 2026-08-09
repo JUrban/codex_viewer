@@ -84,7 +84,6 @@ export const api = {
   sessions: (query: SessionListQuery, signal?: AbortSignal) =>
     request<SessionListResponse>(
       `/api/v1/sessions${queryString({
-        q: query.q,
         project: query.project,
         from: query.from,
         to: query.to,

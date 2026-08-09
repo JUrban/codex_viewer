@@ -29,7 +29,7 @@ Chosen option: "Validate two bounded probes, incrementally decode and derive app
 
 Each in-memory rollout checkpoint stores the observed EOF, the byte position after the last committed newline, the consumed physical-line count, decoder diagnostics and version, normalizer version, and SHA-256 probes for the first 4 KiB and up to 4 KiB immediately before the old EOF. A strictly growing file may use the append path only when both probes and versions match. The decoder re-reads from the committed newline through the EOF observed on one open file handle, so an unfinished tail becomes visible once terminated and is committed once. Truncation, non-growth changes, probe mismatch, incompatible state, or derivation uncertainty triggers a full rebuild.
 
-Identity and normalization use copy-on-write accumulators and publish only after the complete source snapshot succeeds. The repository extends an HMAC timeline prefix only when the old timeline is a reference prefix and all old encoded tool/directive detail references remain unchanged. Search documents continue to rebuild in full for dirty sessions. Whole-file rebuilding, atomic generations, timeline paging, and existing cursor conflict behavior remain supported.
+Identity and normalization use copy-on-write accumulators and publish only after the complete source snapshot succeeds. The repository extends an HMAC timeline prefix only when the old timeline is a reference prefix and all old encoded tool/directive detail references remain unchanged. Whole-file rebuilding, atomic generations, timeline paging, and existing cursor conflict behavior remain supported.
 
 ### Positive Consequences
 
@@ -44,7 +44,6 @@ Identity and normalization use copy-on-write accumulators and publish only after
 - Two 4 KiB probes are heuristic, not a proof that every historical byte is unchanged; a middle rewrite that preserves both probe regions and then appends may be missed.
 - Decoder, identity, normalization, and prefix derivation now maintain versioned copy-on-write state and require more boundary tests.
 - An unfinished oversized line may be reread on every refresh until its newline arrives.
-- Dirty-session search documents still rescan the complete message timeline.
 - A process restart still requires a complete decode and derivation.
 
 ## Pros and Cons of the Options

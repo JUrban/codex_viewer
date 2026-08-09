@@ -84,7 +84,6 @@ describe("server architecture boundaries", () => {
       "domain",
       "http",
       "repository",
-      "search",
       "security",
       "source",
     ];
@@ -258,16 +257,11 @@ describe("server architecture boundaries", () => {
     const reversed = await new CatalogSnapshotStore([sourceB, sourceA]).current();
 
     expect(first.orderedIds).toEqual(reversed.orderedIds);
-    const queries = new SessionQueryService({
-      maxScannedBytes: 1_000_000,
-      maxResults: 1,
-      maxExcerptChars: 100,
-      maxDurationMs: 1_000,
-    });
-    const firstResult = queries.list(first, { q: "tie" });
-    const reversedResult = queries.list(reversed, { q: "tie" });
-    expect(firstResult.sessions.map(({ session: value }) => value.id)).toEqual(
-      reversedResult.sessions.map(({ session: value }) => value.id),
+    const queries = new SessionQueryService();
+    const firstResult = queries.list(first, {});
+    const reversedResult = queries.list(reversed, {});
+    expect(firstResult.sessions.map(({ id }) => id)).toEqual(
+      reversedResult.sessions.map(({ id }) => id),
     );
     expect(firstResult.total).toBe(reversedResult.total);
   });
@@ -297,13 +291,6 @@ function snapshotOf(value: NormalizedSession): CatalogSnapshot {
         timelinePrefixIndex,
       },
     ]]),
-    documents: [{
-      sessionId: value.session.id,
-      title: value.session.title,
-      agentTerms: [],
-      cwd: value.session.cwd ?? "",
-      messages: [],
-    }],
     orderedIds: [value.session.id],
   };
 }

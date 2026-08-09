@@ -352,9 +352,8 @@ function interactionUnavailable(response: ServerResponse): true {
 }
 
 function parseListQuery(params: URLSearchParams): SessionListQuery {
-  only(params, ["q", "project", "from", "to", "archiveScope", "limit", "cursor", "fresh"]);
+  only(params, ["project", "from", "to", "archiveScope", "limit", "cursor", "fresh"]);
   const query: SessionListQuery = {};
-  const q = optional(params, "q");
   const project = optional(params, "project");
   const from = optional(params, "from");
   const to = optional(params, "to");
@@ -362,7 +361,6 @@ function parseListQuery(params: URLSearchParams): SessionListQuery {
   const limit = optional(params, "limit");
   const cursor = optional(params, "cursor");
   const fresh = optional(params, "fresh");
-  if (q !== undefined) query.q = q;
   if (project !== undefined) query.project = project;
   if (from !== undefined) query.from = from;
   if (to !== undefined) query.to = to;

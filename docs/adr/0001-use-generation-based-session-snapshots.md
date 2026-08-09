@@ -14,7 +14,7 @@ Codex session rollouts are live JSONL event streams whose observed schema is not
 ## Decision Drivers
 
 - Preserve read-only correctness when JSONL files are active, partial, malformed, replaced, or paired with incompatible SQLite metadata.
-- Keep catalog entries, opaque path mappings, normalized sessions, and searchable text mutually consistent.
+- Keep catalog entries, opaque path mappings, and normalized sessions mutually consistent.
 - Bound timeline and tool responses without introducing a persistent index.
 - Isolate Codex format evolution from the API and React client.
 - Avoid an incremental state machine until corpus size and append behavior demonstrate that it is necessary.
@@ -22,21 +22,21 @@ Codex session rollouts are live JSONL event streams whose observed schema is not
 ## Considered Options
 
 - Minimal request-time parsing with an unversioned catalog and whole-session detail responses.
-- Incremental tail parsing with per-file offsets, watcher-assisted refresh, incremental search updates, and ETag-based client polling.
+- Incremental tail parsing with per-file offsets, watcher-assisted refresh, and ETag-based client polling.
 - Generation-based whole-file snapshots with serialized refresh, whole-session cache replacement, and paged timeline APIs.
 
 ## Decision Outcome
 
 Chosen option: "Generation-based whole-file snapshots with serialized refresh and paged timeline APIs", because it provides a coherent source snapshot and bounded browser responses while retaining whole-file rereading as a simple correctness fallback.
 
-The repository publishes the catalog, opaque session-ID registry, normalized cache entries, and allowed-field search documents as one immutable, process-local generation. Refreshes are serialized. A changed file fingerprint causes that session to be decoded and normalized from the beginning; the MVP does not retain tail offsets or partial fragments between refreshes. Timeline items are served through a versioned, generation-scoped paged API, and stale clients restart pagination.
+The repository publishes the catalog, opaque session-ID registry, and normalized cache entries as one immutable, process-local generation. Refreshes are serialized. A changed file fingerprint causes that session to be decoded and normalized from the beginning; the MVP does not retain tail offsets or partial fragments between refreshes. Timeline items are served through a versioned, generation-scoped paged API, and stale clients restart pagination.
 
 ### Positive Consequences
 
-- List, detail, tool, and search requests cannot observe independently refreshed source maps.
+- List, detail, and tool requests cannot observe independently refreshed source maps.
 - File truncation, replacement, parser changes, and uncertain append behavior recover through a whole-file reread.
 - Timeline and tool payloads are bounded before reaching the browser.
-- Future incremental readers or derived search indexes can replace repository internals without changing the normalized domain or API shape.
+- Future incremental readers can replace repository internals without changing the normalized domain or API shape.
 - All derived state is in memory and disappears on restart.
 
 ### Negative Consequences
@@ -44,7 +44,7 @@ The repository publishes the catalog, opaque session-ID registry, normalized cac
 - Active or large sessions may be reparsed in full after each changed fingerprint.
 - Generation changes can make clients restart timeline pagination and refetch items.
 - Serialized refresh and snapshot publication add more machinery than direct request-time parsing.
-- Process restart discards all caches and requires rebuilding searchable text.
+- Process restart discards all caches and requires rebuilding normalized state.
 - The design does not provide sub-second live updates or optimal behavior for very large corpora.
 
 ## Pros and Cons of the Options
@@ -57,17 +57,17 @@ The repository publishes the catalog, opaque session-ID registry, normalized cac
 - Bad: Whole-session responses do not bound large tool payloads or long conversations.
 - Bad: Adding paging and consistency semantics later could break an unversioned API.
 
-### Incremental tail parsing and incremental search updates
+### Incremental tail parsing
 
 - Good: Avoids reparsing unchanged prefixes of active sessions.
 - Good: Scales naturally toward frequent live refresh and much larger corpora.
-- Bad: Must correctly handle truncation, replacement, inode reuse, archive moves, partial tails, decoder-version changes, and atomic search publication.
+- Bad: Must correctly handle truncation, replacement, inode reuse, archive moves, partial tails, decoder-version changes, and atomic publication.
 - Bad: A state error may silently skip or duplicate events, making the cost of being wrong high.
 - Bad: The observed corpus and append behavior do not yet justify watcher, offset, ETag, and client-cache complexity.
 
 ### Generation-based whole-file snapshots with paged APIs
 
-- Good: Atomically aligns catalog, ID mappings, normalized data, and search documents.
+- Good: Atomically aligns catalog, ID mappings, and normalized data.
 - Good: Uses whole-file rereading as a clear recovery path while bounding client responses.
 - Good: Creates stable adapter and API seams for future scale work.
 - Bad: Repeats parsing work for changed files and introduces generation-aware client behavior.

@@ -1,7 +1,6 @@
 import type {
   ItemPageResponse,
   LiveRevision,
-  SessionListEntry,
   TimelineCursor,
 } from "../../src/shared/api-contract";
 import type {
@@ -32,10 +31,9 @@ export const baseSession: SessionSummary = {
 };
 
 export const listBody = {
-  sessions: [{ session: baseSession, matches: [] }],
+  sessions: [baseSession],
   projects: [{ project: "/project/reader", count: 1 }],
   total: 1, nextCursor: null,
-  partial: false, warnings: [],
 };
 
 const sessionDetail = {
@@ -84,8 +82,8 @@ export const firstPage: ItemPageResponse = {
   ],
 };
 
-export function entry(session: SessionSummary): SessionListEntry {
-  return { session, matches: [] };
+export function entry(session: SessionSummary): SessionSummary {
+  return session;
 }
 
 export function json(body: unknown, status = 200): Response {

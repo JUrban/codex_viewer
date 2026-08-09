@@ -4,10 +4,6 @@ import type {
   NormalizedSession,
 } from "../domain/session-domain.js";
 import {
-  buildSearchDocument,
-  type SearchDocument,
-} from "../search/search-document.js";
-import {
   encodeStringTuple,
   opaqueIdForParts,
 } from "../security/opaque-id.js";
@@ -30,24 +26,17 @@ export interface CatalogSnapshot {
   readonly signature: string;
   readonly diagnostics: readonly DomainDiagnostic[];
   readonly sessions: ReadonlyMap<DomainSessionId, IndexedSession>;
-  readonly documents: readonly SearchDocument[];
   readonly orderedIds: readonly DomainSessionId[];
 }
 
-export type SearchDocumentBuilder = (
-  normalized: NormalizedSession,
-) => SearchDocument;
-
 export interface CatalogSnapshotStoreDependencies {
   readonly timelinePrefixIndexBuilder?: TimelinePrefixIndexBuilder;
-  readonly searchDocumentBuilder?: SearchDocumentBuilder;
 }
 
 export class CatalogSnapshotStore {
   readonly #coordinator = new RefreshCoordinator<CatalogSnapshot>();
   readonly #prefixes: TimelinePrefixRegistry;
   readonly #sources: readonly SessionSource[];
-  readonly #buildSearchDocument: SearchDocumentBuilder;
   #snapshot: CatalogSnapshot | null = null;
   #aggregate: AggregateState | null = null;
   #lastDiscoveryAt = Number.NEGATIVE_INFINITY;
@@ -63,8 +52,6 @@ export class CatalogSnapshotStore {
     this.#prefixes = new TimelinePrefixRegistry(
       dependencies.timelinePrefixIndexBuilder,
     );
-    this.#buildSearchDocument =
-      dependencies.searchDocumentBuilder ?? buildSearchDocument;
   }
 
   async current(): Promise<CatalogSnapshot> {
@@ -105,17 +92,6 @@ export class CatalogSnapshotStore {
     const orderedIds = [...normalizedSessions.values()]
       .sort(compareSessions)
       .map((session) => session.session.id);
-    const documentCache = new Map<DomainSessionId, SearchDocument>();
-    for (const [id, normalized] of normalizedSessions) {
-      const cached = this.#aggregate?.documents.get(id);
-      documentCache.set(
-        id,
-        cached !== undefined && !linked.dirtyIds.has(id)
-          ? cached
-          : this.#buildSearchDocument(normalized),
-      );
-    }
-    const documents = orderedIds.map((id) => documentCache.get(id)!);
     const preparedPrefixes = this.#prefixes.prepare(
       normalizedSessions,
       linked.dirtyIds,
@@ -124,7 +100,6 @@ export class CatalogSnapshotStore {
       signature,
       diagnostics,
       sessions: preparedPrefixes.sessions,
-      documents,
       orderedIds,
     };
     preparedPrefixes.commit();
@@ -134,7 +109,6 @@ export class CatalogSnapshotStore {
       parentNativeDependents: linked.parentNativeDependents,
       resolvedParents: linked.resolvedParents,
       sessions: normalizedSessions,
-      documents: documentCache,
     };
     this.#snapshot = snapshot;
     return snapshot;
@@ -164,7 +138,6 @@ interface AggregateState {
   >;
   readonly resolvedParents: ReadonlyMap<DomainSessionId, DomainSessionId | null>;
   readonly sessions: ReadonlyMap<DomainSessionId, NormalizedSession>;
-  readonly documents: ReadonlyMap<DomainSessionId, SearchDocument>;
 }
 
 interface LinkedSessions {

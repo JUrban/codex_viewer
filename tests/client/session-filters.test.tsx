@@ -9,47 +9,18 @@ import { json, listBody } from "./session-browser.fixtures";
 const STORAGE_KEY = "codex-sessions-reader.filters.v1";
 
 describe("session filters", () => {
-  it("orders filter controls from primary search through secondary filters", async () => {
+  it("orders project, date, and archive controls", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(json(listBody)));
     const user = userEvent.setup();
     render(<App />);
     await screen.findByRole("link", { name: /Reader work/ });
 
-    screen.getByRole("searchbox").focus();
-    expect(screen.getByRole("searchbox")).toHaveFocus();
-    await user.tab();
+    screen.getByRole("combobox", { name: "Project" }).focus();
     expect(screen.getByRole("combobox", { name: "Project" })).toHaveFocus();
     await user.tab();
     expect(screen.getByRole("button", { name: "Date range" })).toHaveFocus();
     await user.tab();
     expect(screen.getByRole("radio", { name: "Active" })).toHaveFocus();
-  });
-
-  it("keeps query as a draft until Enter and ignores duplicate submissions", async () => {
-    const listUrls: string[] = [];
-    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => {
-      listUrls.push(String(input));
-      return Promise.resolve(json(listBody));
-    }));
-    const user = userEvent.setup();
-    render(<App />);
-    await screen.findByRole("link", { name: /Reader work/ });
-    const search = screen.getByRole("searchbox");
-
-    await user.type(search, "  reader  ");
-    expect(listUrls).toHaveLength(1);
-    expect(sessionStorage.getItem(STORAGE_KEY)).toBeNull();
-    expect(window.location.search).toBe("");
-
-    await user.keyboard("{Enter}");
-    await waitFor(() => expect(listUrls).toHaveLength(2));
-    expect(new URL(listUrls[1]!, window.location.origin).searchParams.get("q"))
-      .toBe("reader");
-    expect(search).toHaveValue("reader");
-    expect(sessionStorage.getItem(STORAGE_KEY)).toContain('"query":"reader"');
-
-    await user.keyboard("{Enter}");
-    expect(listUrls).toHaveLength(2);
   });
 
   it("applies date drafts together and allows moving a range beyond its previous To", async () => {
@@ -76,18 +47,11 @@ describe("session filters", () => {
     expect(from).not.toHaveAttribute("max");
     expect(apply).toBeEnabled();
 
-    await user.type(screen.getByRole("searchbox"), "reader");
-    await user.keyboard("{Enter}");
+    fireEvent.change(to, { target: { value: "2026-07-10" } });
+    expect(listUrls).toHaveLength(1);
+    await user.click(apply);
     await waitFor(() => expect(listUrls).toHaveLength(2));
     let params = new URL(listUrls[1]!, window.location.origin).searchParams;
-    expect(params.get("q")).toBe("reader");
-    expect(params.has("from")).toBe(false);
-
-    fireEvent.change(to, { target: { value: "2026-07-10" } });
-    expect(listUrls).toHaveLength(2);
-    await user.click(apply);
-    await waitFor(() => expect(listUrls).toHaveLength(3));
-    params = new URL(listUrls[2]!, window.location.origin).searchParams;
     expect(params.get("from")).toBe(new Date("2026-07-01T00:00:00").toISOString());
     expect(params.get("to")).toBe(new Date("2026-07-10T23:59:59.999").toISOString());
     expect(apply).toBeDisabled();
@@ -97,21 +61,21 @@ describe("session filters", () => {
     expect(to).toHaveAttribute("min", "2026-07-15");
     expect(screen.getByRole("status")).toHaveTextContent("To must be on or after From");
     expect(apply).toBeDisabled();
-    expect(listUrls).toHaveLength(3);
+    expect(listUrls).toHaveLength(2);
 
     fireEvent.change(to, { target: { value: "2026-07-20" } });
     expect(screen.queryByRole("status")).toBeNull();
     expect(apply).toBeEnabled();
     await user.click(apply);
-    await waitFor(() => expect(listUrls).toHaveLength(4));
-    params = new URL(listUrls[3]!, window.location.origin).searchParams;
+    await waitFor(() => expect(listUrls).toHaveLength(3));
+    params = new URL(listUrls[2]!, window.location.origin).searchParams;
     expect(params.get("from")).toBe(new Date("2026-07-15T00:00:00").toISOString());
     expect(params.get("to")).toBe(new Date("2026-07-20T23:59:59.999").toISOString());
 
     fireEvent.change(from, { target: { value: "" } });
     await user.click(apply);
-    await waitFor(() => expect(listUrls).toHaveLength(5));
-    params = new URL(listUrls[4]!, window.location.origin).searchParams;
+    await waitFor(() => expect(listUrls).toHaveLength(4));
+    params = new URL(listUrls[3]!, window.location.origin).searchParams;
     expect(params.has("from")).toBe(false);
     expect(params.get("to")).toBe(new Date("2026-07-20T23:59:59.999").toISOString());
   });
@@ -136,7 +100,6 @@ describe("session filters", () => {
 
   it("restores applied filters on remount and safely rejects malformed storage", async () => {
     sessionStorage.setItem(STORAGE_KEY, JSON.stringify({
-      query: "saved",
       project: "/project/reader",
       from: "2026-07-01",
       to: "2026-07-10",
@@ -149,7 +112,6 @@ describe("session filters", () => {
     }));
 
     const view = render(<App />);
-    expect(screen.getByRole("searchbox")).toHaveValue("saved");
     expect(screen.getByRole("radio", { name: "All" })).toBeChecked();
     await waitFor(() => expect(urls).toHaveLength(1));
     expect(new URL(urls[0]!, window.location.origin).searchParams.get("project"))
@@ -158,14 +120,12 @@ describe("session filters", () => {
 
     sessionStorage.setItem(STORAGE_KEY, "{not-json");
     render(<App />);
-    expect(screen.getByRole("searchbox")).toHaveValue("");
     expect(screen.getByRole("radio", { name: "Active" })).toBeChecked();
   });
 
   it("restores calendar dates in positive UTC offset time zones", () => {
     vi.stubEnv("TZ", "Asia/Tokyo");
     sessionStorage.setItem(STORAGE_KEY, JSON.stringify({
-      query: "",
       project: "",
       from: "2026-07-01",
       to: "2026-07-10",
@@ -181,7 +141,6 @@ describe("session filters", () => {
 
   it("rejects nonexistent calendar dates from storage", () => {
     sessionStorage.setItem(STORAGE_KEY, JSON.stringify({
-      query: "saved",
       project: "/project/reader",
       from: "2026-02-30",
       to: "",
@@ -191,9 +150,24 @@ describe("session filters", () => {
 
     render(<App />);
 
-    expect(screen.getByRole("searchbox")).toHaveValue("");
     expect(screen.getByLabelText("From")).toHaveValue("");
     expect(screen.getByRole("radio", { name: "Active" })).toBeChecked();
+  });
+
+  it("rejects stored filters containing unknown fields", () => {
+    sessionStorage.setItem(STORAGE_KEY, JSON.stringify({
+      unexpected: "saved",
+      project: "/project/reader",
+      from: "2026-07-01",
+      to: "2026-07-10",
+      state: "all",
+    }));
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(json(listBody)));
+
+    render(<App />);
+
+    expect(screen.getByRole("radio", { name: "Active" })).toBeChecked();
+    expect(screen.getByLabelText("From")).toHaveValue("");
   });
 
 });

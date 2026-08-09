@@ -4,7 +4,7 @@ import type {
   SessionListQuery,
   TimelineCursor,
 } from "../../shared/api-contract.js";
-import { canonicalListQuery, type CanonicalListQuery } from "./list-revision.js";
+import { canonicalListFilters, type CanonicalListFilters } from "./list-revision.js";
 
 const SIGNATURE_BYTES = 24;
 const SIGNATURE_CHARS = 32;
@@ -17,7 +17,7 @@ export type CursorDecodeResult<T> =
 
 interface ListCursorPayload {
   readonly v: 1;
-  readonly q: CanonicalListQuery;
+  readonly filters: CanonicalListFilters;
   readonly o: number;
   readonly r: string;
 }
@@ -35,7 +35,7 @@ export class OpaqueCursorCodec {
   encodeList(query: SessionListQuery, offset: number, revision: string): ListCursor {
     return this.#encode({
       v: 1,
-      q: canonicalListQuery(query),
+      filters: canonicalListFilters(query),
       o: offset,
       r: revision,
     }) as ListCursor;
@@ -46,7 +46,7 @@ export class OpaqueCursorCodec {
   }
 
   listQueryMatches(cursor: ListCursorPayload, query: SessionListQuery): boolean {
-    return JSON.stringify(cursor.q) === JSON.stringify(canonicalListQuery(query));
+    return JSON.stringify(cursor.filters) === JSON.stringify(canonicalListFilters(query));
   }
 
   encodeTimeline(sessionId: string, ordinal: number, prefix: string): TimelineCursor {
@@ -108,8 +108,8 @@ export class OpaqueCursorCodec {
 const BASE64URL = /^[A-Za-z0-9_-]+$/;
 
 function isListCursorPayload(value: unknown): value is ListCursorPayload {
-  return isRecord(value) && hasOnlyKeys(value, ["v", "q", "o", "r"]) &&
-    value.v === 1 && isCanonicalQuery(value.q) && isOrdinal(value.o) &&
+  return isRecord(value) && hasOnlyKeys(value, ["v", "filters", "o", "r"]) &&
+    value.v === 1 && isCanonicalFilters(value.filters) && isOrdinal(value.o) &&
     typeof value.r === "string";
 }
 
@@ -127,10 +127,10 @@ function isOrdinal(value: unknown): value is number {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
 }
 
-function isCanonicalQuery(value: unknown): value is CanonicalListQuery {
+function isCanonicalFilters(value: unknown): value is CanonicalListFilters {
   if (!isRecord(value)) return false;
-  return hasOnlyKeys(value, ["q", "project", "from", "to", "archiveScope"]) &&
-    nullableString(value.q) && nullableString(value.project) &&
+  return hasOnlyKeys(value, ["project", "from", "to", "archiveScope"]) &&
+    nullableString(value.project) &&
     nullableString(value.from) && nullableString(value.to) &&
     (value.archiveScope === "active" || value.archiveScope === "archived" ||
       value.archiveScope === "all");

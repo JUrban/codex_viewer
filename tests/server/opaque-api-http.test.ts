@@ -52,7 +52,7 @@ describe("opaque cursor API", () => {
     const firstServer = await startApi();
     const list = await fetch(`${firstServer.base}/api/v1/sessions?archiveScope=all&limit=1`)
       .then((response) => response.json());
-    const sessionId = list.sessions[0].session.id;
+    const sessionId = list.sessions[0].id;
     const page = await fetch(
       `${firstServer.base}/api/v1/sessions/${sessionId}/items?limit=1`,
     ).then((response) => response.json());
@@ -92,24 +92,31 @@ describe("opaque cursor API", () => {
     )).status).toBe(400);
   });
 
-  it("pages lists with a query-bound cursor and rejects a stale list", async () => {
+  it("pages lists with a filter-bound cursor and rejects a stale list", async () => {
     const { base, home } = await startApi();
     const first = await fetch(`${base}/api/v1/sessions?archiveScope=all&limit=1`)
       .then((response) => response.json());
     expect(first).toEqual(expect.objectContaining({
       total: 4,
       nextCursor: expect.any(String),
-      partial: false,
     }));
+    expect(Object.keys(first).sort()).toEqual([
+      "nextCursor",
+      "projects",
+      "sessions",
+      "total",
+    ]);
+    expect(first.sessions[0]).toEqual(expect.objectContaining({ id: expect.any(String) }));
+    expect(first.sessions[0]).not.toHaveProperty("session");
     const second = await fetch(
       `${base}/api/v1/sessions?archiveScope=all&limit=1&cursor=${encodeURIComponent(first.nextCursor)}`,
     ).then((response) => response.json());
-    expect(second.sessions[0].session.id).not.toBe(first.sessions[0].session.id);
+    expect(second.sessions[0].id).not.toBe(first.sessions[0].id);
 
-    const wrongQuery = await fetch(
+    const wrongFilters = await fetch(
       `${base}/api/v1/sessions?archiveScope=active&limit=1&cursor=${encodeURIComponent(first.nextCursor)}`,
     );
-    expect(wrongQuery.status).toBe(400);
+    expect(wrongFilters.status).toBe(400);
 
     const rollout = join(
       home,
@@ -126,15 +133,16 @@ describe("opaque cursor API", () => {
     expect(stale.status).toBe(409);
     expect(await stale.json()).toMatchObject({ error: { code: "stale_list_cursor" } });
     expect((await fetch(`${base}/api/v1/sessions?fresh=true&cursor=x`)).status).toBe(400);
+    expect((await fetch(`${base}/api/v1/sessions?q=synthetic`)).status).toBe(400);
   });
 
   it("opens through items, keeps an empty incremental cursor stable, and bounds lazy detail", async () => {
     const { base } = await startApi();
-    const list = await fetch(`${base}/api/v1/sessions?q=synthetic`)
+    const list = await fetch(`${base}/api/v1/sessions`)
       .then((response) => response.json());
     const sessionId = list.sessions.find(
-      (entry: { session: { title: string } }) => entry.session.title === "Synthetic trace",
-    ).session.id;
+      (session: { title: string }) => session.title === "Synthetic trace",
+    ).id;
 
     const metadata = await fetch(`${base}/api/v1/sessions/${sessionId}`)
       .then((response) => response.json());
@@ -180,10 +188,10 @@ describe("opaque cursor API", () => {
 
   it("long-polls without advancing the timeline cursor and detects appended backlog", async () => {
     const { base, home, repository } = await startApi();
-    const list = await fetch(`${base}/api/v1/sessions?q=synthetic`).then((response) => response.json());
+    const list = await fetch(`${base}/api/v1/sessions`).then((response) => response.json());
     const sessionId = list.sessions.find(
-      (entry: { session: { title: string } }) => entry.session.title === "Synthetic trace",
-    ).session.id;
+      (session: { title: string }) => session.title === "Synthetic trace",
+    ).id;
     const page = await fetch(`${base}/api/v1/sessions/${sessionId}/items?limit=300`)
       .then((response) => response.json());
     const query = `cursor=${encodeURIComponent(page.cursor)}&after=${encodeURIComponent(page.liveRevision)}`;
@@ -219,11 +227,11 @@ describe("opaque cursor API", () => {
 
   it("accepts append-only continuation and reports timeline_changed after replacement", async () => {
     const { base, home, repository } = await startApi();
-    const list = await fetch(`${base}/api/v1/sessions?q=synthetic`)
+    const list = await fetch(`${base}/api/v1/sessions`)
       .then((response) => response.json());
     const sessionId = list.sessions.find(
-      (entry: { session: { title: string } }) => entry.session.title === "Synthetic trace",
-    ).session.id;
+      (session: { title: string }) => session.title === "Synthetic trace",
+    ).id;
     const page = await fetch(`${base}/api/v1/sessions/${sessionId}/items?limit=2`)
       .then((response) => response.json());
     const rollout = join(

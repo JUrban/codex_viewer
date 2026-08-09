@@ -12,7 +12,6 @@ import {
   DefaultSessionRepository,
   MAX_ITEM_PAGE_BYTES,
 } from "../../src/server/repository/session-repository.js";
-import { searchDocuments } from "../../src/server/search/search-document.js";
 import type {
   DomainTimelineRecord,
   NormalizedSession,
@@ -48,7 +47,6 @@ describe("DefaultSessionRepository", () => {
     };
     const repository = new DefaultSessionRepository(
       [source],
-      undefined,
       undefined,
       () => now,
     );
@@ -101,37 +99,36 @@ describe("DefaultSessionRepository", () => {
 
     const recovered = await repository.list({});
     expect(recovered.sessions).toEqual(first.sessions);
-    expect(recovered.warnings).toEqual([]);
   });
 
   it("publishes linked summaries, pages one immutable revision, and replaces it after append", async () => {
     const { home, repository } = await fixtureRepository();
     const first = await repository.list({});
     expect(first.sessions).toHaveLength(3);
-    expect(first.sessions.every((entry) => !entry.session.archived)).toBe(true);
+    expect(first.sessions.every((session) => !session.archived)).toBe(true);
     const archived = await repository.list({ archiveScope: "archived" });
     expect(archived.sessions).toHaveLength(1);
-    expect(archived.sessions[0]?.session.archived).toBe(true);
+    expect(archived.sessions[0]?.archived).toBe(true);
     expect((await repository.list({ archiveScope: "all" })).sessions).toHaveLength(4);
-    const parent = first.sessions.find((entry) => entry.session.title === "Synthetic trace")!;
-    const child = first.sessions.find((entry) => entry.session.cwd === "/synthetic/child")!;
-    expect(child.session.parentId).toBe(parent.session.id);
-    expect(parent.session.childIds).toContain(child.session.id);
+    const parent = first.sessions.find((session) => session.title === "Synthetic trace")!;
+    const child = first.sessions.find((session) => session.cwd === "/synthetic/child")!;
+    expect(child.parentId).toBe(parent.id);
+    expect(parent.childIds).toContain(child.id);
 
-    const page = await repository.getItems(parent.session.id, {
+    const page = await repository.getItems(parent.id, {
       limit: 2,
     });
     expect(page?.hasMore).toBe(true);
-    await expect(repository.getItems(parent.session.id, {
+    await expect(repository.getItems(parent.id, {
       cursor: page!.cursor,
       limit: 2,
     })).resolves.not.toBeNull();
-    const allItems = await repository.getItems(parent.session.id, {
+    const allItems = await repository.getItems(parent.id, {
       limit: 200,
     });
     const directive = allItems!.items.find((item) => item.id === "directive-4")!;
     expect(JSON.stringify(allItems)).not.toContain("DIRECTIVE_DETAIL_CANARY");
-    expect(await repository.getDirectiveDetail(parent.session.id, directive.id, {
+    expect(await repository.getDirectiveDetail(parent.id, directive.id, {
       cursor: allItems!.cursor,
     })).toEqual(expect.objectContaining({
       itemId: directive.id,
@@ -149,19 +146,19 @@ describe("DefaultSessionRepository", () => {
       `${previous}{"timestamp":"2026-07-28T10:00:10.000Z","type":"response_item","payload":{"type":"message","role":"assistant","phase":"final","content":[{"type":"output_text","text":"Appended revision"}]}}\n`,
     );
     await repository.refresh();
-    const second = await repository.getItems(parent.session.id, {
+    const second = await repository.getItems(parent.id, {
       cursor: page!.cursor,
       limit: 2,
     });
     expect(second!.session.messageCount)
-      .toBe(parent.session.messageCount);
+      .toBe(parent.messageCount);
     expect(second!.hasMore).toBe(true);
-    expect(first.sessions.find((entry) => entry.session.id === parent.session.id)?.session.messageCount)
-      .toBe(parent.session.messageCount);
-    await expect(repository.getItems(parent.session.id, {
+    expect(first.sessions.find((session) => session.id === parent.id)?.messageCount)
+      .toBe(parent.messageCount);
+    await expect(repository.getItems(parent.id, {
       cursor: page!.cursor,
     })).resolves.not.toBeNull();
-    await expect(repository.getDirectiveDetail(parent.session.id, directive.id, {
+    await expect(repository.getDirectiveDetail(parent.id, directive.id, {
       cursor: allItems!.cursor,
     })).resolves.toEqual(expect.objectContaining({ itemId: directive.id }));
 
@@ -173,38 +170,14 @@ describe("DefaultSessionRepository", () => {
     );
     await rename(replacement, rollout);
     await repository.refresh();
-    const third = await repository.getSession(parent.session.id);
+    const third = await repository.getSession(parent.id);
     expect(third!.session.title).toBe("Replacement trace");
     expect(third!.session.messageCount).toBe(0);
-    await expect(repository.getItems(parent.session.id, {
+    await expect(repository.getItems(parent.id, {
       cursor: page!.cursor,
     })).rejects.toMatchObject({
       code: "timeline_changed",
     });
-  });
-
-  it("rebuilds dirty-session search documents for appended messages", async () => {
-    const home = await createTempDirectory("codex-search-append-");
-    const directory = join(home, "sessions");
-    await mkdir(directory, { recursive: true });
-    const rollout = join(directory, "rollout-search-append.jsonl");
-    await writeFile(
-      rollout,
-      '{"type":"session_meta","payload":{"id":"search-append","title":"Search append"}}\n' +
-      '{"type":"event_msg","payload":{"type":"agent_message","message":"initial"}}\n',
-    );
-    const repository = await createCodexSessionRepository(home);
-    expect((await repository.list({ q: "incremental-search-needle" })).sessions)
-      .toEqual([]);
-
-    await appendFile(
-      rollout,
-      '{"type":"event_msg","payload":{"type":"agent_message","message":"incremental-search-needle"}}\n',
-    );
-    await repository.refresh();
-
-    expect((await repository.list({ q: "incremental-search-needle" })).sessions)
-      .toHaveLength(1);
   });
 
   it("keeps a loaded call prefix stable when an output is appended", async () => {
@@ -219,7 +192,7 @@ describe("DefaultSessionRepository", () => {
     );
     const repository = await createCodexSessionRepository(home);
     const listed = await repository.list({});
-    const sessionId = listed.sessions[0]!.session.id;
+    const sessionId = listed.sessions[0]!.id;
     const callPage = await repository.getItems(sessionId, {
       limit: 1,
     });
@@ -285,7 +258,7 @@ describe("DefaultSessionRepository", () => {
       '{"timestamp":"2026-07-28T10:00:00Z","type":"session_meta","payload":{"id":"silent-tail","title":"Silent tail"}}\n',
     );
     const repository = await createCodexSessionRepository(home);
-    const sessionId = (await repository.list({})).sessions[0]!.session.id;
+    const sessionId = (await repository.list({})).sessions[0]!.id;
     const before = await repository.getSession(sessionId);
     const beforePage = await repository.getItems(sessionId, {});
 
@@ -366,7 +339,7 @@ describe("DefaultSessionRepository", () => {
     };
     const repository = new DefaultSessionRepository([source]);
     const list = await repository.list({});
-    const sessionAId = list.sessions.find((entry) => entry.session.title === "Session A")!.session.id;
+    const sessionAId = list.sessions.find((session) => session.title === "Session A")!.id;
     const first = await repository.getItems(sessionAId, {
       limit: 2,
     });
@@ -392,8 +365,8 @@ describe("DefaultSessionRepository", () => {
 
     const currentList = await repository.list({});
     const sessionBId = currentList.sessions.find(
-      (entry) => entry.session.title === "Session B changed-twice",
-    )!.session.id;
+      (session) => session.title === "Session B changed-twice",
+    )!.id;
     const sessionBPage = await repository.getItems(sessionBId, {});
     sessionAWithDetail = {
       ...sessionAWithDetail,
@@ -442,8 +415,8 @@ describe("DefaultSessionRepository", () => {
     const repository = new DefaultSessionRepository([source]);
     const firstList = await repository.list({});
     const parentId = firstList.sessions.find(
-      ({ session }) => session.title === "Parent",
-    )!.session.id;
+      (session) => session.title === "Parent",
+    )!.id;
     const first = await repository.getSession(parentId);
 
     expect(first?.session.childIds).toEqual(
@@ -461,8 +434,8 @@ describe("DefaultSessionRepository", () => {
   it("returns every timeline event type in one unfiltered view", async () => {
     const { repository } = await fixtureRepository();
     const list = await repository.list({});
-    const session = list.sessions.find((entry) => entry.session.title === "Synthetic trace")!;
-    const page = await repository.getItems(session.session.id, {
+    const session = list.sessions.find((session) => session.title === "Synthetic trace")!;
+    const page = await repository.getItems(session.id, {
       limit: 200,
     });
     expect(new Set(page?.items.map((item) => item.kind))).toEqual(new Set([
@@ -485,12 +458,12 @@ describe("DefaultSessionRepository", () => {
   it("accepts item pages up to 300 entries", async () => {
     const { repository } = await fixtureRepository();
     const list = await repository.list({});
-    const session = list.sessions.find((entry) => entry.session.title === "Synthetic trace")!;
-    await expect(repository.getItems(session.session.id, {
+    const session = list.sessions.find((session) => session.title === "Synthetic trace")!;
+    await expect(repository.getItems(session.id, {
       limit: 300,
     }))
       .resolves.not.toBeNull();
-    await expect(repository.getItems(session.session.id, {
+    await expect(repository.getItems(session.id, {
       limit: 301,
     }))
       .rejects.toMatchObject({ code: "invalid_query" });
@@ -518,67 +491,11 @@ describe("DefaultSessionRepository", () => {
         ),
       ])],
     );
-    const session = (await repository.list({})).sessions[0]!.session;
+    const session = (await repository.list({})).sessions[0]!;
     const page = await repository.getItems(session.id, {});
 
     expect(page?.items).toHaveLength(100);
     expect(page?.hasMore).toBe(true);
-  });
-
-  it("searches only permitted fields and reports bounded partial results", async () => {
-    const { repository } = await fixtureRepository();
-    expect((await repository.list({ q: "Synthetic trace" })).sessions).toHaveLength(1);
-    expect((await repository.list({ q: "/synthetic/project" })).sessions).toHaveLength(1);
-    expect((await repository.list({ q: "The synthetic widget is ready" })).sessions).toHaveLength(1);
-    for (const canary of [
-      "DEVELOPER_DIRECTIVE_CANARY",
-      "REASONING_CANARY_NEVER_RENDER",
-      "REASONING_SUMMARY_CANARY",
-      "INTERNAL_PAYLOAD_CANARY",
-      "DIRECTIVE_DETAIL_CANARY",
-      "synthetic result",
-      "call-complete",
-    ]) {
-      expect((await repository.list({ q: canary })).sessions).toHaveLength(0);
-    }
-
-    const partial = searchDocuments(
-      [{ sessionId: "one", title: "anything", agentTerms: [], cwd: "", messages: [] }],
-      "anything",
-      { maxScannedBytes: 0, maxResults: 1, maxExcerptChars: 20, maxDurationMs: 100 },
-    );
-    expect(partial.partial).toBe(true);
-    expect(partial.warnings[0]?.code).toBe("search_byte_budget");
-
-    const resultBudget = await repository.list({ q: "synthetic", limit: 1 });
-    expect(resultBudget.sessions).toHaveLength(1);
-  });
-
-  it("applies archive scope before bounded full-text search", async () => {
-    const home = await createTempDirectory("codex-archive-search-");
-    await cp(resolve("tests/fixtures/codex-home"), home, { recursive: true });
-    const archivedRollout = join(
-      home,
-      "archived_sessions/rollout-2026-07-20T08-00-00-archived-session.jsonl",
-    );
-    const archivedSource = await readFile(archivedRollout, "utf8");
-    await writeFile(
-      archivedRollout,
-      `${archivedSource}{"timestamp":"2026-07-20T08:00:01.000Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"${"x".repeat(2_000)}"}]}}\n`,
-    );
-    const repository = await createCodexSessionRepository(home, {
-      maxScannedBytes: 1_000,
-      maxResults: 200,
-      maxExcerptChars: 240,
-      maxDurationMs: 1_000,
-    });
-
-    const result = await repository.list({
-      archiveScope: "active",
-      q: "Synthetic trace",
-    });
-    expect(result.sessions).toHaveLength(1);
-    expect(result.partial).toBe(false);
   });
 
   it("discovers an archived root created after repository startup", async () => {
@@ -600,15 +517,15 @@ describe("DefaultSessionRepository", () => {
 
     const archived = await repository.list({ archiveScope: "archived" });
     expect(archived.sessions).toHaveLength(1);
-    expect(archived.sessions[0]?.session.title).toBe("Late archive");
+    expect(archived.sessions[0]?.title).toBe("Late archive");
   });
 
   it("keeps a native Codex session identity stable when its rollout moves", async () => {
     const { home, repository } = await fixtureRepository();
     const before = await repository.list({ archiveScope: "all" });
     const session = before.sessions.find(
-      (entry) => entry.session.title === "Synthetic trace",
-    )!.session;
+      (session) => session.title === "Synthetic trace",
+    )!;
     const original = join(
       home,
       "sessions/2026/07/28/rollout-2026-07-28T10-00-00-basic-session.jsonl",
@@ -620,8 +537,8 @@ describe("DefaultSessionRepository", () => {
     await repository.refresh();
     const after = await repository.list({ archiveScope: "all" });
     const moved = after.sessions.find(
-      (entry) => entry.session.title === "Synthetic trace",
-    )!.session;
+      (session) => session.title === "Synthetic trace",
+    )!;
     expect(moved.id).toBe(session.id);
     expect(moved.archived).toBe(true);
   });
@@ -633,7 +550,7 @@ describe("DefaultSessionRepository", () => {
       to: "2026-07-28T13:00:00Z",
     });
     expect(equivalentOffset.sessions.some(
-      (entry) => entry.session.title === "Synthetic trace",
+      (session) => session.title === "Synthetic trace",
     )).toBe(true);
 
     await expect(repository.list({
@@ -669,7 +586,7 @@ describe("DefaultSessionRepository", () => {
     });
     expect(second).toMatchObject({ total: 305, nextCursor: null });
     expect(second.sessions).toHaveLength(205);
-    expect(new Set([...first.sessions, ...second.sessions].map((entry) => entry.session.id)).size)
+    expect(new Set([...first.sessions, ...second.sessions].map((session) => session.id)).size)
       .toBe(305);
     await expect(repository.list({ limit: 301 }))
       .rejects.toMatchObject({ code: "invalid_query" });
@@ -700,7 +617,7 @@ describe("DefaultSessionRepository", () => {
     );
 
     const list = await repository.list({});
-    const page = await repository.getItems(list.sessions[0]!.session.id, {
+    const page = await repository.getItems(list.sessions[0]!.id, {
       limit: 200,
     });
     expect(page?.hasMore).toBe(true);

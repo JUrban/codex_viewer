@@ -13,7 +13,7 @@ The reader's normalized session domain, generation snapshot, and HTTP DTOs are i
 
 - Isolate agent-specific directory, format, parsing, and cache behavior.
 - Aggregate multiple source instances without native session-ID collisions.
-- Preserve generation-scoped queries, search, and bounded detail APIs.
+- Preserve generation-scoped lists and bounded detail APIs.
 - Keep source paths and configuration identities out of HTTP responses.
 
 ## Considered Options

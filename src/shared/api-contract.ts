@@ -27,11 +27,6 @@ export type TimelineCursor = string & { readonly [timelineCursorBrand]: true };
 declare const liveRevisionBrand: unique symbol;
 export type LiveRevision = string & { readonly [liveRevisionBrand]: true };
 
-export interface ApiWarning {
-  code: string;
-  message: string;
-}
-
 export interface ApiError {
   error: {
     code: string;
@@ -43,7 +38,6 @@ export interface ApiError {
 export type ArchiveScope = "active" | "archived" | "all";
 
 export interface SessionListQuery {
-  q?: string;
   project?: string;
   from?: string;
   to?: string;
@@ -53,28 +47,16 @@ export interface SessionListQuery {
   fresh?: boolean;
 }
 
-export interface SearchMatch {
-  field: "title" | "cwd" | "message";
-  excerpt: string;
-}
-
-export interface SessionListEntry {
-  session: SessionSummary;
-  matches: SearchMatch[];
-}
-
 export interface ProjectFacet {
   project: string;
   count: number;
 }
 
 export interface SessionListResponse {
-  sessions: SessionListEntry[];
+  sessions: SessionSummary[];
   projects: ProjectFacet[];
   total: number;
   nextCursor: ListCursor | null;
-  partial: boolean;
-  warnings: ApiWarning[];
 }
 
 export interface SessionDetailResponse {

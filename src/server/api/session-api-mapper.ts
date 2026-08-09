@@ -26,15 +26,10 @@ import type {
 export class SessionApiMapper {
   list(result: SessionListResult): SessionListResponse {
     return {
-      sessions: result.sessions.map((entry) => ({
-        session: this.summary(entry.session),
-        matches: entry.matches.map((match) => ({ ...match })),
-      })),
+      sessions: result.sessions.map((session) => this.summary(session)),
       projects: result.projects.map((facet) => ({ ...facet })),
       total: result.total,
       nextCursor: result.nextCursor,
-      partial: result.partial,
-      warnings: result.warnings.map((warning) => ({ ...warning })),
     };
   }
 

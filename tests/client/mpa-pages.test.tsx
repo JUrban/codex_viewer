@@ -45,7 +45,7 @@ describe("MPA pages", () => {
     initial.total = 2;
     initial.nextCursor = "old-process-list-cursor" as ListCursor;
     const restarted = listResponse();
-    restarted.sessions[0]!.session.title = "Restarted catalog";
+    restarted.sessions[0]!.title = "Restarted catalog";
     const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => {
       if (fetchMock.mock.calls.length === 1) {
         return new Response(JSON.stringify(initial), { status: 200 });
@@ -210,12 +210,10 @@ describe("MPA pages", () => {
 
 function listResponse(): SessionListResponse {
   return {
-    sessions: [{ session: { ...baseSession }, matches: [] }],
+    sessions: [{ ...baseSession }],
     projects: [{ project: "/project/reader", count: 1 }],
     total: 1,
     nextCursor: null,
-    partial: false,
-    warnings: [],
   };
 }
 

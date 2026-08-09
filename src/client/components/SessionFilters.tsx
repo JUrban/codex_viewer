@@ -9,14 +9,12 @@ interface SessionFiltersProps {
 }
 
 export function SessionFilters({ filters, projects, onChange }: SessionFiltersProps) {
-  const [queryDraft, setQueryDraft] = useState(filters.q);
   const [fromDraft, setFromDraft] = useState(filters.from);
   const [toDraft, setToDraft] = useState(filters.to);
   const [datePickerOpen, setDatePickerOpen] = useState(false);
   const datePickerRef = useRef<HTMLDivElement>(null);
   const dateTriggerRef = useRef<HTMLButtonElement>(null);
 
-  useEffect(() => setQueryDraft(filters.q), [filters.q]);
   useEffect(() => {
     setFromDraft(filters.from);
     setToDraft(filters.to);
@@ -42,11 +40,6 @@ export function SessionFilters({ filters, projects, onChange }: SessionFiltersPr
   }, [datePickerOpen]);
 
   const patch = (value: Partial<BrowserFilters>) => onChange({ ...filters, ...value });
-  const submitQuery = () => {
-    const q = queryDraft.trim();
-    setQueryDraft(q);
-    if (q !== filters.q) patch({ q });
-  };
   const invalidDateRange = Boolean(fromDraft && toDraft && fromDraft > toDraft);
   const datesChanged = fromDraft !== filters.from || toDraft !== filters.to;
   const applyDates = () => {
@@ -56,28 +49,7 @@ export function SessionFilters({ filters, projects, onChange }: SessionFiltersPr
   };
 
   return (
-    <form
-      className="filters"
-      role="search"
-      onSubmit={(event) => {
-        event.preventDefault();
-        submitQuery();
-      }}
-    >
-      <input
-        id="session-search"
-        type="search"
-        aria-label="Find a session"
-        title="Find a session"
-        value={queryDraft}
-        onChange={(event) => setQueryDraft(event.target.value)}
-        onKeyDown={(event) => {
-          if (event.key !== "Enter") return;
-          event.preventDefault();
-          submitQuery();
-        }}
-        placeholder="Title, project, or message"
-      />
+    <div className="filters">
       <select
         className="project-filter"
         aria-label="Project"
@@ -169,7 +141,7 @@ export function SessionFilters({ filters, projects, onChange }: SessionFiltersPr
           ))}
         </div>
       </fieldset>
-    </form>
+    </div>
   );
 }
 
