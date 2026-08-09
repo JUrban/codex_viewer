@@ -26,13 +26,19 @@ export function codexInteraction(decoded: DecodedRollout): DomainAgentInteractio
   let bindingAttempt: InteractionBindingAttempt | null = null;
 
   for (const record of decoded.records) {
-    const attempt = bindingAttemptFrom(record);
+    const attempt = codexBindingAttemptFrom(record);
     if (
       attempt !== null &&
       (bindingAttempt === null || attempt.ordinal >= bindingAttempt.ordinal)
     ) bindingAttempt = attempt;
   }
 
+  return codexInteractionFromBindingAttempt(bindingAttempt);
+}
+
+export function codexInteractionFromBindingAttempt(
+  bindingAttempt: InteractionBindingAttempt | null,
+): DomainAgentInteraction {
   return {
     activation: CODEX_TMUX_ACTIVATION,
     bindingAttempt,
@@ -40,7 +46,9 @@ export function codexInteraction(decoded: DecodedRollout): DomainAgentInteractio
   };
 }
 
-function bindingAttemptFrom(record: DecodedRecord): InteractionBindingAttempt | null {
+export function codexBindingAttemptFrom(
+  record: DecodedRecord,
+): InteractionBindingAttempt | null {
   if (record.value.type !== "response_item") return null;
   const payload = record.value.payload;
   if (!isObject(payload) || payload.type !== "message" || payload.role !== "user") {

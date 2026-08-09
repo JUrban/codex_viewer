@@ -124,7 +124,7 @@ its interaction endpoints.
 
 Accepted architecture decisions are recorded under [`docs/adr`](docs/adr):
 
-- [ADR-0001: Generation-based whole-file session snapshots](docs/adr/0001-use-generation-based-session-snapshots.md)
+- [ADR-0001: Generation-based whole-file session snapshots (superseded)](docs/adr/0001-use-generation-based-session-snapshots.md)
 - [ADR-0002: JSONL-only session discovery](docs/adr/0002-use-jsonl-only-session-discovery.md)
 - [ADR-0003: Session source adapters](docs/adr/0003-use-session-source-adapters.md)
 - [ADR-0004: Session-scoped reader revisions (superseded)](docs/adr/0004-use-session-scoped-reader-revisions.md)
@@ -135,6 +135,7 @@ Accepted architecture decisions are recorded under [`docs/adr`](docs/adr):
 - [ADR-0009: Opaque single-writer timeline cursors](docs/adr/0009-use-opaque-single-writer-timeline-cursors.md)
 - [ADR-0010: Opaque session-list cursors](docs/adr/0010-use-opaque-session-list-cursors.md)
 - [ADR-0011: Repository-probed bounded long polling](docs/adr/0011-use-repository-probed-bounded-long-polling.md)
+- [ADR-0012: Checkpointed incremental rollout loading with probe validation](docs/adr/0012-use-checkpointed-incremental-rollout-loading.md)
 
 ## Development
 

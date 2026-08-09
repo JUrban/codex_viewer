@@ -7,6 +7,21 @@ timeline items. Keep it synchronized with `rollout-decoder.ts`,
 
 ## Decode-time skips
 
+Rollout state is checkpointed in memory after a successful source refresh. The
+checkpoint records the observed EOF, the byte after the last committed newline,
+the consumed physical-line count, decoder diagnostics and versions, plus SHA-256
+probes covering the first 4 KiB and up to 4 KiB before the prior EOF. A strictly
+growing file is decoded incrementally only when both probes and versions still
+match. Truncation, a same-size change, a probe mismatch, or incompatible state
+causes a complete decode and normalization. Checkpoints are not persisted, so
+the first refresh after process startup is always complete.
+
+Incremental decoding begins at the last committed newline rather than the old
+EOF. Consequently, an unterminated tail—including partial UTF-8 or an oversized
+line—is reread on later refreshes and remains invisible until its terminating
+newline arrives. The decoder bounds every batch at the EOF observed from the
+same open file handle used for probes and decoding.
+
 - Empty lines are ignored.
 - Malformed JSON and JSON values that are not objects are skipped with a
   diagnostic.

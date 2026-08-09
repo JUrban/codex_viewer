@@ -73,7 +73,7 @@ describe("CatalogSnapshotStore incremental derivation", () => {
       .not.toBe(firstChanged.timelinePrefixIndex);
   });
 
-  it("safely recomputes a fresh normalized object but keeps its revision when the view matches", async () => {
+  it("reuses the prefix index for a fresh normalized object with the same timeline references", async () => {
     let normalized = normalizedSession("session", "Same");
     let signature = "first";
     const counts = { prefix: 0, search: 0 };
@@ -105,9 +105,11 @@ describe("CatalogSnapshotStore incremental derivation", () => {
     signature = "fresh-object";
     const second = await store.refresh();
 
-    expect(counts).toEqual({ prefix: 2, search: 2 });
+    expect(counts).toEqual({ prefix: 1, search: 2 });
     expect(second.sessions.get(id)!.normalized)
       .not.toBe(first.sessions.get(id)!.normalized);
+    expect(second.sessions.get(id)!.timelinePrefixIndex)
+      .toBe(first.sessions.get(id)!.timelinePrefixIndex);
     expect(prefixAtEnd(second, id)).toBe(prefixAtEnd(first, id));
   });
 

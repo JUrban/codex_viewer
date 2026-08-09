@@ -1,7 +1,8 @@
 import { basename } from "node:path";
 import type { AgentIdentity } from "../../../shared/domain.js";
 import { nonEmptyAgentIdentity, taskNameFromAgentPath } from "./agent-identity.js";
-import type { DecodedRollout } from "./rollout-decoder.js";
+import type { RolloutDescriptor } from "./path-policy.js";
+import type { DecodedRecord, DecodedRollout } from "./rollout-decoder.js";
 import { isObject } from "./rollout-decoder.js";
 
 export interface SessionMetadata {
@@ -26,27 +27,84 @@ interface RawMetadata {
   agent: AgentIdentity | null;
 }
 
-export class IdentityResolver {
-  resolve(decoded: DecodedRollout): SessionMetadata {
-    const candidates = decoded.records
-      .filter((record) => record.value.type === "session_meta")
-      .map((record) => rawMetadata(record.value.payload))
-      .filter((metadata): metadata is RawMetadata => metadata !== null);
-    const fileName = basename(decoded.descriptor.canonicalPath);
-    const matching = candidates.find((candidate) => candidate.id !== null && fileName.includes(candidate.id));
-    const raw = matching ?? candidates[0] ?? null;
+export interface IdentityAccumulatorState {
+  readonly fileName: string;
+  readonly archived: boolean;
+  readonly firstMetadata: RawMetadata | null;
+  readonly firstMatchingMetadata: RawMetadata | null;
+  readonly hasFirstRecord: boolean;
+  readonly firstRecordTimestamp: string | null;
+  readonly lastTimestamp: string | null;
+}
 
+export class IdentityResolver {
+  create(descriptor: RolloutDescriptor): IdentityAccumulatorState {
+    return {
+      fileName: basename(descriptor.canonicalPath),
+      archived: descriptor.archived,
+      firstMetadata: null,
+      firstMatchingMetadata: null,
+      hasFirstRecord: false,
+      firstRecordTimestamp: null,
+      lastTimestamp: null,
+    };
+  }
+
+  append(
+    state: IdentityAccumulatorState,
+    records: readonly DecodedRecord[],
+  ): IdentityAccumulatorState {
+    if (records.length === 0) return state;
+    let firstMetadata = state.firstMetadata;
+    let firstMatchingMetadata = state.firstMatchingMetadata;
+    let hasFirstRecord = state.hasFirstRecord;
+    let firstRecordTimestamp = state.firstRecordTimestamp;
+    let lastTimestamp = state.lastTimestamp;
+
+    for (const record of records) {
+      const timestamp = timestampOf(record.value);
+      if (!hasFirstRecord) {
+        hasFirstRecord = true;
+        firstRecordTimestamp = timestamp;
+      }
+      if (timestamp !== null) lastTimestamp = timestamp;
+      if (record.value.type !== "session_meta") continue;
+      const metadata = rawMetadata(record.value.payload);
+      if (metadata === null) continue;
+      firstMetadata ??= metadata;
+      if (
+        firstMatchingMetadata === null && metadata.id !== null &&
+        state.fileName.includes(metadata.id)
+      ) firstMatchingMetadata = metadata;
+    }
+
+    return {
+      ...state,
+      firstMetadata,
+      firstMatchingMetadata,
+      hasFirstRecord,
+      firstRecordTimestamp,
+      lastTimestamp,
+    };
+  }
+
+  metadata(state: IdentityAccumulatorState): SessionMetadata {
+    const raw = state.firstMatchingMetadata ?? state.firstMetadata;
     return {
       threadId: raw?.id ?? null,
       agentVersion: raw?.agentVersion ?? null,
       title: raw?.title ?? null,
       cwd: raw?.cwd ?? null,
-      createdAt: raw?.timestamp ?? timestampOf(decoded.records[0]?.value),
-      updatedAt: lastTimestamp(decoded),
+      createdAt: raw?.timestamp ?? state.firstRecordTimestamp,
+      updatedAt: state.lastTimestamp,
       parentThreadId: raw?.parentThreadId ?? null,
-      archived: decoded.descriptor.archived,
+      archived: state.archived,
       agent: raw?.agent ?? null,
     };
+  }
+
+  resolve(decoded: DecodedRollout): SessionMetadata {
+    return this.metadata(this.append(this.create(decoded.descriptor), decoded.records));
   }
 }
 
@@ -86,14 +144,6 @@ function rawAgent(
     role: string(value.agent_role) ?? string(spawn?.agent_role) ??
       (typeof subagent === "string" ? subagent : null),
   });
-}
-
-function lastTimestamp(decoded: DecodedRollout): string | null {
-  for (let index = decoded.records.length - 1; index >= 0; index -= 1) {
-    const timestamp = timestampOf(decoded.records[index]?.value);
-    if (timestamp !== null) return timestamp;
-  }
-  return null;
 }
 
 function timestampOf(record: Record<string, unknown> | undefined): string | null {

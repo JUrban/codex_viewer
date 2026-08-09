@@ -1,4 +1,5 @@
 import { resolve } from "node:path";
+import { performance } from "node:perf_hooks";
 import type {
   DomainDiagnostic,
   DomainSessionOrigin,
@@ -12,11 +13,22 @@ import type {
   SessionSourceSnapshot,
   SourceSessionEntry,
 } from "../../source/session-source.js";
-import { IdentityResolver } from "./identity-resolver.js";
+import {
+  IdentityResolver,
+  type IdentityAccumulatorState,
+} from "./identity-resolver.js";
 import { JsonlCatalogSource } from "./jsonl-catalog-source.js";
-import { DECODER_VERSION } from "./limits.js";
-import { WholeFileRolloutDecoder, type RolloutDecoder } from "./rollout-decoder.js";
-import { DefaultSessionNormalizer, type SessionNormalizer } from "./session-normalizer.js";
+import { DECODER_VERSION, NORMALIZER_VERSION } from "./limits.js";
+import {
+  WholeFileRolloutDecoder,
+  type RolloutCheckpoint,
+  type RolloutDecoder,
+} from "./rollout-decoder.js";
+import {
+  DefaultSessionNormalizer,
+  type SessionNormalizer,
+  type SessionNormalizerAccumulatorState,
+} from "./session-normalizer.js";
 
 const EXPECTED_ROLLOUT_IO_ERRORS = new Set([
   "ENOENT",
@@ -31,6 +43,7 @@ interface FileFingerprint {
   readonly size: number;
   readonly mtimeMs: number;
   readonly decoderVersion: number;
+  readonly normalizerVersion: number;
 }
 
 interface CodexCacheEntry {
@@ -39,7 +52,28 @@ interface CodexCacheEntry {
   readonly threadId: string | null;
   readonly parentThreadId: string | null;
   readonly origin: DomainSessionOrigin;
+  readonly checkpoint: RolloutCheckpoint;
+  readonly identityState: IdentityAccumulatorState;
+  readonly normalizerState: SessionNormalizerAccumulatorState;
 }
+
+export interface CodexRefreshTelemetry {
+  readonly fullFiles: number;
+  readonly appendFiles: number;
+  readonly probeBytes: number;
+  readonly decodeBytes: number;
+  readonly decodeMs: number;
+  readonly normalizeMs: number;
+}
+
+const EMPTY_TELEMETRY: CodexRefreshTelemetry = {
+  fullFiles: 0,
+  appendFiles: 0,
+  probeBytes: 0,
+  decodeBytes: 0,
+  decodeMs: 0,
+  normalizeMs: 0,
+};
 
 interface SourceEntries {
   readonly sessions: SourceSessionEntry[];
@@ -52,6 +86,7 @@ export class CodexSessionSource implements SessionSource {
   #snapshot: SessionSourceSnapshot | null = null;
   #discoverySignature: string | null = null;
   #hasUnavailableRollouts = false;
+  #lastRefreshTelemetry: CodexRefreshTelemetry = EMPTY_TELEMETRY;
 
   constructor(
     private readonly codexHome: string,
@@ -80,10 +115,12 @@ export class CodexSessionSource implements SessionSource {
       this.#discoverySignature === discoverySignature &&
       !this.#hasUnavailableRollouts
     ) {
+      this.#lastRefreshTelemetry = EMPTY_TELEMETRY;
       return this.#snapshot;
     }
 
     const nextCache = new Map<string, CodexCacheEntry>();
+    const telemetry = mutableTelemetry();
     const unavailableRollouts: string[] = [];
     const loadDiagnostics: DomainDiagnostic[] = [];
     for (const { descriptor } of discovery.entries) {
@@ -92,7 +129,7 @@ export class CodexSessionSource implements SessionSource {
       if (cached !== undefined && sameFingerprint(cached.fingerprint, fingerprint)) {
         nextCache.set(descriptor.sourceRelativePath, cached);
       } else {
-        const loaded = await this.#load(descriptor, fingerprint);
+        const loaded = await this.#load(descriptor, fingerprint, cached, telemetry);
         if (loaded === null) {
           unavailableRollouts.push(descriptor.sourceRelativePath);
           loadDiagnostics.push(rolloutUnavailableDiagnostic());
@@ -101,10 +138,6 @@ export class CodexSessionSource implements SessionSource {
         }
       }
     }
-    this.#cache = nextCache;
-    this.#discoverySignature = discoverySignature;
-    this.#hasUnavailableRollouts = unavailableRollouts.length > 0;
-
     const entries = sourceEntries(nextCache);
     const diagnostics = [
       ...discovery.diagnostics.map((item) => ({ ...item })),
@@ -117,24 +150,66 @@ export class CodexSessionSource implements SessionSource {
       unavailableRollouts,
     });
     const snapshot = { signature, sessions, diagnostics };
+    this.#cache = nextCache;
+    this.#discoverySignature = discoverySignature;
+    this.#hasUnavailableRollouts = unavailableRollouts.length > 0;
+    this.#lastRefreshTelemetry = telemetry;
     this.#snapshot = snapshot;
     return snapshot;
+  }
+
+  lastRefreshTelemetry(): CodexRefreshTelemetry {
+    return { ...this.#lastRefreshTelemetry };
   }
 
   async #load(
     descriptor: RolloutDescriptor,
     fingerprint: FileFingerprint,
+    cached: CodexCacheEntry | undefined,
+    telemetry: MutableCodexRefreshTelemetry,
   ): Promise<CodexCacheEntry | null> {
     try {
-      const decoded = await this.decoder.decode(descriptor);
-      const metadata = this.identity.resolve(decoded);
+      const appendCheckpoint = cached?.fingerprint.normalizerVersion === NORMALIZER_VERSION
+        ? cached.checkpoint
+        : undefined;
+      const decodeStartedAt = performance.now();
+      const decoded = await this.decoder.decode(descriptor, appendCheckpoint);
+      telemetry.decodeMs += performance.now() - decodeStartedAt;
+      telemetry.probeBytes += decoded.telemetry.probeBytes;
+      telemetry.decodeBytes += decoded.telemetry.decodeBytes;
+      telemetry[decoded.mode === "append" ? "appendFiles" : "fullFiles"] += 1;
+
+      const normalizeStartedAt = performance.now();
+      const identityBase = decoded.mode === "append" && cached !== undefined
+        ? cached.identityState
+        : this.identity.create(descriptor);
+      const normalizerBase = decoded.mode === "append" && cached !== undefined
+        ? cached.normalizerState
+        : this.normalizer.create(descriptor);
+      const identityState = this.identity.append(identityBase, decoded.records);
+      const normalizerState = this.normalizer.append(
+        normalizerBase,
+        decoded.records,
+        decoded.diagnostics,
+      );
+      const metadata = this.identity.metadata(identityState);
       const origin = this.#origin(metadata.agentVersion);
+      const normalized = decoded.mode === "append" && cached !== undefined &&
+          identityState === cached.identityState &&
+          normalizerState === cached.normalizerState &&
+          sameOrigin(origin, cached.origin)
+        ? cached.normalized
+        : this.normalizer.materialize(normalizerState, metadata, origin);
+      telemetry.normalizeMs += performance.now() - normalizeStartedAt;
       return {
         fingerprint,
-        normalized: this.normalizer.normalize(decoded, metadata, origin),
+        normalized,
         threadId: metadata.threadId,
         parentThreadId: metadata.parentThreadId,
         origin,
+        checkpoint: decoded.checkpoint,
+        identityState,
+        normalizerState,
       };
     } catch (error) {
       if (!isExpectedRolloutIoError(error)) throw error;
@@ -228,6 +303,7 @@ function fingerprintOf(descriptor: RolloutDescriptor): FileFingerprint {
     size: descriptor.size,
     mtimeMs: descriptor.mtimeMs,
     decoderVersion: DECODER_VERSION,
+    normalizerVersion: NORMALIZER_VERSION,
   };
 }
 
@@ -235,7 +311,29 @@ function sameFingerprint(left: FileFingerprint, right: FileFingerprint): boolean
   return left.sourceRelativePath === right.sourceRelativePath &&
     left.size === right.size &&
     left.mtimeMs === right.mtimeMs &&
-    left.decoderVersion === right.decoderVersion;
+    left.decoderVersion === right.decoderVersion &&
+    left.normalizerVersion === right.normalizerVersion;
+}
+
+interface MutableCodexRefreshTelemetry {
+  fullFiles: number;
+  appendFiles: number;
+  probeBytes: number;
+  decodeBytes: number;
+  decodeMs: number;
+  normalizeMs: number;
+}
+
+function mutableTelemetry(): MutableCodexRefreshTelemetry {
+  return { ...EMPTY_TELEMETRY };
+}
+
+function sameOrigin(left: DomainSessionOrigin, right: DomainSessionOrigin): boolean {
+  return left.sourceType === right.sourceType &&
+    left.sourceInstanceId === right.sourceInstanceId &&
+    left.agentName === right.agentName &&
+    left.agentVersion === right.agentVersion &&
+    left.formatVersion === right.formatVersion;
 }
 
 function isExpectedRolloutIoError(error: unknown): boolean {

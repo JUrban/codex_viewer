@@ -15,7 +15,7 @@ export function deriveTimelinePrefixIndex(
   const states = new Uint8Array((normalized.timeline.length + 1) * PREFIX_BYTES);
   let previousOrdinal: number | undefined;
   let itemIndex = 0;
-  let state = createHmac("sha256", prefixKey)
+  let state: Uint8Array = createHmac("sha256", prefixKey)
     .update(PREFIX_PROTOCOL, "utf8")
     .update("\0", "utf8")
     .update(normalized.session.id, "utf8")
@@ -23,28 +23,61 @@ export function deriveTimelinePrefixIndex(
     .subarray(0, PREFIX_BYTES);
   states.set(state, 0);
   for (const item of normalized.timeline) {
-      const chunks: Buffer[] = [];
-      writeTimelineItem(new DigestWriter((chunk) => {
-        chunks.push(typeof chunk === "string" ? Buffer.from(chunk, "utf8") : Buffer.from(chunk));
-      }), item, normalized);
-      const encoded = Buffer.concat(chunks);
-      if (
-        !Number.isSafeInteger(item.ordinal) ||
-        item.ordinal < 1 ||
-        (previousOrdinal !== undefined && item.ordinal <= previousOrdinal)
-      ) {
-        throw new Error("Timeline ordinals must be strictly increasing positive integers");
-      }
-      previousOrdinal = item.ordinal;
-      itemIndex += 1;
-      state = createHmac("sha256", prefixKey)
-        .update(state)
-        .update(encoded)
-        .digest()
-        .subarray(0, PREFIX_BYTES);
-      states.set(state, itemIndex * PREFIX_BYTES);
+    validateOrdinal(item.ordinal, previousOrdinal);
+    previousOrdinal = item.ordinal;
+    itemIndex += 1;
+    state = advancePrefix(state, item, normalized, prefixKey);
+    states.set(state, itemIndex * PREFIX_BYTES);
   }
-  return new TimelinePrefixIndex(itemIndex, states);
+  return TimelinePrefixIndex.fromCompleteStates(itemIndex, states);
+}
+
+export function extendsTimelinePrefix(
+  previous: NormalizedSession,
+  next: NormalizedSession,
+): boolean {
+  if (
+    previous.session.id !== next.session.id ||
+    previous.timeline.length > next.timeline.length
+  ) {
+    return false;
+  }
+  for (let index = 0; index < previous.timeline.length; index += 1) {
+    const item = previous.timeline[index]!;
+    if (item !== next.timeline[index]) return false;
+    if (
+      item.kind === "tool" &&
+      previous.toolDetails.get(item.id) !== next.toolDetails.get(item.id)
+    ) {
+      return false;
+    }
+    if (
+      item.kind === "directive" &&
+      previous.directiveDetails.get(item.id) !== next.directiveDetails.get(item.id)
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
+export function extendTimelinePrefixIndex(
+  previousIndex: TimelinePrefixIndex,
+  previous: NormalizedSession,
+  next: NormalizedSession,
+  prefixKey: Uint8Array,
+  /** Internal callers may skip a continuity scan they have just completed. */
+  continuityValidated = false,
+): TimelinePrefixIndex {
+  if (!continuityValidated && !extendsTimelinePrefix(previous, next)) {
+    throw new Error("Cannot extend a timeline prefix index across a changed prefix");
+  }
+  return TimelinePrefixIndex.fromAppend(
+    previousIndex,
+    previous,
+    next,
+    prefixKey,
+  );
 }
 
 export interface TimelinePrefixBoundary {
@@ -53,17 +86,74 @@ export interface TimelinePrefixBoundary {
 }
 
 export class TimelinePrefixIndex {
-  readonly #states: Uint8Array;
+  readonly #itemCount: number;
+  readonly #segments: readonly Uint8Array[];
+  readonly #segmentEnds: readonly number[];
 
-  constructor(itemCount: number, states: Uint8Array) {
-    if (states.byteLength !== (itemCount + 1) * PREFIX_BYTES) {
+  private constructor(itemCount: number, segments: readonly Uint8Array[]) {
+    this.#itemCount = itemCount;
+    this.#segments = segments;
+    const segmentEnds: number[] = [];
+    let storedSlots = 0;
+    for (const segment of segments) {
+      if (segment.byteLength === 0 || segment.byteLength % PREFIX_BYTES !== 0) {
+        throw new Error("Timeline prefix index has an invalid segment byte length");
+      }
+      storedSlots += segment.byteLength / PREFIX_BYTES;
+      segmentEnds.push(storedSlots);
+    }
+    if (storedSlots !== itemCount + 1) {
       throw new Error("Timeline prefix index has an invalid byte length");
     }
-    this.#states = states.slice();
+    this.#segmentEnds = segmentEnds;
+  }
+
+  static fromCompleteStates(
+    itemCount: number,
+    states: Uint8Array,
+  ): TimelinePrefixIndex {
+    return new TimelinePrefixIndex(itemCount, [states.slice()]);
+  }
+
+  static fromAppend(
+    previous: TimelinePrefixIndex,
+    previousNormalized: NormalizedSession,
+    normalized: NormalizedSession,
+    prefixKey: Uint8Array,
+  ): TimelinePrefixIndex {
+    const previousItemCount = previousNormalized.timeline.length;
+    if (
+      previous.#itemCount !== previousItemCount ||
+      normalized.timeline.length <= previousItemCount
+    ) {
+      throw new Error("Timeline prefix index does not match the append boundary");
+    }
+    const appendedCount = normalized.timeline.length - previousItemCount;
+    const appendedStates = new Uint8Array(appendedCount * PREFIX_BYTES);
+    let previousOrdinal = normalized.timeline[previousItemCount - 1]?.ordinal;
+    let state = previous.#slot(previousItemCount);
+    for (
+      let itemIndex = previousItemCount;
+      itemIndex < normalized.timeline.length;
+      itemIndex += 1
+    ) {
+      const item = normalized.timeline[itemIndex]!;
+      validateOrdinal(item.ordinal, previousOrdinal);
+      previousOrdinal = item.ordinal;
+      state = advancePrefix(state, item, normalized, prefixKey);
+      appendedStates.set(
+        state,
+        (itemIndex - previousItemCount) * PREFIX_BYTES,
+      );
+    }
+    return new TimelinePrefixIndex(normalized.timeline.length, [
+      ...previous.#segments,
+      appendedStates,
+    ]);
   }
 
   get byteLength(): number {
-    return this.#states.byteLength;
+    return (this.#itemCount + 1) * PREFIX_BYTES;
   }
 
   boundaryAt(
@@ -71,7 +161,7 @@ export class TimelinePrefixIndex {
     throughOrdinal: number,
   ): TimelinePrefixBoundary | null {
     const maximumOrdinal = timeline.at(-1)?.ordinal ?? 0;
-    if (timeline.length + 1 !== this.#states.byteLength / PREFIX_BYTES) {
+    if (timeline.length !== this.#itemCount) {
       throw new Error("Timeline prefix index does not match the timeline");
     }
     if (throughOrdinal > maximumOrdinal) return null;
@@ -122,9 +212,53 @@ export class TimelinePrefixIndex {
   }
 
   #slot(index: number): Uint8Array {
-    const start = index * PREFIX_BYTES;
-    return this.#states.subarray(start, start + PREFIX_BYTES);
+    let low = 0;
+    let high = this.#segmentEnds.length;
+    while (low < high) {
+      const middle = low + Math.floor((high - low) / 2);
+      if (this.#segmentEnds[middle]! <= index) low = middle + 1;
+      else high = middle;
+    }
+    const segment = this.#segments[low];
+    if (segment === undefined) {
+      throw new Error("Timeline prefix slot is out of bounds");
+    }
+    const segmentStart = low === 0 ? 0 : this.#segmentEnds[low - 1]!;
+    const start = (index - segmentStart) * PREFIX_BYTES;
+    return segment.subarray(start, start + PREFIX_BYTES);
   }
+}
+
+function validateOrdinal(
+  ordinal: number,
+  previousOrdinal: number | undefined,
+): void {
+  if (
+    !Number.isSafeInteger(ordinal) ||
+    ordinal < 1 ||
+    (previousOrdinal !== undefined && ordinal <= previousOrdinal)
+  ) {
+    throw new Error("Timeline ordinals must be strictly increasing positive integers");
+  }
+}
+
+function advancePrefix(
+  state: Uint8Array,
+  item: DomainTimelineRecord,
+  normalized: NormalizedSession,
+  prefixKey: Uint8Array,
+): Uint8Array {
+  const chunks: Buffer[] = [];
+  writeTimelineItem(new DigestWriter((chunk) => {
+    chunks.push(
+      typeof chunk === "string" ? Buffer.from(chunk, "utf8") : Buffer.from(chunk),
+    );
+  }), item, normalized);
+  return createHmac("sha256", prefixKey)
+    .update(state)
+    .update(Buffer.concat(chunks))
+    .digest()
+    .subarray(0, PREFIX_BYTES);
 }
 
 function upperBound(

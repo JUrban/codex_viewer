@@ -5,6 +5,8 @@ import type {
 } from "../domain/session-domain.js";
 import {
   deriveTimelinePrefixIndex,
+  extendsTimelinePrefix,
+  extendTimelinePrefixIndex,
   type TimelinePrefixIndex,
 } from "./timeline-prefix-index.js";
 
@@ -21,14 +23,34 @@ export interface PreparedTimelinePrefixes {
 export type TimelinePrefixIndexBuilder = (
   normalized: NormalizedSession,
   prefixKey: Uint8Array,
+  /** Previous published state is a candidate; the builder must validate continuity. */
+  previous?: IndexedSession,
 ) => TimelinePrefixIndex;
+
+function buildTimelinePrefixIndex(
+  normalized: NormalizedSession,
+  prefixKey: Uint8Array,
+  previous?: IndexedSession,
+): TimelinePrefixIndex {
+  return previous !== undefined &&
+      extendsTimelinePrefix(previous.normalized, normalized) &&
+      previous.normalized.timeline.length < normalized.timeline.length
+    ? extendTimelinePrefixIndex(
+      previous.timelinePrefixIndex,
+      previous.normalized,
+      normalized,
+      prefixKey,
+      true,
+    )
+    : deriveTimelinePrefixIndex(normalized, prefixKey);
+}
 
 export class TimelinePrefixRegistry {
   #published = new Map<DomainSessionId, IndexedSession>();
   #generation = 0n;
 
   constructor(
-    private readonly buildIndex: TimelinePrefixIndexBuilder = deriveTimelinePrefixIndex,
+    private readonly buildIndex: TimelinePrefixIndexBuilder = buildTimelinePrefixIndex,
     private readonly prefixKey: Uint8Array = randomBytes(32),
   ) {}
 
@@ -50,9 +72,14 @@ export class TimelinePrefixRegistry {
         indexed.set(id, previous);
         continue;
       }
+      const unchangedPrefix = previous !== undefined &&
+        previous.normalized.timeline.length === normalized.timeline.length &&
+        extendsTimelinePrefix(previous.normalized, normalized);
       const published = {
         normalized,
-        timelinePrefixIndex: this.buildIndex(normalized, this.prefixKey),
+        timelinePrefixIndex: unchangedPrefix
+          ? previous.timelinePrefixIndex
+          : this.buildIndex(normalized, this.prefixKey, previous),
       };
       next.set(id, published);
       indexed.set(id, published);

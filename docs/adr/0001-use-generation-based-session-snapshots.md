@@ -1,7 +1,9 @@
 ---
-status: accepted
+status: superseded by ADR-0012
 date: 2026-07-28
 ---
+
+Superseded by [ADR-0012](0012-use-checkpointed-incremental-rollout-loading.md). Atomic snapshot publication, paged timeline APIs, and whole-file recovery remain in force; ADR-0012 replaces the changed-rollout whole-file reread decision.
 
 # Use generation-based whole-file session snapshots
 

@@ -1,11 +1,13 @@
 import type {
   DomainDiagnostic,
+  DomainAgentInteraction,
   DomainDirectiveDetail,
   DomainMessageRecord,
   DomainSession,
   DomainSessionOrigin,
   DomainTimelineRecord,
   DomainToolDetail,
+  InteractionBindingAttempt,
   NormalizedSession,
 } from "../../domain/session-domain.js";
 import {
@@ -20,9 +22,9 @@ import {
 } from "./internal-event-parser.js";
 import {
   eventMessage,
-  firstUserTitle,
 } from "./message-normalizer.js";
 import type { SessionMetadata } from "./identity-resolver.js";
+import type { RolloutDescriptor } from "./path-policy.js";
 import {
   parseResponseItem,
   type ParsedResponseItem,
@@ -37,9 +39,23 @@ import {
   type AccumulatedUserInput,
   UserInputAccumulator,
 } from "./user-input-accumulator.js";
-import { codexInteraction } from "./interaction-parser.js";
+import {
+  codexBindingAttemptFrom,
+  codexInteractionFromBindingAttempt,
+} from "./interaction-parser.js";
 
 export interface SessionNormalizer {
+  create(descriptor: RolloutDescriptor): SessionNormalizerAccumulatorState;
+  append(
+    state: SessionNormalizerAccumulatorState,
+    records: readonly DecodedRecord[],
+    decoderDiagnostics: readonly DomainDiagnostic[],
+  ): SessionNormalizerAccumulatorState;
+  materialize(
+    state: SessionNormalizerAccumulatorState,
+    metadata: SessionMetadata,
+    origin?: DomainSessionOrigin,
+  ): NormalizedSession;
   normalize(
     decoded: DecodedRollout,
     metadata: SessionMetadata,
@@ -47,20 +63,70 @@ export interface SessionNormalizer {
   ): NormalizedSession;
 }
 
+export interface SessionNormalizerAccumulatorState {
+  readonly descriptor: RolloutDescriptor;
+  readonly timeline: readonly DomainTimelineRecord[];
+  readonly directiveDetails: ReadonlyMap<string, DomainDirectiveDetail>;
+  readonly toolDetails: ReadonlyMap<string, DomainToolDetail>;
+  readonly tools: ToolAccumulator;
+  readonly userInputs: UserInputAccumulator;
+  readonly decoderDiagnostics: readonly DomainDiagnostic[];
+  readonly normalizerDiagnostics: readonly DomainDiagnostic[];
+  readonly firstMessage: DomainMessageRecord | null;
+  readonly hasFirstUserMessage: boolean;
+  readonly firstUserTitle: string | null;
+  readonly messageCount: number;
+  readonly toolCount: number;
+  readonly bindingAttempt: InteractionBindingAttempt | null;
+}
+
 export class DefaultSessionNormalizer implements SessionNormalizer {
-  normalize(
-    decoded: DecodedRollout,
-    metadata: SessionMetadata,
-    origin: DomainSessionOrigin = DEFAULT_SESSION_ORIGIN,
-  ): NormalizedSession {
-    const diagnostics = decoded.diagnostics.slice(0, MAX_SESSION_DIAGNOSTICS);
+  create(descriptor: RolloutDescriptor): SessionNormalizerAccumulatorState {
+    return {
+      descriptor,
+      timeline: [],
+      directiveDetails: new Map(),
+      toolDetails: new Map(),
+      tools: new ToolAccumulator(),
+      userInputs: new UserInputAccumulator(),
+      decoderDiagnostics: [],
+      normalizerDiagnostics: [],
+      firstMessage: null,
+      hasFirstUserMessage: false,
+      firstUserTitle: null,
+      messageCount: 0,
+      toolCount: 0,
+      bindingAttempt: null,
+    };
+  }
+
+  append(
+    state: SessionNormalizerAccumulatorState,
+    records: readonly DecodedRecord[],
+    decoderDiagnostics: readonly DomainDiagnostic[],
+  ): SessionNormalizerAccumulatorState {
+    const nextDecoderDiagnostics = decoderDiagnostics.slice(0, MAX_SESSION_DIAGNOSTICS);
+    const decoderDiagnosticsUnchanged = sameDiagnostics(
+      state.decoderDiagnostics,
+      nextDecoderDiagnostics,
+    );
+    if (records.length === 0 && decoderDiagnosticsUnchanged) {
+      return state;
+    }
 
     const items: DomainTimelineRecord[] = [];
-    const directiveDetails = new Map<string, DomainDirectiveDetail>();
-    const toolDetails = new Map<string, DomainToolDetail>();
-    const tools = new ToolAccumulator();
-    const userInputs = new UserInputAccumulator();
-    for (const record of decoded.records) {
+    const directiveDetails = new Map(state.directiveDetails);
+    const toolDetails = new Map(state.toolDetails);
+    const tools = state.tools.fork();
+    const userInputs = state.userInputs.fork();
+    const normalizerDiagnostics = [...state.normalizerDiagnostics];
+    let bindingAttempt = state.bindingAttempt;
+    for (const record of records) {
+      const attempt = codexBindingAttemptFrom(record);
+      if (
+        attempt !== null &&
+        (bindingAttempt === null || attempt.ordinal >= bindingAttempt.ordinal)
+      ) bindingAttempt = attempt;
       consumeRecord(
         record,
         items,
@@ -68,31 +134,72 @@ export class DefaultSessionNormalizer implements SessionNormalizer {
         toolDetails,
         tools,
         userInputs,
-        diagnostics,
+        normalizerDiagnostics,
       );
     }
 
-    const firstMessage = items.find(
-      (item): item is DomainMessageRecord => item.kind === "message",
-    );
-    const messageCount = items.filter((item) => item.kind === "message").length;
-    const toolCount = items.filter(
-      (item) => item.kind === "tool" && item.stage === "call",
-    ).length;
+    let firstMessage = state.firstMessage;
+    let hasFirstUserMessage = state.hasFirstUserMessage;
+    let firstTitle = state.firstUserTitle;
+    let messageCount = state.messageCount;
+    let toolCount = state.toolCount;
+    for (const item of items) {
+      if (item.kind === "message") {
+        firstMessage ??= item;
+        messageCount += 1;
+        if (!hasFirstUserMessage && item.role === "user") {
+          hasFirstUserMessage = true;
+          firstTitle = normalizeSessionTitle(item.markdown);
+        }
+      } else if (item.kind === "tool" && item.stage === "call") {
+        toolCount += 1;
+      }
+    }
+
+    return {
+      ...state,
+      timeline: items.length === 0 ? state.timeline : [...state.timeline, ...items],
+      directiveDetails: sameMapEntries(state.directiveDetails, directiveDetails)
+        ? state.directiveDetails
+        : directiveDetails,
+      toolDetails: sameMapEntries(state.toolDetails, toolDetails)
+        ? state.toolDetails
+        : toolDetails,
+      tools,
+      userInputs,
+      decoderDiagnostics: decoderDiagnosticsUnchanged
+        ? state.decoderDiagnostics
+        : nextDecoderDiagnostics,
+      normalizerDiagnostics,
+      firstMessage,
+      hasFirstUserMessage,
+      firstUserTitle: firstTitle,
+      messageCount,
+      toolCount,
+      bindingAttempt,
+    };
+  }
+
+  materialize(
+    state: SessionNormalizerAccumulatorState,
+    metadata: SessionMetadata,
+    origin: DomainSessionOrigin = DEFAULT_SESSION_ORIGIN,
+  ): NormalizedSession {
+    const diagnostics = combinedDiagnostics(state);
     const warningCount = diagnostics.filter(
       (diagnostic) => diagnostic.severity !== "info",
     ).length;
-    const fallbackTitle = normalizeSessionTitle(metadata.title) ??
-      firstUserTitle(items) ??
+    const title = normalizeSessionTitle(metadata.title) ??
+      state.firstUserTitle ??
       "Untitled session";
     const session: DomainSession = {
-      id: decoded.descriptor.id,
+      id: state.descriptor.id,
       sourceId: metadata.threadId,
       origin,
-      title: fallbackTitle,
-      preview: firstMessage === undefined
+      title,
+      preview: state.firstMessage === null
         ? null
-        : truncateText(firstMessage.markdown, MAX_PREVIEW_CHARS).text,
+        : truncateText(state.firstMessage.markdown, MAX_PREVIEW_CHARS).text,
       cwd: metadata.cwd,
       createdAt: metadata.createdAt,
       updatedAt: metadata.updatedAt,
@@ -100,20 +207,67 @@ export class DefaultSessionNormalizer implements SessionNormalizer {
       parentId: metadata.parentThreadId,
       childIds: [],
       agent: metadata.agent ?? null,
-      messageCount,
-      toolCount,
+      messageCount: state.messageCount,
+      toolCount: state.toolCount,
       warningCount,
       diagnostics,
-      itemCount: items.length,
+      itemCount: state.timeline.length,
     };
     return {
       session,
-      timeline: items,
-      toolDetails,
-      directiveDetails,
-      interaction: codexInteraction(decoded),
+      timeline: state.timeline,
+      toolDetails: state.toolDetails,
+      directiveDetails: state.directiveDetails,
+      interaction: interaction(state),
     };
   }
+
+  normalize(
+    decoded: DecodedRollout,
+    metadata: SessionMetadata,
+    origin: DomainSessionOrigin = DEFAULT_SESSION_ORIGIN,
+  ): NormalizedSession {
+    const state = this.append(
+      this.create(decoded.descriptor),
+      decoded.records,
+      decoded.diagnostics,
+    );
+    return this.materialize(state, metadata, origin);
+  }
+}
+
+function combinedDiagnostics(
+  state: SessionNormalizerAccumulatorState,
+): readonly DomainDiagnostic[] {
+  const remaining = MAX_SESSION_DIAGNOSTICS - state.decoderDiagnostics.length;
+  return [
+    ...state.decoderDiagnostics,
+    ...state.normalizerDiagnostics.slice(0, remaining),
+  ];
+}
+
+function sameDiagnostics(
+  left: readonly DomainDiagnostic[],
+  right: readonly DomainDiagnostic[],
+): boolean {
+  return left.length === right.length && left.every((item, index) => {
+    const candidate = right[index];
+    return candidate !== undefined && item.code === candidate.code &&
+      item.severity === candidate.severity && item.message === candidate.message &&
+      item.ordinal === candidate.ordinal;
+  });
+}
+
+function sameMapEntries<K, V>(left: ReadonlyMap<K, V>, right: ReadonlyMap<K, V>): boolean {
+  if (left.size !== right.size) return false;
+  for (const [key, value] of right) {
+    if (left.get(key) !== value) return false;
+  }
+  return true;
+}
+
+function interaction(state: SessionNormalizerAccumulatorState): DomainAgentInteraction {
+  return codexInteractionFromBindingAttempt(state.bindingAttempt);
 }
 
 const DEFAULT_SESSION_ORIGIN: DomainSessionOrigin = {

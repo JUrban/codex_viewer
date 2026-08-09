@@ -15,12 +15,17 @@ import {
   DEFAULT_CATALOG_FRESHNESS_MS,
   DefaultSessionRepository,
 } from "../src/server/repository/session-repository.js";
-import { deriveTimelinePrefixIndex } from "../src/server/repository/timeline-prefix-index.js";
+import {
+  deriveTimelinePrefixIndex,
+  extendsTimelinePrefix,
+  extendTimelinePrefixIndex,
+} from "../src/server/repository/timeline-prefix-index.js";
 import { buildSearchDocument } from "../src/server/search/search-document.js";
 
 const SESSION_COUNT = 3_000;
 const MIN_CORPUS_BYTES = 100 * 1024 * 1024;
 const FILLER_CHARS = 18_000;
+const APPEND_PREFIX_ITEMS = 1_000;
 const PRIOR_SINGLE_APPEND_BASELINE_MS = 266.8;
 
 interface Measurement {
@@ -40,20 +45,36 @@ try {
   }
 
   const derivationCalls = { prefixIndex: 0, searchDocument: 0 };
-  let prefixIndexBuildMs = 0;
+  const prefixCalls = { full: 0, append: 0 };
+  const prefixMs = { full: 0, append: 0 };
+  let searchDocumentBuildMs = 0;
   const prefixIndexBytesBySession = new Map<string, number>();
   const timelineItemsBySession = new Map<string, number>();
+  const source = await createCodexSessionSource(root);
   const repository = new DefaultSessionRepository(
-    [await createCodexSessionSource(root)],
+    [source],
     undefined,
     DEFAULT_CATALOG_FRESHNESS_MS,
     performance.now.bind(performance),
     {
-      timelinePrefixIndexBuilder(normalized, prefixKey) {
+      timelinePrefixIndexBuilder(normalized, prefixKey, previous) {
         derivationCalls.prefixIndex += 1;
         const startedAt = performance.now();
-        const result = deriveTimelinePrefixIndex(normalized, prefixKey);
-        prefixIndexBuildMs += performance.now() - startedAt;
+        const append = previous !== undefined &&
+          extendsTimelinePrefix(previous.normalized, normalized) &&
+          previous.normalized.timeline.length < normalized.timeline.length;
+        const mode = append ? "append" : "full";
+        prefixCalls[mode] += 1;
+        const result = append
+          ? extendTimelinePrefixIndex(
+            previous.timelinePrefixIndex,
+            previous.normalized,
+            normalized,
+            prefixKey,
+            true,
+          )
+          : deriveTimelinePrefixIndex(normalized, prefixKey);
+        prefixMs[mode] += performance.now() - startedAt;
         const expectedPrefixBytes = (normalized.timeline.length + 1) * 24;
         if (result.byteLength !== expectedPrefixBytes) {
           throw new Error(
@@ -73,11 +94,15 @@ try {
       },
       searchDocumentBuilder(normalized) {
         derivationCalls.searchDocument += 1;
-        return buildSearchDocument(normalized);
+        const startedAt = performance.now();
+        const result = buildSearchDocument(normalized);
+        searchDocumentBuildMs += performance.now() - startedAt;
+        return result;
       },
     },
   );
   const coldCatalog = await measure(() => repository.list({ limit: 200 }));
+  const coldSourceTelemetry = source.lastRefreshTelemetry();
   assertDerivationDelta(
     "cold catalog",
     { prefixIndex: 0, searchDocument: 0 },
@@ -87,6 +112,7 @@ try {
   const firstList = coldCatalog.value;
   const beforeNoChangeDerivations = { ...derivationCalls };
   const noChangeRefresh = await measure(() => repository.refresh());
+  const noChangeSourceTelemetry = source.lastRefreshTelemetry();
   assertDerivationDelta(
     "no-change refresh",
     beforeNoChangeDerivations,
@@ -143,6 +169,7 @@ try {
   }
 
   const specialPath = paths[0]!;
+  const beforeAppendBytes = (await stat(specialPath)).size;
   const beforeMutationListCursor = firstList.nextCursor;
   const beforeMutatedCursor = detailFirstPage.value.cursor;
   const unrelatedCursor = unrelatedPage.cursor;
@@ -161,6 +188,22 @@ try {
   );
   const beforeAppendDerivations = { ...derivationCalls };
   const appendRefresh = await measure(() => repository.refresh());
+  const appendSourceTelemetry = source.lastRefreshTelemetry();
+  const appendedBytes = (await stat(specialPath)).size - beforeAppendBytes;
+  if (appendSourceTelemetry.appendFiles !== 1 || appendSourceTelemetry.fullFiles !== 0) {
+    throw new Error(`Append did not use one incremental decode: ${JSON.stringify(appendSourceTelemetry)}`);
+  }
+  if (appendSourceTelemetry.decodeBytes > appendedBytes) {
+    throw new Error(
+      `Append decoded ${appendSourceTelemetry.decodeBytes} bytes for ${appendedBytes} appended bytes`,
+    );
+  }
+  if (
+    appendSourceTelemetry.decodeBytes + appendSourceTelemetry.probeBytes >
+      appendedBytes + 2 * 4 * 1024
+  ) {
+    throw new Error("Append read exceeded two probes plus the appended tail");
+  }
   assertDerivationDelta(
     "single-session append",
     beforeAppendDerivations,
@@ -180,6 +223,7 @@ try {
   await rename(replacement, specialPath);
   const beforeReplacementDerivations = { ...derivationCalls };
   const replaceRefresh = await measure(() => repository.refresh());
+  const replaceSourceTelemetry = source.lastRefreshTelemetry();
   assertDerivationDelta(
     "single-session replacement",
     beforeReplacementDerivations,
@@ -225,7 +269,18 @@ try {
       search: round(search.measurement.milliseconds),
       boundedAbsentSearch: round(absentSearch.measurement.milliseconds),
       detailFirstPage: round(detailFirstPage.measurement.milliseconds),
-      prefixIndexBuild: round(prefixIndexBuildMs),
+      decode: {
+        cold: round(coldSourceTelemetry.decodeMs),
+        append: round(appendSourceTelemetry.decodeMs),
+        replace: round(replaceSourceTelemetry.decodeMs),
+      },
+      normalize: {
+        cold: round(coldSourceTelemetry.normalizeMs),
+        append: round(appendSourceTelemetry.normalizeMs),
+        replace: round(replaceSourceTelemetry.normalizeMs),
+      },
+      prefix: { full: round(prefixMs.full), append: round(prefixMs.append) },
+      searchDocumentBuild: round(searchDocumentBuildMs),
     },
     baselineComparison: {
       priorSingleSessionAppendMs: PRIOR_SINGLE_APPEND_BASELINE_MS,
@@ -285,6 +340,13 @@ try {
       longMessageLimitExercised: message.markdown.length === 1_000_000,
       partialTailExercised: true,
       permissionProbe,
+      rolloutReadBytes: {
+        cold: coldSourceTelemetry,
+        noChange: noChangeSourceTelemetry,
+        append: appendSourceTelemetry,
+        replace: replaceSourceTelemetry,
+      },
+      appendHistoricalTimelineItems: selected.session.itemCount,
     },
     mutations: {
       opaqueListCursor: {
@@ -299,6 +361,7 @@ try {
     },
     derivationCalls: {
       total: derivationCalls,
+      prefixByMode: prefixCalls,
       expected: {
         coldCatalog: SESSION_COUNT,
         noChangeRefresh: 0,
@@ -368,6 +431,12 @@ async function generateCorpus(directory: string): Promise<string[]> {
             output: "O".repeat(512_000),
           },
         }));
+        for (let item = 0; item < APPEND_PREFIX_ITEMS; item += 1) {
+          records.push(JSON.stringify({
+            timestamp: "2026-07-28T12:00:03.000Z",
+            type: "turn_context",
+          }));
+        }
       }
       const tail = index === 1 ? "\n{\"timestamp\":\"partial" : "\n";
       await writeFile(path, `${(await Promise.all(records)).join("\n")}${tail}`);

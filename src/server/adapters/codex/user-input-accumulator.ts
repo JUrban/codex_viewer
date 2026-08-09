@@ -24,7 +24,15 @@ export interface AccumulatedUserInput {
 }
 
 export class UserInputAccumulator {
-  readonly #latestRequests = new Map<string, UserInputRequest>();
+  readonly #latestRequests: Map<string, UserInputRequest>;
+
+  constructor(latestRequests: ReadonlyMap<string, UserInputRequest> = new Map()) {
+    this.#latestRequests = new Map(latestRequests);
+  }
+
+  fork(): UserInputAccumulator {
+    return new UserInputAccumulator(this.#latestRequests);
+  }
 
   addRequest(request: UserInputRequest): AccumulatedUserInput {
     this.#latestRequests.set(request.callId, request);

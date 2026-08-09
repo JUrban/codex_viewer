@@ -183,6 +183,30 @@ describe("DefaultSessionRepository", () => {
     });
   });
 
+  it("rebuilds dirty-session search documents for appended messages", async () => {
+    const home = await createTempDirectory("codex-search-append-");
+    const directory = join(home, "sessions");
+    await mkdir(directory, { recursive: true });
+    const rollout = join(directory, "rollout-search-append.jsonl");
+    await writeFile(
+      rollout,
+      '{"type":"session_meta","payload":{"id":"search-append","title":"Search append"}}\n' +
+      '{"type":"event_msg","payload":{"type":"agent_message","message":"initial"}}\n',
+    );
+    const repository = await createCodexSessionRepository(home);
+    expect((await repository.list({ q: "incremental-search-needle" })).sessions)
+      .toEqual([]);
+
+    await appendFile(
+      rollout,
+      '{"type":"event_msg","payload":{"type":"agent_message","message":"incremental-search-needle"}}\n',
+    );
+    await repository.refresh();
+
+    expect((await repository.list({ q: "incremental-search-needle" })).sessions)
+      .toHaveLength(1);
+  });
+
   it("keeps a loaded call prefix stable when an output is appended", async () => {
     const home = await createTempDirectory("codex-tool-append-");
     const directory = join(home, "sessions");

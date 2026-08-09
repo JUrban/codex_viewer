@@ -30,7 +30,15 @@ export interface AccumulatedTool {
 }
 
 export class ToolAccumulator {
-  readonly #latestCalls = new Map<string, ToolCall>();
+  readonly #latestCalls: Map<string, ToolCall>;
+
+  constructor(latestCalls: ReadonlyMap<string, ToolCall> = new Map()) {
+    this.#latestCalls = new Map(latestCalls);
+  }
+
+  fork(): ToolAccumulator {
+    return new ToolAccumulator(this.#latestCalls);
+  }
 
   addCall(call: ToolCall): AccumulatedTool {
     this.#latestCalls.set(call.callId, call);
