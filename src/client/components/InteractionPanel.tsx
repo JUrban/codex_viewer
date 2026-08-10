@@ -237,7 +237,12 @@ export function InteractionPanel({
                                 aria-label="Terminal preview content"
                                 tabIndex={0}
                               >
-                                {preview.content}
+                                <span
+                                  key={preview.capturedAt}
+                                  className="terminal-preview-content"
+                                >
+                                  {preview.content}
+                                </span>
                               </pre>
                             )
                           : (
@@ -314,13 +319,6 @@ export function InteractionPanel({
                     >
                       Interrupt
                     </button>
-                    <button
-                      type="button"
-                      aria-disabled={interactionBusy}
-                      onClick={() => sendKeys(["plan"])}
-                    >
-                      Plan
-                    </button>
                   </div>
                 </div>
               </div>
@@ -332,15 +330,16 @@ export function InteractionPanel({
 }
 
 const TERMINAL_CONTROL_KEYS: ReadonlyArray<{
-  readonly key: Extract<InteractionKey, "up" | "down" | "left" | "right" | "enter">;
+  readonly key: Extract<InteractionKey, "up" | "down" | "left" | "right" | "enter" | "plan">;
   readonly label: string;
   readonly glyph: string;
 }> = [
+  { key: "enter", label: "Enter", glyph: "Enter" },
   { key: "up", label: "Up", glyph: "↑" },
+  { key: "plan", label: "Plan", glyph: "Plan" },
   { key: "left", label: "Left", glyph: "←" },
-  { key: "enter", label: "Enter", glyph: "↵" },
-  { key: "right", label: "Right", glyph: "→" },
   { key: "down", label: "Down", glyph: "↓" },
+  { key: "right", label: "Right", glyph: "→" },
 ];
 
 function sessionSummary(itemCount: number, updatedAt: string | null): string {

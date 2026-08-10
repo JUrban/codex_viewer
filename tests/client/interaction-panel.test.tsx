@@ -76,7 +76,7 @@ describe("interaction panel", () => {
     const summary = screen.getByText(`12 events · Updated ${localTime}`);
     const preview = screen.getByRole("region", { name: "Terminal preview" });
     const prompt = screen.getByRole("textbox", { name: "Message to agent" });
-    const lastAction = screen.getByRole("button", { name: "Plan" });
+    const lastAction = screen.getByRole("button", { name: "Interrupt" });
     expect(summary).toBeInTheDocument();
     expect(preview.compareDocumentPosition(prompt) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(lastAction.compareDocumentPosition(summary) & Node.DOCUMENT_POSITION_FOLLOWING)
@@ -143,7 +143,6 @@ describe("interaction panel", () => {
     expect(screen.getByText(/12 events · Updated/)).toBeInTheDocument();
     expect(screen.getByRole("textbox")).toBeEnabled();
     expect(screen.getByRole("button", { name: "Interrupt" })).toBeEnabled();
-    expect(screen.getByRole("button", { name: "Plan" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "Rebind" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "Rebind" }).parentElement)
       .toHaveClass("interaction-actions");
@@ -153,9 +152,7 @@ describe("interaction panel", () => {
     expect(screen.getByRole("button", { name: "Terminal preview" })).toBeEnabled();
     await user.click(screen.getByRole("button", { name: "Interrupt" }));
     expect(handlers.onSendKeys).toHaveBeenNthCalledWith(1, ["interrupt"]);
-    await user.click(screen.getByRole("button", { name: "Plan" }));
-    expect(handlers.onSendKeys).toHaveBeenNthCalledWith(2, ["plan"]);
-    expect(handlers.onSendKeys).toHaveBeenCalledTimes(2);
+    expect(handlers.onSendKeys).toHaveBeenCalledTimes(1);
     await user.click(screen.getByRole("button", { name: "Rebind" }));
     expect(handlers.onSendMessage).toHaveBeenCalledWith(activation);
 
@@ -171,10 +168,6 @@ describe("interaction panel", () => {
     expect(interrupt).toHaveFocus();
     expect(interrupt).toBeEnabled();
     expect(interrupt).toHaveAttribute("aria-disabled", "true");
-    expect(screen.getByRole("button", { name: "Plan" })).toHaveAttribute(
-      "aria-disabled",
-      "true",
-    );
     expect(screen.getByRole("button", { name: "Rebind" })).toHaveAttribute(
       "aria-disabled",
       "true",
@@ -183,7 +176,6 @@ describe("interaction panel", () => {
       "aria-disabled",
     );
     await user.click(interrupt);
-    await user.click(screen.getByRole("button", { name: "Plan" }));
     await user.click(screen.getByRole("button", { name: "Rebind" }));
     expect(handlers.onSendKeys).not.toHaveBeenCalled();
     expect(handlers.onSendMessage).not.toHaveBeenCalled();
@@ -263,28 +255,38 @@ describe("interaction panel", () => {
     scrollHeight.mockRestore();
   });
 
-  it("preserves terminal preview scroll position across refreshes", () => {
+  it("replaces long terminal content without replacing or disturbing the scroll container", () => {
+    const staleLine = "stale offscreen line";
     const handlers = {
       ...props(interaction("connected")),
       preview: {
-        content: "terminal output",
+        content: Array.from({ length: 80 }, (_, index) =>
+          `${staleLine} ${index + 1}`).join("\n"),
         truncated: false,
         capturedAt: "2026-08-08T12:00:00.000Z",
       },
     };
     const { rerender } = render(<InteractionPanel {...handlers} />);
     const content = screen.getByLabelText("Terminal preview content");
+    const textLayer = content.querySelector(".terminal-preview-content");
+    expect(textLayer).not.toBeNull();
     content.scrollTop = 120;
+    content.focus();
+    expect(content).toHaveFocus();
     const refreshedPreview = {
       ...handlers.preview,
-      content: "fresh terminal output",
+      content: "short fresh output",
       capturedAt: "2026-08-08T12:00:01.000Z",
     };
     rerender(<InteractionPanel {...handlers} preview={refreshedPreview} />);
     const refreshed = screen.getByLabelText("Terminal preview content");
+    const refreshedTextLayer = refreshed.querySelector(".terminal-preview-content");
     expect(refreshed).toBe(content);
-    expect(refreshed).toHaveTextContent("fresh terminal output");
+    expect(refreshedTextLayer).not.toBe(textLayer);
+    expect(refreshedTextLayer).toHaveTextContent("short fresh output");
+    expect(refreshed).not.toHaveTextContent(staleLine);
     expect(refreshed.scrollTop).toBe(120);
+    expect(refreshed).toHaveFocus();
   });
 
   it("replaces timestamp and manual refresh with a default-on auto-refresh switch", async () => {
@@ -414,29 +416,34 @@ describe("interaction panel", () => {
     }
   });
 
-  it("sends directional and Enter keys from the floating terminal keypad", async () => {
+  it("sends the six terminal keys from the rectangular terminal keypad", async () => {
     const handlers = {
       ...props(interaction("connected")),
       preview: { content: "output", truncated: false, capturedAt: "2026-08-08T12:00:00.000Z" },
     };
     const user = userEvent.setup();
     const { rerender } = render(<InteractionPanel {...handlers} />);
-    expect(screen.getByRole("group", { name: "Terminal controls" })).toBeInTheDocument();
+    const keypad = screen.getByRole("group", { name: "Terminal controls" });
+    expect(keypad).toBeInTheDocument();
+    expect([...keypad.querySelectorAll("button")].map((button) => button.textContent)).toEqual([
+      "Enter", "↑", "Plan", "←", "↓", "→",
+    ]);
 
-    for (const name of ["Up", "Left", "Enter", "Right", "Down"]) {
+    for (const name of ["Enter", "Up", "Plan", "Left", "Down", "Right"]) {
       await user.click(screen.getByRole("button", { name }));
     }
     expect(handlers.onSendKeys.mock.calls).toEqual([
-      [["up"]],
-      [["left"]],
       [["enter"]],
-      [["right"]],
+      [["up"]],
+      [["plan"]],
+      [["left"]],
       [["down"]],
+      [["right"]],
     ]);
 
     rerender(<InteractionPanel {...handlers} interactionBusy />);
     handlers.onSendKeys.mockClear();
-    for (const name of ["Up", "Left", "Enter", "Right", "Down"]) {
+    for (const name of ["Enter", "Up", "Plan", "Left", "Down", "Right"]) {
       const button = screen.getByRole("button", { name });
       expect(button).toBeEnabled();
       expect(button).toHaveAttribute("aria-disabled", "true");
