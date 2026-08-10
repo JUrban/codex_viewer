@@ -3,7 +3,7 @@ import { gfmFromMarkdown } from "mdast-util-gfm";
 import { toString } from "mdast-util-to-string";
 import { gfm } from "micromark-extension-gfm";
 import { memo, useId, useMemo, useState } from "react";
-import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
+import ReactMarkdown, { defaultUrlTransform, type ExtraProps } from "react-markdown";
 import rehypeKatex from "rehype-katex";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
@@ -25,7 +25,53 @@ const MARKDOWN_COMPONENTS = {
       [Image omitted{alt ? `: ${alt}` : ""}]
     </span>
   ),
+  table: ({ node: _node, children, ...props }: React.ComponentProps<"table"> & ExtraProps) => (
+    <MarkdownScrollRegion label="Scrollable table" kind="table">
+      <table {...props}>{children}</table>
+    </MarkdownScrollRegion>
+  ),
+  pre: ({ node: _node, children, ...props }: React.ComponentProps<"pre"> & ExtraProps) => (
+    <MarkdownScrollRegion label="Scrollable code block" kind="code">
+      <pre {...props}>{children}</pre>
+    </MarkdownScrollRegion>
+  ),
+  span: ({
+    node: _node,
+    className,
+    children,
+    ...props
+  }: React.ComponentProps<"span"> & ExtraProps) => {
+    if (className?.split(" ").includes("katex-display")) {
+      return (
+        <MarkdownScrollRegion label="Scrollable math formula" kind="math">
+          <span className={className} {...props}>{children}</span>
+        </MarkdownScrollRegion>
+      );
+    }
+    return <span className={className} {...props}>{children}</span>;
+  },
 };
+
+function MarkdownScrollRegion({
+  children,
+  kind,
+  label,
+}: {
+  children: React.ReactNode;
+  kind: "code" | "math" | "table";
+  label: string;
+}) {
+  return (
+    <div
+      className={`markdown-scroll-region markdown-scroll-${kind}`}
+      role="region"
+      aria-label={label}
+      tabIndex={0}
+    >
+      {children}
+    </div>
+  );
+}
 
 export function safeUrlTransform(url: string): string {
   try {

@@ -217,7 +217,6 @@ describe("interaction panel", () => {
       .toHaveAttribute("aria-expanded", "true");
     const content = screen.getByLabelText("Terminal preview content");
     expect(content).toHaveAttribute("tabindex", "0");
-    expect(content).toHaveFocus();
     expect(content.scrollTop).toBe(480);
     scrollHeight.mockRestore();
   });
@@ -260,7 +259,6 @@ describe("interaction panel", () => {
     await user.click(header);
     expect(screen.queryByLabelText("Terminal preview content")).not.toBeInTheDocument();
     await user.click(header);
-    expect(screen.getByLabelText("Terminal preview content")).toHaveFocus();
     expect(screen.getByLabelText("Terminal preview content").scrollTop).toBe(640);
     scrollHeight.mockRestore();
   });
@@ -287,23 +285,6 @@ describe("interaction panel", () => {
     expect(refreshed).toBe(content);
     expect(refreshed).toHaveTextContent("fresh terminal output");
     expect(refreshed.scrollTop).toBe(120);
-  });
-
-  it("keeps focus on the toggle when an expanded preview is empty", async () => {
-    const handlers = props(interaction("connected"));
-    const user = userEvent.setup();
-    const { rerender } = render(<InteractionPanel {...handlers} />);
-    const header = screen.getByRole("button", { name: "Terminal preview" });
-
-    await user.click(header);
-    rerender(<InteractionPanel
-      {...handlers}
-      preview={{ content: "", truncated: false, capturedAt: "2026-08-08T12:00:00.000Z" }}
-    />);
-
-    expect(header).toHaveFocus();
-    expect(screen.queryByLabelText("Terminal preview content")).not.toBeInTheDocument();
-    expect(screen.getByText("The terminal pane is empty.")).toBeInTheDocument();
   });
 
   it("replaces timestamp and manual refresh with a default-on auto-refresh switch", async () => {

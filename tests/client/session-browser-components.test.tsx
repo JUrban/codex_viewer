@@ -232,6 +232,59 @@ describe("session browser components", () => {
     expect(document.querySelector(".katex-display .katex")).toBeInTheDocument();
     expect(document.querySelectorAll(".katex")).toHaveLength(3);
     expect(document.querySelectorAll(".katex-display .katex")).toHaveLength(1);
+    expect(document.querySelector("[node]")).toBeNull();
+  });
+
+  it("gives tables, code blocks, and display math independent accessible scroll regions", () => {
+    render(<MessageItem item={{
+      kind: "message", id: "message-wide-markdown", ordinal: 11, timestamp: null,
+      role: "assistant", phase: "final", itemType: null,
+      markdown: [
+        "| Column | Value |",
+        "| --- | --- |",
+        "| alpha | beta |",
+        "",
+        "```text",
+        "a very wide line that keeps its original code formatting",
+        "```",
+        "",
+        "$$",
+        "\\sum_{i=1}^{n} i = \\frac{n(n+1)}{2}",
+        "$$",
+      ].join("\n"),
+    }} />);
+
+    const tableRegion = screen.getByRole("region", { name: "Scrollable table" });
+    const codeRegion = screen.getByRole("region", { name: "Scrollable code block" });
+    const mathRegion = screen.getByRole("region", { name: "Scrollable math formula" });
+    expect(tableRegion).toHaveAttribute("tabindex", "0");
+    expect(codeRegion).toHaveAttribute("tabindex", "0");
+    expect(mathRegion).toHaveAttribute("tabindex", "0");
+    expect(tableRegion.querySelector(":scope > table")).toBeInTheDocument();
+    expect(codeRegion.querySelector(":scope > pre > code")).toBeInTheDocument();
+    expect(mathRegion.querySelector(":scope > .katex-display")).toBeInTheDocument();
+    expect(document.querySelector("[node]")).toBeNull();
+  });
+
+  it("keeps long prose, list items, links, inline code, and tokens as ordinary Markdown", () => {
+    const longToken = "unbroken-token-".repeat(20);
+    render(<MessageItem item={{
+      kind: "message", id: "message-wrapping", ordinal: 12, timestamp: null,
+      role: "assistant", phase: "final", itemType: null,
+      markdown: [
+        `Paragraph ${longToken}`,
+        "",
+        `- List ${longToken}`,
+        "",
+        `[Long link](https://example.com/${longToken}) and \`${longToken}\``,
+      ].join("\n"),
+    }} />);
+
+    expect(screen.getByText(new RegExp(`Paragraph ${longToken}`))).toBeInTheDocument();
+    expect(screen.getByText(new RegExp(`List ${longToken}`))).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Long link" })).toBeInTheDocument();
+    expect(screen.getByText(longToken, { selector: "code" })).toBeInTheDocument();
+    expect(screen.queryByRole("region")).toBeNull();
   });
 
   it("leaves math syntax in code untouched and keeps invalid math readable", () => {

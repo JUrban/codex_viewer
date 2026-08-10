@@ -11,7 +11,7 @@ import {
   UserInputItem,
   type UserInputCardEntry,
 } from "./UserInputItem";
-import { TraceGutter } from "./TraceGutter";
+import { EventMark } from "./EventMark";
 
 interface TimelineProps {
   items: TimelineItem[];
@@ -45,7 +45,7 @@ export const Timeline = memo(function Timeline({
             className={`trace-event ${classFor(item)}`}
             key={`${sessionId}:${item.id}`}
           >
-            <TraceGutter item={item} />
+            <EventMark item={item} />
             <TimelineContent
               item={item}
               sessionId={sessionId}

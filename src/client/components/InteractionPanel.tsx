@@ -55,7 +55,6 @@ export function InteractionPanel({
   const previewAutoRefreshLabelId = useId();
   const previewContent = useRef<HTMLPreElement | null>(null);
   const scrollOnExpand = useRef(preview !== null);
-  const focusOnExpand = useRef(false);
   const messageBytes = new TextEncoder().encode(message.replace(/\r\n?/g, "\n")).byteLength;
   const messageTooLarge = messageBytes > MAX_INTERACTION_MESSAGE_BYTES;
   const messageIsBlank = message.trim().length === 0;
@@ -63,17 +62,10 @@ export function InteractionPanel({
   useLayoutEffect(() => {
     if (!previewExpanded || preview === null) return;
     const content = previewContent.current;
-    if (content === null) {
-      focusOnExpand.current = false;
-      return;
-    }
+    if (content === null) return;
     if (scrollOnExpand.current) {
       content.scrollTop = content.scrollHeight;
       scrollOnExpand.current = false;
-    }
-    if (focusOnExpand.current) {
-      content.focus({ preventScroll: true });
-      focusOnExpand.current = false;
     }
   }, [preview, previewExpanded]);
   useEffect(() => {
@@ -146,7 +138,6 @@ export function InteractionPanel({
       return;
     }
     scrollOnExpand.current = true;
-    focusOnExpand.current = true;
     setPreviewExpanded(true);
     if (!previewAutoRefresh && pageVisible) {
       void onPreviewTerminal().catch(() => undefined);

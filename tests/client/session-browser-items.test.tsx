@@ -95,6 +95,30 @@ describe("session reader items", () => {
     expect(screen.getByRole("button", { name: "Load more events" })).toBeEnabled();
   });
 
+  it("keeps one mark per full-width timeline event", () => {
+    render(<Timeline
+      items={[
+        message("message-mark", 1, "Message body"),
+        { kind: "internal", id: "internal-mark", ordinal: 2, timestamp: null,
+          eventType: "reasoning", summary: "Internal body" },
+      ]}
+      sessionId={SESSION_ID}
+      cursor={TIMELINE_CURSOR}
+      hasMore
+      loading={false}
+      onLoadMore={vi.fn()}
+      onTimelineConflict={vi.fn()}
+    />);
+
+    const events = document.querySelectorAll(".trace-event");
+    expect(events).toHaveLength(2);
+    for (const event of events) {
+      const mark = event.querySelector(":scope > .trace-mark");
+      expect(mark).toHaveAttribute("aria-hidden", "true");
+      expect(event.querySelector(":scope > article")).toBeInTheDocument();
+    }
+  });
+
   it("loads tool and directive details concurrently without changing their cursor", async () => {
     const pending: Array<(response: Response) => void> = [];
     const fetchMock = vi.fn((_input: RequestInfo | URL) => new Promise<Response>((resolve) => pending.push(resolve)));
