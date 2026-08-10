@@ -28,16 +28,22 @@ Chosen option: "Introduce high-level session source adapters that return normali
 
 Each source instance has a private stable instance key and a public opaque instance ID. Adapters return source-local stable session identities, native parent identities, normalized session content, a source signature, and diagnostics. The aggregate snapshot generates global opaque IDs from the source instance key and local identity, links parents only within a source instance, and publishes one immutable generation.
 
+Every normalized value returned by an adapter is a published immutable snapshot. An adapter must not mutate a previously returned `NormalizedSession`, timeline item, detail value, map, or other nested value in place when its source changes or a later refresh completes. It must instead publish new values for the changed path so earlier repository generations remain coherent.
+
+Adapters may preserve references for unchanged normalized sessions, timeline items, and tool or directive details. The repository treats such reference reuse only as an optimization hint: a reused reference must mean that value is unchanged, while a fresh reference may still contain equivalent content and remains valid at the cost of recomputing derived state. This permits copy-on-write adapters to extend timeline-prefix indexes cheaply without making reference reuse mandatory for other adapter implementations.
+
 ### Positive Consequences
 
 - New agents can be added without teaching the repository their files or formats.
 - Native IDs from different agents or installations cannot collide.
 - Sessions with a stable native ID retain their viewer ID when their source resource moves.
 - Source-specific caching and recovery policies can evolve independently.
+- Immutable snapshots keep earlier repository generations coherent, while optional reference reuse enables cheap incremental derivation.
 
 ### Negative Consequences
 
 - Adapters have a larger contract and must normalize identity and operational failures correctly.
+- Adapter implementations must use immutable publication rather than mutating previously returned values in place.
 - Source-local identity mistakes can still cause unstable IDs, so contract tests are required.
 - Cross-source parent relationships are intentionally unsupported.
 - The initial ID migration invalidates path-derived session URLs.
