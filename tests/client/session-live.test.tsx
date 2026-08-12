@@ -10,6 +10,7 @@ import type {
   TimelineCursor,
 } from "../../src/shared/api-contract";
 import type { TimelineItem } from "../../src/shared/domain";
+import { installIntersectionObserver, intersectLatest } from "./intersection-observer";
 import {
   baseSession,
   json,
@@ -90,6 +91,7 @@ describe("session Live updates", () => {
   });
 
   it("discards an old Live response after manual pagination advances the snapshot", async () => {
+    installIntersectionObserver();
     let resolveOld!: (response: Response) => void;
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(json(page([message("One")], TIMELINE_CURSOR, true)))
@@ -101,7 +103,9 @@ describe("session Live updates", () => {
     await flush();
     enableLiveUpdates();
     await flush();
-    fireEvent.click(screen.getByRole("button", { name: "Load more events" }));
+    expect(document.querySelector(".infinite-scroll-sentinel")).not.toBeInTheDocument();
+    enableLiveUpdates();
+    intersectLatest();
     await flush(8);
     expect(screen.getByText("Two")).toBeInTheDocument();
 

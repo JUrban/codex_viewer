@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { StrictMode } from "react";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { SessionApp } from "../../src/client/SessionApp";
 import { DirectiveItem } from "../../src/client/components/DirectiveItem";
@@ -18,6 +18,7 @@ import {
   TIMELINE_CURSOR,
   toolItem,
 } from "./session-browser.fixtures";
+import { installIntersectionObserver, intersectLatest } from "./intersection-observer";
 
 describe("session reader items", () => {
   it("renders inline directives without requesting detail", () => {
@@ -64,6 +65,7 @@ describe("session reader items", () => {
   });
 
   it("loads later pages without duplicating an overlapping item", async () => {
+    installIntersectionObserver();
     window.history.replaceState(null, "", `/sessions/${SESSION_ID}`);
     const first = page([message("message-1", 1, "First")], TIMELINE_CURSOR, true);
     const second = page([
@@ -76,12 +78,57 @@ describe("session reader items", () => {
     render(<SessionApp />);
 
     await screen.findByText("First");
-    fireEvent.click(screen.getByRole("button", { name: "Load more events" }));
+    intersectLatest();
     expect(await screen.findByText("Second")).toBeInTheDocument();
     expect(screen.getAllByText("First")).toHaveLength(1);
   });
 
-  it("keeps Load more available when all loaded events are filtered", () => {
+  it("backs off retryable automatic timeline page failures", async () => {
+    installIntersectionObserver();
+    window.history.replaceState(null, "", `/sessions/${SESSION_ID}`);
+    const first = page([message("message-1", 1, "First")], TIMELINE_CURSOR, true);
+    const second = page([message("message-2", 2, "Retried event")], NEXT_TIMELINE_CURSOR, false);
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(json(first))
+      .mockResolvedValueOnce(json({ error: { code: "busy", message: "Timeline busy" } }, 503))
+      .mockResolvedValueOnce(json(second));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<SessionApp />);
+    await screen.findByText("First");
+
+    vi.useFakeTimers();
+    vi.spyOn(Math, "random").mockReturnValue(0.5);
+    intersectLatest();
+    await flushMicrotasks();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(screen.getByText("Timeline busy")).toBeInTheDocument();
+    await act(async () => { await vi.advanceTimersByTimeAsync(999); });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    await flushMicrotasks();
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(screen.getByText("Retried event")).toBeInTheDocument();
+    vi.useRealTimers();
+  });
+
+  it("stops automatic timeline pagination on a terminal page error", async () => {
+    installIntersectionObserver();
+    window.history.replaceState(null, "", `/sessions/${SESSION_ID}`);
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(json(page([message("message-1", 1, "First")], TIMELINE_CURSOR, true)))
+      .mockResolvedValueOnce(json({ error: { code: "invalid_query", message: "Stop timeline" } }, 400));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<SessionApp />);
+    await screen.findByText("First");
+
+    intersectLatest();
+    expect(await screen.findByText("Stop timeline")).toBeInTheDocument();
+    intersectLatest();
+    await flushMicrotasks();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps automatic pagination available when all loaded events are filtered", () => {
     render(<Timeline
       items={[{ kind: "internal", id: "internal-1", ordinal: 1, timestamp: null,
         eventType: "reasoning", summary: "hidden upstream" }]}
@@ -92,7 +139,8 @@ describe("session reader items", () => {
       onLoadMore={vi.fn()}
       onTimelineConflict={vi.fn()}
     />);
-    expect(screen.getByRole("button", { name: "Load more events" })).toBeEnabled();
+    expect(document.querySelector(".infinite-scroll-sentinel")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Load more events" })).not.toBeInTheDocument();
   });
 
   it("keeps one mark per full-width timeline event", () => {
@@ -182,6 +230,12 @@ describe("session reader items", () => {
     expect(screen.getByText(/Internal body/)).toBeInTheDocument();
   });
 });
+
+async function flushMicrotasks(turns = 6): Promise<void> {
+  await act(async () => {
+    for (let index = 0; index < turns; index += 1) await Promise.resolve();
+  });
+}
 
 function message(id: string, ordinal: number, markdown: string): TimelineItem {
   return { kind: "message", id, ordinal, timestamp: null, role: "assistant",

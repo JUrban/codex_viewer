@@ -15,6 +15,7 @@ import {
   SESSION_ID,
   TIMELINE_CURSOR,
 } from "./session-browser.fixtures";
+import { installIntersectionObserver, intersectLatest } from "./intersection-observer";
 
 describe("MPA pages", () => {
   it("opens session links in the catalog window and forces freshness on refresh", async () => {
@@ -41,6 +42,7 @@ describe("MPA pages", () => {
   });
 
   it("restarts list pagination after stale_list_cursor without mixing results", async () => {
+    installIntersectionObserver();
     const initial = listResponse();
     initial.total = 2;
     initial.nextCursor = "old-process-list-cursor" as ListCursor;
@@ -61,7 +63,7 @@ describe("MPA pages", () => {
     render(<App />);
 
     expect(await screen.findByRole("link", { name: /Reader work/ })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /Load more sessions/ }));
+    intersectLatest();
     expect(await screen.findByRole("link", { name: /Restarted catalog/ })).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /Reader work/ })).not.toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledTimes(3);
@@ -107,6 +109,7 @@ describe("MPA pages", () => {
   });
 
   it("keeps loaded items and freezes pagination after timeline_changed", async () => {
+    installIntersectionObserver();
     window.history.replaceState(null, "", `/sessions/${SESSION_ID}`);
     const first = itemPage();
     first.hasMore = true;
@@ -122,10 +125,11 @@ describe("MPA pages", () => {
     render(<SessionApp />);
 
     expect(await screen.findByText("Ready")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Load more events" }));
+    intersectLatest();
     expect(await screen.findByText("Session 内容已变化")).toBeInTheDocument();
     expect(screen.getByText("Ready")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Load more events" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Load more events" })).not.toBeInTheDocument();
+    expect(document.querySelector(".infinite-scroll-sentinel")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "重新载入最新版本" })).toBeInTheDocument();
   });
 
@@ -161,6 +165,7 @@ describe("MPA pages", () => {
   });
 
   it("keeps the old timeline when reload fails and replaces it only after success", async () => {
+    installIntersectionObserver();
     window.history.replaceState(null, "", `/sessions/${SESSION_ID}`);
     const first = itemPage();
     first.hasMore = true;
@@ -194,7 +199,7 @@ describe("MPA pages", () => {
     render(<SessionApp />);
 
     expect(await screen.findByText("Ready")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Load more events" }));
+    intersectLatest();
     fireEvent.click(await screen.findByRole("button", { name: "重新载入最新版本" }));
     expect(await screen.findByText("Reload failed")).toBeInTheDocument();
     expect(screen.getByText("Ready")).toBeInTheDocument();

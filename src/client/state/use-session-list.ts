@@ -4,7 +4,13 @@ import type {
   SessionListResponse,
 } from "../../shared/api-contract";
 import { api } from "../api/client";
-import { isStaleListCursor, messageFor } from "./request-errors";
+import { isAbort, isStaleListCursor, messageFor } from "./request-errors";
+import {
+  INITIAL_RETRY_MS,
+  isRetryableRequestError,
+  nextRetryMs,
+  waitForRetry,
+} from "./retry-policy";
 import type { SessionCatalogFilters } from "./use-session-filters";
 
 const LIST_PAGE_SIZE = 300;
@@ -23,6 +29,7 @@ type ListAction =
   | { type: "query-success"; key: string; data: SessionListResponse }
   | { type: "query-failure"; error: string }
   | { type: "page-start" }
+  | { type: "page-retry"; error: string }
   | { type: "page-success"; data: SessionListResponse }
   | { type: "page-failure"; error: string }
   | { type: "refresh-start" }
@@ -95,24 +102,36 @@ export function useSessionList(filters: SessionCatalogFilters) {
     };
     active.current = request;
     dispatch({ type: "page-start" });
+    let retryMs = INITIAL_RETRY_MS;
     try {
-      let next: SessionListResponse;
-      let restarted = false;
-      try {
-        next = await api.sessions({
-          ...listQuery(filtersRef.current),
-          cursor: current.nextCursor,
-        }, request.controller.signal);
-      } catch (reason) {
-        if (!isCurrent(request) || !isStaleListCursor(reason)) throw reason;
-        restarted = true;
-        next = await api.sessions(
-          listQuery(filtersRef.current),
-          request.controller.signal,
-        );
-      }
-      if (isCurrent(request)) {
-        dispatch({ type: "page-success", data: restarted ? next : mergePage(current, next) });
+      while (isCurrent(request)) {
+        try {
+          let next: SessionListResponse;
+          let restarted = false;
+          try {
+            next = await api.sessions({
+              ...listQuery(filtersRef.current),
+              cursor: current.nextCursor,
+            }, request.controller.signal);
+          } catch (reason) {
+            if (!isCurrent(request) || !isStaleListCursor(reason)) throw reason;
+            restarted = true;
+            next = await api.sessions(
+              listQuery(filtersRef.current),
+              request.controller.signal,
+            );
+          }
+          if (isCurrent(request)) {
+            dispatch({ type: "page-success", data: restarted ? next : mergePage(current, next) });
+          }
+          return;
+        } catch (reason) {
+          if (!isCurrent(request) || isAbort(reason)) return;
+          if (!isRetryableRequestError(reason)) throw reason;
+          dispatch({ type: "page-retry", error: messageFor(reason) });
+          await waitForRetry(retryMs, request.controller.signal);
+          retryMs = nextRetryMs(retryMs);
+        }
       }
     } catch (reason) {
       if (isCurrent(request)) {
@@ -191,6 +210,8 @@ function reducer(state: ListState, action: ListAction): ListState {
       return { ...state, operation: null, error: action.error };
     case "page-start":
       return { ...state, operation: "page", error: null };
+    case "page-retry":
+      return { ...state, operation: "page", error: action.error };
     case "page-success":
       return { ...state, operation: null, data: action.data, error: null };
     case "page-failure":

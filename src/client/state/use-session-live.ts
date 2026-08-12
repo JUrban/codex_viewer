@@ -4,12 +4,14 @@ import type {
   SessionLiveResponse,
   TimelineCursor,
 } from "../../shared/api-contract";
-import { api, ApiClientError } from "../api/client";
+import { api } from "../api/client";
 import { isAbort, isTimelineConflict } from "./request-errors";
-
-const INITIAL_RETRY_MS = 1_000;
-const MAX_RETRY_MS = 30_000;
-const RETRY_JITTER = 0.2;
+import {
+  INITIAL_RETRY_MS,
+  isRetryableRequestError,
+  nextRetryMs,
+  retryDelayMs,
+} from "./retry-policy";
 
 export interface LiveSnapshot {
   readonly cursor: TimelineCursor;
@@ -80,19 +82,18 @@ export function useSessionLive({
             callbacks.current.onTimelineConflict();
             return;
           }
-          const retryable = !(reason instanceof ApiClientError) ||
-            reason.status === 429 || reason.status >= 500;
+          const retryable = isRetryableRequestError(reason);
           callbacks.current.onError(reason, !retryable);
           if (!retryable) return;
           await new Promise<void>((resolve) => {
-            const timer = window.setTimeout(resolve, jitter(retryMs));
+            const timer = window.setTimeout(resolve, retryDelayMs(retryMs));
             cancelDelay = () => {
               window.clearTimeout(timer);
               resolve();
             };
           });
           cancelDelay = null;
-          retryMs = Math.min(retryMs * 2, MAX_RETRY_MS);
+          retryMs = nextRetryMs(retryMs);
         } finally {
           controller = null;
         }
@@ -108,8 +109,4 @@ export function useSessionLive({
       document.removeEventListener("visibilitychange", onVisibility);
     };
   }, [enabled, sessionId, snapshot?.cursor, snapshot?.liveRevision]);
-}
-
-function jitter(milliseconds: number): number {
-  return Math.round(milliseconds * (1 - RETRY_JITTER + Math.random() * RETRY_JITTER * 2));
 }

@@ -89,6 +89,7 @@ export function SessionReader({
               hasMore={hasMore}
               loading={readerLoading}
               readerBusy={readerBusy}
+              paginationEnabled={!autoRefreshEnabled}
               paginationFrozen={timelineConflict}
               onLoadMore={onLoadMore}
               onTimelineConflict={onTimelineConflict}
@@ -134,7 +135,7 @@ export function SessionReader({
 
 function emptyStateMessage(visibility: TimelineVisibility, hasMore: boolean): string {
   if (hasMore) {
-    return "No visible events in the loaded range. Load more events or change a visibility filter.";
+    return "No visible events in the loaded range. Keep scrolling or change a visibility filter.";
   }
   if (Object.values(visibility).some((visible) => !visible)) {
     return "Try showing more event types, or wait for the session to update.";

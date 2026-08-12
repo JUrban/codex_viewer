@@ -3,6 +3,7 @@ import { EmptyState } from "./components/EmptyState";
 import { ErrorState } from "./components/ErrorState";
 import { SessionFilters } from "./components/SessionFilters";
 import { SessionTree } from "./components/SessionTree";
+import { InfiniteScrollSentinel } from "./components/InfiniteScrollSentinel";
 import { useSessionFilters } from "./state/use-session-filters";
 import { useSessionList } from "./state/use-session-list";
 
@@ -55,18 +56,13 @@ export function App() {
             )
           : <SessionTree entries={sessions} />}
         {catalog.list?.nextCursor
-          ? (
-              <button
-                className="load-more"
-                type="button"
-                disabled={catalog.operation !== null}
-                onClick={() => void catalog.loadMoreSessions()}
-              >
-                {catalog.operation === "page"
-                  ? "Loading sessions…"
-                  : `Load more sessions (${sessions.length} of ${catalog.list.total})`}
-              </button>
-            )
+          ? <InfiniteScrollSentinel
+              enabled={catalog.operation === null}
+              triggerKey={catalog.list.nextCursor}
+              loading={catalog.operation === "page"}
+              loadingLabel="Loading more sessions…"
+              onLoadMore={() => void catalog.loadMoreSessions()}
+            />
           : null}
       </aside>
     </main>

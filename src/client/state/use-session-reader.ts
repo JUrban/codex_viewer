@@ -7,6 +7,12 @@ import type {
 import type { TimelineItem } from "../../shared/domain";
 import { api, ApiClientError } from "../api/client";
 import { isAbort, isTimelineConflict, messageFor } from "./request-errors";
+import {
+  INITIAL_RETRY_MS,
+  isRetryableRequestError,
+  nextRetryMs,
+  waitForRetry,
+} from "./retry-policy";
 import { useSessionLive, type LiveSnapshot } from "./use-session-live";
 import type { ReaderContext } from "./session-reader-state";
 
@@ -30,6 +36,7 @@ type ReaderAction =
   | { type: "success"; page: ItemPageResponse; replace: boolean }
   | { type: "live-success"; response: SessionLiveResponse }
   | { type: "live-error"; error: string }
+  | { type: "page-retry"; error: string }
   | { type: "failure"; error: string; missing: boolean }
   | { type: "timeline-conflict" }
   | { type: "clear-error" };
@@ -88,20 +95,34 @@ export function useSessionReader(sessionId: string) {
     };
     active.current = request;
     dispatch({ type: "start", operation, preserve: mode.preserveCurrent });
+    let retryMs = INITIAL_RETRY_MS;
     try {
-      const page = await api.items(sessionId, {
-        cursor,
-        limit: TIMELINE_PAGE_SIZE,
-      }, request.controller.signal);
-      if (!isCurrent(request)) return false;
-      dispatch({ type: "success", page, replace: mode.replaceItems });
-      return true;
+      while (isCurrent(request)) {
+        try {
+          const page = await api.items(sessionId, {
+            cursor,
+            limit: TIMELINE_PAGE_SIZE,
+          }, request.controller.signal);
+          if (!isCurrent(request)) return false;
+          dispatch({ type: "success", page, replace: mode.replaceItems });
+          return true;
+        } catch (reason) {
+          if (!isCurrent(request) || isAbort(reason)) return false;
+          if (isTimelineConflict(reason)) {
+            markTimelineConflict();
+            return false;
+          }
+          const retryablePagination = (operation === "page" || operation === "poll") &&
+            isRetryableRequestError(reason);
+          if (!retryablePagination) throw reason;
+          dispatch({ type: "page-retry", error: messageFor(reason) });
+          await waitForRetry(retryMs, request.controller.signal);
+          retryMs = nextRetryMs(retryMs);
+        }
+      }
+      return false;
     } catch (reason) {
       if (!isCurrent(request) || isAbort(reason)) return false;
-      if (isTimelineConflict(reason)) {
-        markTimelineConflict();
-        return false;
-      }
       const missing = reason instanceof ApiClientError &&
         reason.status === 404 && reason.code === "session_not_found";
       dispatch({ type: "failure", error: messageFor(reason), missing });
@@ -163,10 +184,11 @@ export function useSessionReader(sessionId: string) {
       current.context.liveRevision !== expected.liveRevision ||
       response.cursor !== expected.cursor) return;
     if (response.hasMore) {
-      await requestPage("poll", expected.cursor, {
+      const loaded = await requestPage("poll", expected.cursor, {
         preserveCurrent: true,
         replaceItems: false,
       });
+      if (!loaded && !stateRef.current.timelineConflict) setAutoRefreshEnabled(false);
       return;
     }
     dispatch({ type: "live-success", response });
@@ -258,6 +280,8 @@ function reducer(state: ReaderState, action: ReaderAction): ReaderState {
         missing: false,
       };
     case "live-error":
+      return { ...state, error: action.error };
+    case "page-retry":
       return { ...state, error: action.error };
     case "failure":
       return { ...state, operation: null, error: action.error, missing: action.missing };

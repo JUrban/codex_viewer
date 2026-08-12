@@ -12,6 +12,7 @@ import {
   type UserInputCardEntry,
 } from "./UserInputItem";
 import { EventMark } from "./EventMark";
+import { InfiniteScrollSentinel } from "./InfiniteScrollSentinel";
 
 interface TimelineProps {
   items: TimelineItem[];
@@ -20,6 +21,7 @@ interface TimelineProps {
   hasMore: boolean;
   loading: boolean;
   readerBusy?: boolean;
+  paginationEnabled?: boolean;
   paginationFrozen?: boolean;
   onLoadMore: () => void;
   onTimelineConflict: () => void;
@@ -32,6 +34,7 @@ export const Timeline = memo(function Timeline({
   hasMore,
   loading,
   readerBusy = loading,
+  paginationEnabled = true,
   paginationFrozen = false,
   onLoadMore,
   onTimelineConflict,
@@ -55,17 +58,14 @@ export const Timeline = memo(function Timeline({
           </li>
         ))}
       </ol>
-      {hasMore
-        ? (
-            <button
-              className="load-more"
-              type="button"
-              disabled={readerBusy || paginationFrozen}
-              onClick={onLoadMore}
-            >
-              {loading ? "Loading…" : "Load more events"}
-            </button>
-          )
+      {hasMore && paginationEnabled && !paginationFrozen
+        ? <InfiniteScrollSentinel
+            enabled={!readerBusy}
+            triggerKey={cursor}
+            loading={loading}
+            loadingLabel="Loading more events…"
+            onLoadMore={onLoadMore}
+          />
         : null}
     </>
   );
