@@ -36,6 +36,8 @@ The same validated binding supports a plain-text terminal preview. Each request 
 
 Interaction connection status is part of the top-level session detail and item-page read responses rather than a standalone resource. It is limited to unbound, disconnected, or connected; the viewer does not infer agent activity from rollout events or restrict connected operations according to an inferred activity state. The client has one Live update scheduler for the open session, disabled by default, that refreshes both timeline metadata and connection status. The preference is not persisted: every session page starts with Live updates disabled, including after a browser reload. Archived sessions never start the scheduler.
 
+The Live update preference lifecycle was later refined by [ADR-0014](0014-remember-live-updates-per-browser-tab.md).
+
 ### Positive Consequences
 
 - Read-only behavior remains the default and is observable through the API and UI.

@@ -28,6 +28,8 @@ Chosen option: "Wrap the existing offset, normalized query, and query-scoped rev
 
 Initial requests contain filters and a limit. Later requests add one authenticated cursor. A cursor is valid only for the same normalized query and ordered matching-ID revision; changed membership or order returns `stale_list_cursor`. `fresh=true` is initial-request-only and forces catalog discovery before returning the first page.
 
+Archive state was later removed from the server query and cursor filter surface by [ADR-0013](0013-filter-session-archive-state-in-the-browser.md).
+
 A structurally valid cursor with an unverifiable signature, including one retained across a process restart, is classified as `stale_list_cursor` so the client can safely restart at the first page. Structurally malformed cursor input remains `invalid_query`.
 
 This decision supersedes [ADR-0005](0005-use-query-scoped-revisions-for-session-list-pagination.md).

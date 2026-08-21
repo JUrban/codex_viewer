@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useReducer, useRef, useState } from "react";
+import { useCallback, useEffect, useReducer, useRef } from "react";
 import type {
   InteractionResponse,
   ItemPageResponse,
@@ -14,6 +14,7 @@ import {
   waitForRetry,
 } from "./retry-policy";
 import { useSessionLive, type LiveSnapshot } from "./use-session-live";
+import { useLiveUpdatesPreference } from "./use-live-updates-preference";
 import type { ReaderContext } from "./session-reader-state";
 
 const TIMELINE_PAGE_SIZE = 300;
@@ -64,7 +65,7 @@ const initialState: ReaderState = {
 
 export function useSessionReader(sessionId: string) {
   const [state, dispatch] = useReducer(reducer, initialState);
-  const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(false);
+  const [autoRefreshEnabled, setAutoRefreshEnabled] = useLiveUpdatesPreference();
   const active = useRef<ActiveRequest | null>(null);
   const generation = useRef(0);
   const stateRef = useRef(state);
@@ -133,7 +134,6 @@ export function useSessionReader(sessionId: string) {
   }, [isCurrent, markTimelineConflict, sessionId]);
 
   useEffect(() => {
-    setAutoRefreshEnabled(false);
     generation.current += 1;
     active.current?.controller.abort();
     active.current = null;
@@ -225,7 +225,7 @@ export function useSessionReader(sessionId: string) {
     timelineConflict: state.timelineConflict,
     timelineRenderGeneration: state.timelineRenderGeneration,
     clearReaderError: () => dispatch({ type: "clear-error" }),
-    autoRefreshEnabled,
+    autoRefreshEnabled: autoRefreshEnabled && state.context?.session.archived !== true,
     setAutoRefreshEnabled,
     loadMore,
     retryOpen,

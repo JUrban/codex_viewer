@@ -20,7 +20,7 @@ describe("session filters", () => {
     await user.tab();
     expect(screen.getByRole("button", { name: "Date range" })).toHaveFocus();
     await user.tab();
-    expect(screen.getByRole("radio", { name: "Active" })).toHaveFocus();
+    expect(screen.getByRole("radio", { name: "All" })).toHaveFocus();
   });
 
   it("applies date drafts together and allows moving a range beyond its previous To", async () => {
@@ -117,7 +117,21 @@ describe("session filters", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it("restores applied filters on remount and safely rejects malformed storage", async () => {
+  it("persists the applied archive scope across remounts", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(json(listBody)));
+
+    const first = render(<App />);
+    await screen.findByRole("link", { name: /Reader work/ });
+    fireEvent.click(screen.getByRole("radio", { name: "Archived" }));
+    await waitFor(() => expect(sessionStorage.getItem(STORAGE_KEY))
+      .toContain('"state":"archived"'));
+
+    first.unmount();
+    render(<App />);
+    expect(screen.getByRole("radio", { name: "Archived" })).toBeChecked();
+  });
+
+  it("restores valid query filters and safely rejects malformed storage", async () => {
     sessionStorage.setItem(STORAGE_KEY, JSON.stringify({
       project: "/project/reader",
       from: "2026-07-01",
@@ -139,7 +153,7 @@ describe("session filters", () => {
 
     sessionStorage.setItem(STORAGE_KEY, "{not-json");
     render(<App />);
-    expect(screen.getByRole("radio", { name: "Active" })).toBeChecked();
+    expect(screen.getByRole("radio", { name: "All" })).toBeChecked();
   });
 
   it("restores calendar dates in positive UTC offset time zones", () => {
@@ -170,7 +184,7 @@ describe("session filters", () => {
     render(<App />);
 
     expect(screen.getByLabelText("From")).toHaveValue("");
-    expect(screen.getByRole("radio", { name: "Active" })).toBeChecked();
+    expect(screen.getByRole("radio", { name: "All" })).toBeChecked();
   });
 
   it("rejects stored filters containing unknown fields", () => {
@@ -185,7 +199,7 @@ describe("session filters", () => {
 
     render(<App />);
 
-    expect(screen.getByRole("radio", { name: "Active" })).toBeChecked();
+    expect(screen.getByRole("radio", { name: "All" })).toBeChecked();
     expect(screen.getByLabelText("From")).toHaveValue("");
   });
 

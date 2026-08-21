@@ -5,7 +5,6 @@ export interface CanonicalListFilters {
   readonly project: string | null;
   readonly from: string | null;
   readonly to: string | null;
-  readonly archiveScope: "active" | "archived" | "all";
 }
 
 export type ListRevisionFactory = (
@@ -18,7 +17,6 @@ export function canonicalListFilters(query: SessionListCriteria): CanonicalListF
     project: query.project ?? null,
     from: query.from === undefined ? null : new Date(query.from).toISOString(),
     to: query.to === undefined ? null : new Date(query.to).toISOString(),
-    archiveScope: query.archiveScope ?? "active",
   };
 }
 
@@ -30,7 +28,6 @@ export function createProcessListRevisionFactory(): ListRevisionFactory {
     frame(hmac, filters.project);
     frame(hmac, filters.from);
     frame(hmac, filters.to);
-    frame(hmac, filters.archiveScope);
     for (const id of orderedIds) frame(hmac, id);
     return hmac.digest().subarray(0, 24).toString("base64url");
   };

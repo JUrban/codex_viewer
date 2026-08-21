@@ -36,13 +36,10 @@ export interface ApiError {
   };
 }
 
-export type ArchiveScope = "active" | "archived" | "all";
-
 export interface SessionListQuery {
   project?: string;
   from?: string;
   to?: string;
-  archiveScope?: ArchiveScope;
   limit?: number;
   cursor?: ListCursor;
   fresh?: boolean;

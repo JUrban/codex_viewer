@@ -1,10 +1,7 @@
-export type SessionArchiveScope = "active" | "archived" | "all";
-
 export interface SessionListCriteria {
   readonly project?: string;
   readonly from?: string;
   readonly to?: string;
-  readonly archiveScope?: SessionArchiveScope;
   readonly limit?: number;
   readonly cursor?: string;
   readonly fresh?: boolean;

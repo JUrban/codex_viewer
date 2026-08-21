@@ -87,7 +87,6 @@ export const api = {
         project: query.project,
         from: query.from,
         to: query.to,
-        archiveScope: query.archiveScope,
         limit: query.limit,
         cursor: query.cursor,
         fresh: query.fresh,

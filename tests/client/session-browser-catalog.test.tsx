@@ -27,6 +27,38 @@ describe("session catalog state", () => {
     expect(fetchMock.mock.calls[1]?.[0]).toContain("cursor=next-page");
   });
 
+  it("keeps paging when the selected state has no match on the current page", async () => {
+    sessionStorage.setItem("codex-sessions-reader.filters.v1", JSON.stringify({
+      project: "",
+      from: "",
+      to: "",
+      state: "archived",
+    }));
+    installIntersectionObserver();
+    const first = response([baseSession], "archived-page");
+    first.total = 2;
+    const archived = {
+      ...baseSession,
+      id: "archivedpageabcdefghijkl",
+      title: "Paged archive",
+      archived: true,
+    };
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(json(first))
+      .mockResolvedValueOnce(json(response([archived], null)));
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    expect(screen.queryByText("No archived sessions match")).not.toBeInTheDocument();
+    expect(document.querySelector(".infinite-scroll-sentinel")).toBeInTheDocument();
+
+    await flushMicrotasks();
+    intersectLatest();
+    expect(await screen.findByRole("link", { name: /Paged archive/ })).toBeInTheDocument();
+    expect(screen.getByText("Sessions · 1")).toBeInTheDocument();
+  });
+
   it("shows catalog diagnostics and replaces them with the latest page or refresh", async () => {
     installIntersectionObserver();
     const first = response([baseSession], "next-page", "First diagnostic");
@@ -120,25 +152,25 @@ describe("session catalog state", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
-  it("aborts and ignores an obsolete list request after filters change", async () => {
-    let resolveInitial!: (value: Response) => void;
-    const initial = new Promise<Response>((resolve) => { resolveInitial = resolve; });
-    const fetchMock = vi.fn((input: RequestInfo | URL, _init?: RequestInit) => {
-      const url = String(input);
-      if (!url.includes("archiveScope=archived")) return initial;
-      return Promise.resolve(json(response([
-        { ...baseSession, id: "archivedabcdefghijklmn", title: "Archived result", archived: true },
-      ], null)));
-    });
+  it("filters loaded sessions by state without issuing another request", async () => {
+    const archived = {
+      ...baseSession,
+      id: "archivedabcdefghijklmn",
+      title: "Archived result",
+      archived: true,
+    };
+    const fetchMock = vi.fn().mockResolvedValue(json(response([baseSession, archived], null)));
     vi.stubGlobal("fetch", fetchMock);
     render(<App />);
 
+    await screen.findByRole("link", { name: /Reader work/ });
+    expect(screen.getByRole("link", { name: /Archived result/ })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("radio", { name: "Archived" }));
-    expect(await screen.findByRole("link", { name: /Archived result/ })).toBeInTheDocument();
-    expect((fetchMock.mock.calls[0]?.[1] as RequestInit).signal?.aborted).toBe(true);
-    resolveInitial(json(listBody));
-    await Promise.resolve();
-    expect(screen.queryByRole("link", { name: /Reader work/ })).toBeNull();
+    expect(screen.getByRole("link", { name: /Archived result/ })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /Reader work/ })).not.toBeInTheDocument();
+    expect(screen.getByText("Sessions · 1")).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(String(fetchMock.mock.calls[0]?.[0])).not.toContain("archiveScope");
   });
 
   it("keeps the current list when a forced refresh fails", async () => {
@@ -152,19 +184,6 @@ describe("session catalog state", () => {
     fireEvent.click(screen.getByRole("button", { name: "Refresh sessions" }));
     expect(await screen.findByText("Refresh failed")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Reader work/ })).toBeInTheDocument();
-  });
-
-  it("persists and restores the three-state archive scope", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(json(listBody)));
-    const view = render(<App />);
-    await screen.findByRole("link", { name: /Reader work/ });
-    fireEvent.click(screen.getByRole("radio", { name: "All" }));
-    await waitFor(() => expect(sessionStorage.getItem("codex-sessions-reader.filters.v1"))
-      .toContain('"state":"all"'));
-    view.unmount();
-
-    render(<App />);
-    expect(screen.getByRole("radio", { name: "All" })).toBeChecked();
   });
 
   it("keeps a selected project visible when the query has no matching sessions", async () => {

@@ -11,6 +11,7 @@ import type {
 } from "../../src/shared/api-contract";
 import type { TimelineItem } from "../../src/shared/domain";
 import { installIntersectionObserver, intersectLatest } from "./intersection-observer";
+import { LIVE_UPDATES_STORAGE_KEY } from "../../src/client/state/use-live-updates-preference";
 import {
   baseSession,
   json,
@@ -56,12 +57,38 @@ describe("session Live updates", () => {
   });
 
   it("never opens Live for archived sessions", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(json(page([], TIMELINE_CURSOR, false, true)));
+    sessionStorage.setItem(LIVE_UPDATES_STORAGE_KEY, "true");
+    installIntersectionObserver();
+    const fetchMock = vi.fn().mockResolvedValue(json(page([], TIMELINE_CURSOR, true, true)));
     vi.stubGlobal("fetch", fetchMock);
     render(<SessionApp />);
     await flush();
     expect(screen.queryByRole("switch", { name: "Live updates" })).toBeNull();
+    expect(document.querySelector(".infinite-scroll-sentinel")).toBeInTheDocument();
+    expect(sessionStorage.getItem(LIVE_UPDATES_STORAGE_KEY)).toBe("true");
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("restores the tab preference after the reader mounts again", async () => {
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      if (String(input).includes("/live?")) return new Promise<Response>(() => {});
+      return Promise.resolve(json(page([])));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const first = render(<SessionApp />);
+    await flush();
+    fireEvent.click(screen.getByRole("switch", { name: "Live updates" }));
+    await flush();
+    expect(sessionStorage.getItem(LIVE_UPDATES_STORAGE_KEY)).toBe("true");
+
+    first.unmount();
+    render(<SessionApp />);
+    await flush();
+
+    expect(screen.getByRole("switch", { name: "Live updates" })).toBeChecked();
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+    expect(String(fetchMock.mock.calls[3]?.[0])).toContain("/live?");
   });
 
   it("loads ordinary items pages until a multi-page Live backlog is caught up", async () => {
@@ -198,6 +225,7 @@ describe("session Live updates", () => {
     expect(fetchMock).toHaveBeenCalledTimes(3);
     expect(screen.getByText("Stop")).toBeInTheDocument();
     expect(screen.getByRole("switch", { name: "Live updates" })).not.toBeChecked();
+    expect(sessionStorage.getItem(LIVE_UPDATES_STORAGE_KEY)).toBe("false");
     vi.useRealTimers();
   });
 

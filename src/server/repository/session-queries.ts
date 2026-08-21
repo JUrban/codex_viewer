@@ -300,10 +300,6 @@ function assertItemConfirmed(
 }
 
 function passesFacetFilters(session: DomainSession, query: SessionListCriteria): boolean {
-  const archiveScope = query.archiveScope ?? "active";
-  if (archiveScope !== "all" && session.archived !== (archiveScope === "archived")) {
-    return false;
-  }
   const timestamp = session.updatedAt ?? session.createdAt;
   const instant = timestamp === null ? null : Date.parse(timestamp);
   if (query.from !== undefined && (instant === null || instant < Date.parse(query.from))) return false;
@@ -312,17 +308,6 @@ function passesFacetFilters(session: DomainSession, query: SessionListCriteria):
 }
 
 function validateListQuery(query: SessionListCriteria): void {
-  if (
-    query.archiveScope !== undefined &&
-    query.archiveScope !== "active" &&
-    query.archiveScope !== "archived" &&
-    query.archiveScope !== "all"
-  ) {
-    throw new RepositoryQueryError(
-      "invalid_query",
-      "archiveScope must be active, archived, or all",
-    );
-  }
   if (query.project !== undefined && (query.project.length === 0 || query.project.length > 4_096)) {
     throw new RepositoryQueryError("invalid_query", "project is invalid");
   }

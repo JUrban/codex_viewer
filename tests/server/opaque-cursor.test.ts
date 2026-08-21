@@ -6,7 +6,7 @@ describe("OpaqueCursorCodec", () => {
   it("distinguishes valid, malformed, and differently signed list cursors", () => {
     const first = new OpaqueCursorCodec(Buffer.alloc(32, 1));
     const restarted = new OpaqueCursorCodec(Buffer.alloc(32, 2));
-    const cursor = first.encodeList({ archiveScope: "all", limit: 10 }, 10, "revision");
+    const cursor = first.encodeList({ limit: 10 }, 10, "revision");
 
     expect(first.decodeList(cursor)).toMatchObject({
       kind: "valid",

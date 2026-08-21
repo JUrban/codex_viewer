@@ -26,14 +26,14 @@ async function fixtureRepository() {
 
 async function basicFixtureSession() {
   const { home, repository } = await fixtureRepository();
-  const activeSessions = (await repository.list({})).sessions;
-  const session = activeSessions.find(({ title }) => title === "Synthetic trace");
+  const catalogSessions = (await repository.list({})).sessions;
+  const session = catalogSessions.find(({ title }) => title === "Synthetic trace");
   if (session === undefined) throw new Error("Expected the basic fixture session");
   const rollout = join(
     home,
     "sessions/2026/07/28/rollout-2026-07-28T10-00-00-basic-session.jsonl",
   );
-  return { activeSessions, home, repository, rollout, session };
+  return { catalogSessions, home, repository, rollout, session };
 }
 
 describe("SessionReadService", () => {
@@ -150,7 +150,6 @@ describe("SessionReadService", () => {
     const result = await sessions.list({
       project: "/project/missing",
       from: "2026-06-01T00:00:00.000Z",
-      archiveScope: "archived",
       limit: 1,
     });
 
@@ -195,28 +194,22 @@ describe("SessionReadService", () => {
       to: "2026-12-31T23:59:59.999Z",
     } as const;
 
-    const active = await sessions.list({ ...range, archiveScope: "active" });
-    expect(active.sessions.map(({ cwd }) => cwd)).toEqual(["/project/a"]);
-    expect(active.total).toBe(1);
-    expect(active.projects).toEqual([
+    const selectedProject = await sessions.list(range);
+    expect(selectedProject.sessions.map(({ cwd }) => cwd)).toEqual(["/project/a"]);
+    expect(selectedProject.total).toBe(1);
+    expect(selectedProject.projects).toEqual([
       { project: "/project/a", count: 1 },
+      { project: "/project/archived", count: 1 },
       { project: "/project/b", count: 1 },
     ]);
 
-    const emptySelectedProject = await sessions.list({
+    const archivedProject = await sessions.list({
       ...range,
       project: "/project/archived",
-      archiveScope: "active",
     });
-    expect(emptySelectedProject.sessions).toEqual([]);
-    expect(emptySelectedProject.projects).toEqual([
-      { project: "/project/a", count: 1 },
-      { project: "/project/archived", count: 0 },
-      { project: "/project/b", count: 1 },
-    ]);
-
-    const all = await sessions.list({ ...range, archiveScope: "all" });
-    expect(all.projects).toEqual([
+    expect(archivedProject.sessions).toHaveLength(1);
+    expect(archivedProject.sessions[0]?.archived).toBe(true);
+    expect(archivedProject.projects).toEqual([
       { project: "/project/a", count: 1 },
       { project: "/project/archived", count: 1 },
       { project: "/project/b", count: 1 },
@@ -224,14 +217,8 @@ describe("SessionReadService", () => {
   });
 
   it("publishes linked summaries and pages timeline details", async () => {
-    const { activeSessions, repository, session: parent } = await basicFixtureSession();
-    expect(activeSessions).toHaveLength(3);
-    expect(activeSessions.every((session) => !session.archived)).toBe(true);
-    const archived = await repository.list({ archiveScope: "archived" });
-    expect(archived.sessions).toHaveLength(1);
-    expect(archived.sessions[0]?.archived).toBe(true);
-    expect((await repository.list({ archiveScope: "all" })).sessions).toHaveLength(4);
-    const child = activeSessions.find((session) => session.cwd === "/synthetic/child")!;
+    const { catalogSessions, repository, session: parent } = await basicFixtureSession();
+    const child = catalogSessions.find((session) => session.cwd === "/synthetic/child")!;
     expect(child.parentId).toBe(parent.id);
     expect(parent.childIds).toContain(child.id);
 
@@ -630,7 +617,7 @@ describe("SessionReadService", () => {
       '{"timestamp":"2026-07-28T10:00:00.000Z","type":"session_meta","payload":{"id":"active-session","title":"Active trace"}}\n',
     );
     const repository = await createCodexSessionReadService(home);
-    expect((await repository.list({ archiveScope: "all" })).sessions).toHaveLength(1);
+    expect((await repository.list({})).sessions).toHaveLength(1);
 
     await mkdir(join(home, "archived_sessions"), { recursive: true });
     await writeFile(
@@ -639,14 +626,14 @@ describe("SessionReadService", () => {
     );
     await repository.refresh();
 
-    const archived = await repository.list({ archiveScope: "archived" });
-    expect(archived.sessions).toHaveLength(1);
-    expect(archived.sessions[0]?.title).toBe("Late archive");
+    const sessions = await repository.list({});
+    expect(sessions.sessions).toHaveLength(2);
+    expect(sessions.sessions.find(({ archived }) => archived)?.title).toBe("Late archive");
   });
 
   it("keeps a native Codex session identity stable when its rollout moves", async () => {
     const { home, repository } = await fixtureRepository();
-    const before = await repository.list({ archiveScope: "all" });
+    const before = await repository.list({});
     const session = before.sessions.find(
       (session) => session.title === "Synthetic trace",
     )!;
@@ -659,7 +646,7 @@ describe("SessionReadService", () => {
     await rename(original, join(archiveDirectory, "rollout-moved-basic-session.jsonl"));
 
     await repository.refresh();
-    const after = await repository.list({ archiveScope: "all" });
+    const after = await repository.list({});
     const moved = after.sessions.find(
       (session) => session.title === "Synthetic trace",
     )!;

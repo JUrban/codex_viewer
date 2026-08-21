@@ -52,7 +52,7 @@ async function startApi(existingHome?: string) {
 describe("opaque cursor API", () => {
   it("classifies structurally valid cursors from another service instance as recoverable", async () => {
     const firstServer = await startApi();
-    const list = await fetch(`${firstServer.base}/api/v1/sessions?archiveScope=all&limit=1`)
+    const list = await fetch(`${firstServer.base}/api/v1/sessions?limit=1`)
       .then((response) => response.json());
     const sessionId = list.sessions[0].id;
     const page = await fetch(
@@ -64,7 +64,7 @@ describe("opaque cursor API", () => {
 
     const restarted = await startApi(firstServer.home);
     const staleList = await fetch(
-      `${restarted.base}/api/v1/sessions?archiveScope=all&limit=1&cursor=${encodeURIComponent(list.nextCursor)}`,
+      `${restarted.base}/api/v1/sessions?limit=1&cursor=${encodeURIComponent(list.nextCursor)}`,
     );
     expect(staleList.status).toBe(409);
     expect(await staleList.json()).toMatchObject({
@@ -97,13 +97,13 @@ describe("opaque cursor API", () => {
   it("pages lists with a filter-bound cursor and rejects a stale list", async () => {
     const { base, home } = await startApi();
     const head = await fetch(
-      `${base}/api/v1/sessions?archiveScope=all&limit=1`,
+      `${base}/api/v1/sessions?limit=1`,
       { method: "HEAD" },
     );
     expect(head.status).toBe(200);
     expect(head.headers.get("content-length")).toEqual(expect.any(String));
     expect(await head.text()).toBe("");
-    const first = await fetch(`${base}/api/v1/sessions?archiveScope=all&limit=1`)
+    const first = await fetch(`${base}/api/v1/sessions?limit=1`)
       .then((response) => response.json());
     expect(first).toEqual(expect.objectContaining({
       total: 4,
@@ -119,12 +119,12 @@ describe("opaque cursor API", () => {
     expect(first.sessions[0]).toEqual(expect.objectContaining({ id: expect.any(String) }));
     expect(first.sessions[0]).not.toHaveProperty("session");
     const second = await fetch(
-      `${base}/api/v1/sessions?archiveScope=all&limit=1&cursor=${encodeURIComponent(first.nextCursor)}`,
+      `${base}/api/v1/sessions?limit=1&cursor=${encodeURIComponent(first.nextCursor)}`,
     ).then((response) => response.json());
     expect(second.sessions[0].id).not.toBe(first.sessions[0].id);
 
     const wrongFilters = await fetch(
-      `${base}/api/v1/sessions?archiveScope=active&limit=1&cursor=${encodeURIComponent(first.nextCursor)}`,
+      `${base}/api/v1/sessions?project=${encodeURIComponent("/wrong")}&limit=1&cursor=${encodeURIComponent(first.nextCursor)}`,
     );
     expect(wrongFilters.status).toBe(400);
 
@@ -136,9 +136,9 @@ describe("opaque cursor API", () => {
       rollout,
       `${await readFile(rollout, "utf8")}{"timestamp":"2026-08-01T00:00:00Z","type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"new tail"}]}}\n`,
     );
-    await fetch(`${base}/api/v1/sessions?archiveScope=all&limit=1&fresh=true`);
+    await fetch(`${base}/api/v1/sessions?limit=1&fresh=true`);
     const stale = await fetch(
-      `${base}/api/v1/sessions?archiveScope=all&limit=1&cursor=${encodeURIComponent(first.nextCursor)}`,
+      `${base}/api/v1/sessions?limit=1&cursor=${encodeURIComponent(first.nextCursor)}`,
     );
     expect(stale.status).toBe(409);
     expect(await stale.json()).toMatchObject({ error: { code: "stale_list_cursor" } });

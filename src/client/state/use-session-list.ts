@@ -236,7 +236,6 @@ function listQuery(filters: SessionCatalogFilters): SessionListQuery {
     project: filters.project || undefined,
     from: filters.from ? new Date(`${filters.from}T00:00:00`).toISOString() : undefined,
     to: filters.to ? new Date(`${filters.to}T23:59:59.999`).toISOString() : undefined,
-    archiveScope: filters.archiveScope,
     limit: LIST_PAGE_SIZE,
   };
 }
@@ -246,7 +245,6 @@ function filtersKey(filters: SessionCatalogFilters): string {
     filters.project,
     filters.from,
     filters.to,
-    filters.archiveScope,
   ]);
 }
 

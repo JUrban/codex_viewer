@@ -125,11 +125,9 @@ function isOrdinal(value: unknown): value is number {
 
 function isCanonicalFilters(value: unknown): value is CanonicalListFilters {
   if (!isRecord(value)) return false;
-  return hasOnlyKeys(value, ["project", "from", "to", "archiveScope"]) &&
+  return hasOnlyKeys(value, ["project", "from", "to"]) &&
     nullableString(value.project) &&
-    nullableString(value.from) && nullableString(value.to) &&
-    (value.archiveScope === "active" || value.archiveScope === "archived" ||
-      value.archiveScope === "all");
+    nullableString(value.from) && nullableString(value.to);
 }
 
 function hasOnlyKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {

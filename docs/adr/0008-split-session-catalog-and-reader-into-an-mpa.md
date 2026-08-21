@@ -28,6 +28,8 @@ Chosen option: "Use two HTML and React entries in a Vite multi-page application"
 
 The catalog is served at `/`; each session link opens `/sessions/:id` in a new browsing context so the catalog remains available. The development and production servers map valid session paths to the reader HTML entry. Shared components, styles, domain types, and the API client remain common. Catalog filters are persisted in `sessionStorage`, while timeline visibility and Live updates are kept only in the current reader page's in-memory state.
 
+The Live update preference lifecycle was later refined by [ADR-0014](0014-remember-live-updates-per-browser-tab.md).
+
 ### Positive Consequences
 
 - Direct reader links and full-page refreshes have explicit, testable behavior.

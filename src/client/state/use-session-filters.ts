@@ -1,7 +1,8 @@
 import { useCallback, useState } from "react";
-import type { ArchiveScope } from "../../shared/api-contract";
 
 const STORAGE_KEY = "codex-sessions-reader.filters.v1";
+
+export type ArchiveScope = "active" | "archived" | "all";
 
 export interface SessionCatalogFilters {
   project: string;
@@ -14,7 +15,7 @@ const DEFAULT_FILTERS: SessionCatalogFilters = {
   project: "",
   from: "",
   to: "",
-  archiveScope: "active",
+  archiveScope: "all",
 };
 
 interface StoredFilters {
@@ -72,7 +73,7 @@ function normalizeFilters(filters: SessionCatalogFilters): SessionCatalogFilters
     project: filters.project,
     from: from && to && from > to ? "" : from,
     to,
-    archiveScope: isArchiveScope(filters.archiveScope) ? filters.archiveScope : "active",
+    archiveScope: isArchiveScope(filters.archiveScope) ? filters.archiveScope : "all",
   };
 }
 

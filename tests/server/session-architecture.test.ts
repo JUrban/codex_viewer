@@ -280,8 +280,8 @@ describe("server architecture boundaries", () => {
     expect(first.signature).toBe(reorderedEntries.signature);
     expect(first.orderedIds).toEqual(reordered.orderedIds);
     const queries = new SessionQueries();
-    expect(queries.list(first, { archiveScope: "all" }).sessions)
-      .toEqual(queries.list(reordered, { archiveScope: "all" }).sessions);
+    expect(queries.list(first, {}).sessions)
+      .toEqual(queries.list(reordered, {}).sessions);
     expect([...first.sessions.keys()].sort()).toEqual(
       [...reordered.sessions.keys()].sort(),
     );

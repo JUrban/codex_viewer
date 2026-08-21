@@ -140,28 +140,17 @@ async function describeInteraction(
 }
 
 function parseListQuery(params: URLSearchParams): SessionListQuery {
-  only(params, ["project", "from", "to", "archiveScope", "limit", "cursor", "fresh"]);
+  only(params, ["project", "from", "to", "limit", "cursor", "fresh"]);
   const query: SessionListQuery = {};
   const project = optional(params, "project");
   const from = optional(params, "from");
   const to = optional(params, "to");
-  const archiveScope = optional(params, "archiveScope");
   const limit = optional(params, "limit");
   const cursor = optional(params, "cursor");
   const fresh = optional(params, "fresh");
   if (project !== undefined) query.project = project;
   if (from !== undefined) query.from = from;
   if (to !== undefined) query.to = to;
-  if (archiveScope !== undefined) {
-    if (
-      archiveScope !== "active" &&
-      archiveScope !== "archived" &&
-      archiveScope !== "all"
-    ) {
-      invalid("archiveScope must be active, archived, or all");
-    }
-    query.archiveScope = archiveScope;
-  }
   if (limit !== undefined) query.limit = integer(limit, "limit");
   if (cursor !== undefined) {
     query.cursor = cursor as import("../../shared/api-contract.js").ListCursor;

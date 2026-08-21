@@ -4,13 +4,25 @@ import { ErrorState } from "./components/ErrorState";
 import { SessionFilters } from "./components/SessionFilters";
 import { SessionTree } from "./components/SessionTree";
 import { InfiniteScrollSentinel } from "./components/InfiniteScrollSentinel";
-import { useSessionFilters } from "./state/use-session-filters";
+import {
+  useSessionFilters,
+  type ArchiveScope,
+} from "./state/use-session-filters";
 import { useSessionList } from "./state/use-session-list";
+import type { SessionSummary } from "../shared/domain";
 
 export function App() {
   const filterState = useSessionFilters();
   const catalog = useSessionList(filterState.filters);
-  const sessions = catalog.list?.sessions ?? [];
+  const { archiveScope } = filterState.filters;
+  const sessions = filterByArchiveScope(
+    catalog.list?.sessions ?? [],
+    archiveScope,
+  );
+  const displayedCount = archiveScope === "all"
+    ? catalog.list?.total ?? 0
+    : sessions.length;
+  const exhausted = catalog.list?.nextCursor === null;
 
   return (
     <main className="catalog-page">
@@ -22,7 +34,7 @@ export function App() {
             <p>Private to this machine · local viewer</p>
           </header>
           <div className="session-toolbar">
-            <p className="section-label">Sessions · {catalog.list?.total ?? 0}</p>
+            <p className="section-label">Sessions · {displayedCount}</p>
             <button
               type="button"
               className="refresh-sessions"
@@ -48,10 +60,10 @@ export function App() {
           ? <ErrorState title="Could not load sessions" message={catalog.listError} onDismiss={catalog.clearListError} />
           : null}
         {catalog.listLoading ? <p className="loading" role="status">Finding sessions…</p> : null}
-        {!catalog.listLoading && catalog.list && sessions.length === 0
+        {!catalog.listLoading && catalog.list && sessions.length === 0 && exhausted
           ? (
-              <EmptyState title={emptyTitle(filterState.filters.archiveScope)}>
-                {emptyMessage(filterState.filters.archiveScope)}
+              <EmptyState title={emptyTitle(archiveScope)}>
+                {emptyMessage(archiveScope)}
               </EmptyState>
             )
           : <SessionTree entries={sessions} />}
@@ -69,13 +81,22 @@ export function App() {
   );
 }
 
-function emptyTitle(scope: "active" | "archived" | "all"): string {
+function filterByArchiveScope(
+  sessions: readonly SessionSummary[],
+  scope: ArchiveScope,
+): SessionSummary[] {
+  if (scope === "all") return [...sessions];
+  const archived = scope === "archived";
+  return sessions.filter((session) => session.archived === archived);
+}
+
+function emptyTitle(scope: ArchiveScope): string {
   if (scope === "active") return "No active sessions match";
   if (scope === "archived") return "No archived sessions match";
   return "No sessions match";
 }
 
-function emptyMessage(scope: "active" | "archived" | "all"): string {
+function emptyMessage(scope: ArchiveScope): string {
   return scope === "all"
     ? "Clear a filter to see more sessions."
     : "Try All sessions, or clear another filter.";
