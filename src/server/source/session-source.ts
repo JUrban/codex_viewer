@@ -16,6 +16,8 @@ export interface SourceSessionEntry {
   readonly nativeSessionId: string | null;
   readonly parentNativeSessionId: string | null;
   readonly origin: DomainSessionOrigin;
+  /** False when only bounded catalog metadata has been loaded. */
+  readonly hydrated?: boolean;
   /**
    * Published normalized values are immutable snapshots. An adapter must never
    * mutate this object, its timeline items, detail values, maps, or other nested
@@ -43,4 +45,9 @@ export interface SessionSource {
    * earlier call remain immutable even after later refreshes complete.
    */
   refresh(): Promise<SessionSourceSnapshot>;
+  /**
+   * Requests full timeline materialization for one source-local session.
+   * Sources that always publish complete sessions may omit this method.
+   */
+  hydrate?(localId: string): Promise<boolean>;
 }

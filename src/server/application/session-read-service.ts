@@ -70,7 +70,7 @@ export class SessionReadService implements SessionReader {
   }
 
   async getSession(id: SessionId): Promise<SessionReadDetailResponse | null> {
-    const snapshot = await this.#store.current();
+    const snapshot = await this.#store.hydrate(id);
     const result = this.#queries.session(snapshot, id);
     return result === null ? null : this.#mapper.detail(result);
   }
@@ -79,7 +79,7 @@ export class SessionReadService implements SessionReader {
     id: SessionId,
     query: ItemPageQuery,
   ): Promise<SessionItemPageResponse | null> {
-    const snapshot = await this.#store.current();
+    const snapshot = await this.#store.hydrate(id);
     const result = this.#queries.items(snapshot, id, query);
     return result === null ? null : this.#mapper.itemPage(result);
   }
@@ -88,7 +88,7 @@ export class SessionReadService implements SessionReader {
     id: SessionId,
     cursor: TimelineCursor,
   ): Promise<LiveSessionSnapshot | null> {
-    const snapshot = await this.#store.current();
+    const snapshot = await this.#store.hydrate(id);
     const context = this.#queries.live(snapshot, id, cursor);
     if (context === null) return null;
     const normalized = snapshot.sessions.get(id)!.normalized;
@@ -108,7 +108,7 @@ export class SessionReadService implements SessionReader {
     itemId: string,
     query: ToolDetailQuery,
   ): Promise<ToolDetailResponse | null> {
-    const snapshot = await this.#store.current();
+    const snapshot = await this.#store.hydrate(id);
     const result = this.#queries.toolDetail(snapshot, id, itemId, query);
     return result === null ? null : this.#mapper.toolDetail(itemId, result);
   }
@@ -118,7 +118,7 @@ export class SessionReadService implements SessionReader {
     itemId: string,
     query: DirectiveDetailQuery,
   ): Promise<DirectiveDetailResponse | null> {
-    const snapshot = await this.#store.current();
+    const snapshot = await this.#store.hydrate(id);
     const result = this.#queries.directiveDetail(snapshot, id, itemId, query);
     return result === null ? null : this.#mapper.directiveDetail(itemId, result);
   }
@@ -126,7 +126,7 @@ export class SessionReadService implements SessionReader {
   async getInteractionSession(
     id: SessionId,
   ): Promise<InteractionSessionSnapshot | null> {
-    const snapshot = await this.#store.current();
+    const snapshot = await this.#store.hydrate(id);
     const normalized = snapshot.sessions.get(id)?.normalized;
     return normalized === undefined
       ? null

@@ -26,6 +26,10 @@ import {
   type RolloutDecoder,
 } from "./rollout-decoder.js";
 import {
+  BoundedRolloutSummaryReader,
+  type RolloutSummaryReader,
+} from "./rollout-summary-reader.js";
+import {
   DefaultSessionNormalizer,
   type SessionNormalizer,
   type SessionNormalizerState,
@@ -47,16 +51,27 @@ interface FileFingerprint {
   readonly normalizerVersion: number;
 }
 
-interface CodexCacheEntry {
+interface PublishedCodexEntry {
   readonly fingerprint: FileFingerprint;
   readonly normalized: NormalizedSession;
   readonly threadId: string | null;
   readonly parentThreadId: string | null;
   readonly origin: DomainSessionOrigin;
+  readonly hydrated: boolean;
+}
+
+interface CodexCacheEntry extends PublishedCodexEntry {
+  readonly hydrated: true;
   readonly checkpoint: RolloutCheckpoint;
   readonly identityState: IdentityAccumulatorState;
   readonly normalizerState: SessionNormalizerState;
 }
+
+interface CodexSummaryCacheEntry extends PublishedCodexEntry {
+  readonly hydrated: false;
+}
+
+export type CodexCatalogMode = "eager" | "lazy";
 
 export interface CodexRefreshTelemetry {
   readonly fullFiles: number;
@@ -79,11 +94,16 @@ const EMPTY_TELEMETRY: CodexRefreshTelemetry = {
 interface SourceEntries {
   readonly sessions: SourceSessionEntry[];
   readonly diagnostics: DomainDiagnostic[];
+  readonly localPaths: ReadonlyMap<string, string>;
 }
 
 export class CodexSessionSource implements SessionSource {
   readonly descriptor: SessionSourceDescriptor;
   #cache = new Map<string, CodexCacheEntry>();
+  #summaryCache = new Map<string, CodexSummaryCacheEntry>();
+  #hydratedPaths = new Set<string>();
+  #stableLocalIds = new Map<string, string>();
+  #localPaths = new Map<string, string>();
   #snapshot: SessionSourceSnapshot | null = null;
   #discoverySignature: string | null = null;
   #hasUnavailableRollouts = false;
@@ -96,6 +116,8 @@ export class CodexSessionSource implements SessionSource {
     private readonly identity = new IdentityResolver(),
     private readonly normalizer: SessionNormalizer = new DefaultSessionNormalizer(),
     private readonly allowedCanonicalPaths: ReadonlySet<string> | null = null,
+    private readonly catalogMode: CodexCatalogMode = "eager",
+    private readonly summaryReader: RolloutSummaryReader = new BoundedRolloutSummaryReader(),
   ) {
     this.descriptor = {
       sourceType: "codex-jsonl",
@@ -103,6 +125,16 @@ export class CodexSessionSource implements SessionSource {
       sourceInstanceId: opaqueIdForParts("source", instanceKey),
       displayName: "Codex",
     };
+  }
+
+  async hydrate(localId: string): Promise<boolean> {
+    if (this.catalogMode === "eager") return false;
+    const sourceRelativePath = this.#localPaths.get(localId);
+    if (sourceRelativePath === undefined || this.#hydratedPaths.has(sourceRelativePath)) {
+      return false;
+    }
+    this.#hydratedPaths.add(sourceRelativePath);
+    return true;
   }
 
   async refresh(): Promise<SessionSourceSnapshot> {
@@ -113,7 +145,11 @@ export class CodexSessionSource implements SessionSource {
     ).discover();
     const discoverySignature = JSON.stringify({
       diagnostics: discovery.diagnostics,
-      entries: discovery.entries.map(({ descriptor }) => fingerprintOf(descriptor)),
+      entries: discovery.entries.map(({ descriptor }) => ({
+        ...fingerprintOf(descriptor),
+        hydrated: this.catalogMode === "eager" ||
+          this.#hydratedPaths.has(descriptor.sourceRelativePath),
+      })),
     });
     if (
       this.#snapshot !== null &&
@@ -125,25 +161,46 @@ export class CodexSessionSource implements SessionSource {
     }
 
     const nextCache = new Map<string, CodexCacheEntry>();
+    const nextSummaryCache = new Map<string, CodexSummaryCacheEntry>();
+    const published = new Map<string, PublishedCodexEntry>();
     const telemetry = mutableTelemetry();
     const unavailableRollouts: string[] = [];
     const loadDiagnostics: DomainDiagnostic[] = [];
     for (const { descriptor } of discovery.entries) {
       const fingerprint = fingerprintOf(descriptor);
-      const cached = this.#cache.get(descriptor.sourceRelativePath);
-      if (cached !== undefined && sameFingerprint(cached.fingerprint, fingerprint)) {
-        nextCache.set(descriptor.sourceRelativePath, cached);
-      } else {
-        const loaded = await this.#load(descriptor, fingerprint, cached, telemetry);
+      const sourceRelativePath = descriptor.sourceRelativePath;
+      const hydrate = this.catalogMode === "eager" ||
+        this.#hydratedPaths.has(sourceRelativePath);
+      if (hydrate) {
+        const cached = this.#cache.get(sourceRelativePath);
+        const loaded = cached !== undefined && sameFingerprint(cached.fingerprint, fingerprint)
+          ? cached
+          : await this.#load(descriptor, fingerprint, cached, telemetry);
         if (loaded === null) {
-          unavailableRollouts.push(descriptor.sourceRelativePath);
+          unavailableRollouts.push(sourceRelativePath);
           loadDiagnostics.push(rolloutUnavailableDiagnostic());
         } else {
-          nextCache.set(descriptor.sourceRelativePath, loaded);
+          nextCache.set(sourceRelativePath, loaded);
+          published.set(sourceRelativePath, loaded);
+        }
+      } else {
+        const cached = this.#summaryCache.get(sourceRelativePath);
+        const loaded = cached !== undefined && sameFingerprint(cached.fingerprint, fingerprint)
+          ? cached
+          : await this.#loadSummary(descriptor, fingerprint);
+        if (loaded === null) {
+          unavailableRollouts.push(sourceRelativePath);
+          loadDiagnostics.push(rolloutUnavailableDiagnostic());
+        } else {
+          nextSummaryCache.set(sourceRelativePath, loaded);
+          published.set(sourceRelativePath, loaded);
         }
       }
     }
-    const entries = sourceEntries(nextCache);
+    const entries = sourceEntries(
+      published,
+      this.catalogMode === "lazy" ? this.#stableLocalIds : undefined,
+    );
     const diagnostics = [
       ...discovery.diagnostics.map((item) => ({ ...item })),
       ...loadDiagnostics,
@@ -156,6 +213,8 @@ export class CodexSessionSource implements SessionSource {
     });
     const snapshot = { signature, sessions, diagnostics };
     this.#cache = nextCache;
+    this.#summaryCache = nextSummaryCache;
+    this.#localPaths = new Map(entries.localPaths);
     this.#discoverySignature = discoverySignature;
     this.#hasUnavailableRollouts = unavailableRollouts.length > 0;
     this.#lastRefreshTelemetry = telemetry;
@@ -212,9 +271,55 @@ export class CodexSessionSource implements SessionSource {
         threadId: metadata.threadId,
         parentThreadId: metadata.parentThreadId,
         origin,
+        hydrated: true,
         checkpoint: decoded.checkpoint,
         identityState,
         normalizerState,
+      };
+    } catch (error) {
+      if (!isExpectedRolloutIoError(error)) throw error;
+      return null;
+    }
+  }
+
+  async #loadSummary(
+    descriptor: RolloutDescriptor,
+    fingerprint: FileFingerprint,
+  ): Promise<CodexSummaryCacheEntry | null> {
+    try {
+      const summary = await this.summaryReader.read(descriptor);
+      const identityState = this.identity.append(
+        this.identity.create(descriptor),
+        summary.records,
+      );
+      const normalizerState = this.normalizer.append(
+        this.normalizer.create(descriptor),
+        summary.records,
+        [],
+      );
+      const metadata = this.identity.metadata(identityState);
+      const origin = this.#origin(metadata.agentVersion);
+      const partial = this.normalizer.materialize(normalizerState, metadata, origin);
+      const updatedAt = summary.complete
+        ? partial.session.updatedAt
+        : new Date(descriptor.mtimeMs).toISOString();
+      return {
+        fingerprint,
+        threadId: metadata.threadId,
+        parentThreadId: metadata.parentThreadId,
+        origin,
+        hydrated: false,
+        normalized: {
+          session: {
+            ...partial.session,
+            updatedAt,
+            itemCount: 0,
+          },
+          timeline: [],
+          toolDetails: new Map(),
+          directiveDetails: new Map(),
+          interaction: null,
+        },
       };
     } catch (error) {
       if (!isExpectedRolloutIoError(error)) throw error;
@@ -236,6 +341,7 @@ export class CodexSessionSource implements SessionSource {
 export async function createCodexSessionSource(
   codexHome: string,
   sessionAllowlistPath?: string,
+  catalogMode: CodexCatalogMode = "eager",
 ): Promise<CodexSessionSource> {
   const configured = resolve(codexHome);
   const allowedCanonicalPaths = sessionAllowlistPath === undefined
@@ -248,11 +354,13 @@ export async function createCodexSessionSource(
     undefined,
     undefined,
     allowedCanonicalPaths,
+    catalogMode,
   );
 }
 
 function sourceEntries(
-  cache: ReadonlyMap<string, CodexCacheEntry>,
+  cache: ReadonlyMap<string, PublishedCodexEntry>,
+  stableLocalIds?: Map<string, string>,
 ): SourceEntries {
   const threadCounts = new Map<string, number>();
   for (const entry of cache.values()) {
@@ -263,6 +371,7 @@ function sourceEntries(
 
   const sessions: SourceSessionEntry[] = [];
   const diagnostics: DomainDiagnostic[] = [];
+  const localPaths = new Map<string, string>();
   const reportedDuplicates = new Set<string>();
   for (const entry of cache.values()) {
     const { threadId } = entry;
@@ -276,19 +385,24 @@ function sourceEntries(
         ordinal: null,
       });
     }
+    const sourceRelativePath = entry.fingerprint.sourceRelativePath;
+    const localId = stableLocalIds?.get(sourceRelativePath) ?? sourceLocalId(
+      threadId,
+      sourceRelativePath,
+      duplicate,
+    );
+    stableLocalIds?.set(sourceRelativePath, localId);
+    localPaths.set(localId, sourceRelativePath);
     sessions.push({
-      localId: sourceLocalId(
-        threadId,
-        entry.fingerprint.sourceRelativePath,
-        duplicate,
-      ),
+      localId,
       nativeSessionId: threadId,
       parentNativeSessionId: entry.parentThreadId,
       origin: entry.origin,
       normalized: entry.normalized,
+      hydrated: entry.hydrated,
     });
   }
-  return { sessions, diagnostics };
+  return { sessions, diagnostics, localPaths };
 }
 
 function sourceLocalId(

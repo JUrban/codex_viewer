@@ -4,6 +4,8 @@ import { describe, expect, it } from "vitest";
 import {
   createCodexSessionReadService,
 } from "../../src/server/create-session-read-service.js";
+import { createCodexSessionSource } from "../../src/server/adapters/codex/codex-session-source.js";
+import { MAX_CATALOG_PREFIX_BYTES } from "../../src/server/adapters/codex/rollout-summary-reader.js";
 import type {
   SessionSource,
   SourceSessionEntry,
@@ -37,6 +39,61 @@ async function basicFixtureSession() {
 }
 
 describe("SessionReadService", () => {
+  it("lists a large rollout from a bounded prefix and hydrates it only when opened", async () => {
+    const home = await createTempDirectory("codex-lazy-catalog-");
+    const directory = join(home, "sessions");
+    await mkdir(directory, { recursive: true });
+    const rollout = join(directory, "rollout-lazy-large.jsonl");
+    await writeFile(rollout, [
+      JSON.stringify({
+        timestamp: "2026-08-26T10:00:00Z",
+        type: "session_meta",
+        payload: {
+          id: "lazy-large",
+          title: "Lazy catalog session",
+          cwd: "/large/project",
+          timestamp: "2026-08-26T10:00:00Z",
+        },
+      }),
+      JSON.stringify({
+        timestamp: "2026-08-26T10:00:01Z",
+        type: "event_msg",
+        payload: { type: "user_message", message: "Lazy catalog prompt" },
+      }),
+      JSON.stringify({
+        timestamp: "2026-08-26T10:00:02Z",
+        type: "response_item",
+        payload: {
+          type: "function_call_output",
+          call_id: "large-output",
+          output: "x".repeat(MAX_CATALOG_PREFIX_BYTES + 64 * 1024),
+        },
+      }),
+      "",
+    ].join("\n"));
+    const source = await createCodexSessionSource(home, undefined, "lazy");
+    const repository = new SessionReadService([source]);
+
+    const listed = await repository.list({});
+    expect(listed.sessions).toEqual([
+      expect.objectContaining({
+        title: "Lazy catalog session",
+        cwd: "/large/project",
+      }),
+    ]);
+    expect(source.lastRefreshTelemetry()).toMatchObject({
+      fullFiles: 0,
+      appendFiles: 0,
+      decodeBytes: 0,
+    });
+
+    const opened = await repository.getItems(listed.sessions[0]!.id, { limit: 10 });
+    expect(opened?.session.itemCount).toBeGreaterThan(0);
+    expect(source.lastRefreshTelemetry().fullFiles).toBe(1);
+    expect(source.lastRefreshTelemetry().decodeBytes)
+      .toBeGreaterThan(MAX_CATALOG_PREFIX_BYTES);
+  });
+
   it("coalesces concurrent refreshes, reuses a fresh snapshot, and permits a forced refresh", async () => {
     let discoveries = 0;
     let now = 0;

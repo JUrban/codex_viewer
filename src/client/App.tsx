@@ -59,7 +59,9 @@ export function App() {
         {catalog.listError
           ? <ErrorState title="Could not load sessions" message={catalog.listError} onDismiss={catalog.clearListError} />
           : null}
-        {catalog.listLoading ? <p className="loading" role="status">Finding sessions…</p> : null}
+        {catalog.listLoading
+          ? <p className="loading" role="status">Finding session summaries…</p>
+          : null}
         {!catalog.listLoading && catalog.list && sessions.length === 0 && exhausted
           ? (
               <EmptyState title={emptyTitle(archiveScope)}>

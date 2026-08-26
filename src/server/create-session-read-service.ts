@@ -13,6 +13,6 @@ export async function createCodexSessionReadService(
   sessionAllowlistPath?: string,
 ): Promise<SessionReadService> {
   return createSessionReadService(
-    [await createCodexSessionSource(codexHome, sessionAllowlistPath)],
+    [await createCodexSessionSource(codexHome, sessionAllowlistPath, "lazy")],
   );
 }

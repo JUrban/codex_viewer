@@ -114,6 +114,8 @@ restart the server after replacing them.
   the fixed page control stays reachable at either end, the browser remembers
   the choice, and earlier pages load while scrolling up.
 - Filter sessions by project, date range, and archive state.
+- Build the cold catalog from at most the first 2 MiB of each rollout, then
+  decode and index a session's complete timeline only when it is opened.
 - Render Markdown, GitHub-flavored Markdown, and KaTeX math.
 - Continue reading rollout files while Codex is writing them.
 - Enable Live updates for active sessions with a preference remembered for the browser tab.
@@ -130,6 +132,11 @@ The viewer reads only `rollout-*.jsonl` files and does not inspect Codex
 databases. It applies size limits when reading and serving session data. See
 [Session JSONL filtering rules](docs/session-jsonl-filtering.md) for supported
 records, truncation, and visibility rules.
+
+For a large rollout, the catalog title, project, identity, and timestamps come
+from a bounded summary read. Message and tool counts may reflect only that
+prefix until the session is opened. The first open performs the full decode;
+subsequent reads and ordinary appends reuse the in-memory checkpoint.
 
 ## Security
 
@@ -167,6 +174,9 @@ Accepted architecture decisions are recorded under [`docs/adr`](docs/adr):
 - [ADR-0010: Opaque session-list cursors](docs/adr/0010-use-opaque-session-list-cursors.md)
 - [ADR-0011: Repository-probed bounded long polling](docs/adr/0011-use-repository-probed-bounded-long-polling.md)
 - [ADR-0012: Checkpointed incremental rollout loading with probe validation](docs/adr/0012-use-checkpointed-incremental-rollout-loading.md)
+- [ADR-0013: Filter session archive state in the browser](docs/adr/0013-filter-session-archive-state-in-the-browser.md)
+- [ADR-0014: Remember Live updates per browser tab](docs/adr/0014-remember-live-updates-per-browser-tab.md)
+- [ADR-0015: Bounded catalog summaries with lazy timeline hydration](docs/adr/0015-use-bounded-catalog-summaries.md)
 
 ## Development
 
@@ -213,6 +223,12 @@ Choose another port:
 ```sh
 npm start -- --port 4180
 ```
+
+**Opening a large session is slow the first time**
+
+The catalog intentionally avoids decoding complete rollout files. Opening a
+session hydrates its full timeline once for the current server process. Later
+reads are cached, and append-only updates consume only the newly written tail.
 
 ## Uninstall
 

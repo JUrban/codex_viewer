@@ -41,6 +41,8 @@ export class CatalogSnapshotStore {
   #snapshot: CatalogSnapshot | null = null;
   #aggregate: AggregateState | null = null;
   #lastDiscoveryAt = Number.NEGATIVE_INFINITY;
+  #hydratedIds = new Set<DomainSessionId>();
+  #hydrationTargets = new Map<DomainSessionId, HydrationTarget>();
 
   constructor(
     sources: readonly SessionSource[],
@@ -67,6 +69,31 @@ export class CatalogSnapshotStore {
     return this.#coordinator.run(() => this.#discover());
   }
 
+  async hydrate(id: DomainSessionId): Promise<CatalogSnapshot> {
+    while (true) {
+      const current = await this.current();
+      if (!current.sessions.has(id) || this.#hydratedIds.has(id)) return current;
+      const target = this.#hydrationTargets.get(id);
+      if (target?.source.hydrate === undefined) return current;
+
+      let attempted = false;
+      let accepted = false;
+      const result = await this.#coordinator.run(async () => {
+        attempted = true;
+        const latest = this.#hydrationTargets.get(id);
+        if (latest?.source.hydrate === undefined) {
+          return this.#snapshot ?? this.#discover();
+        }
+        accepted = await latest.source.hydrate(latest.localId);
+        return accepted ? this.#discover() : this.#snapshot ?? this.#discover();
+      });
+      if (!attempted) continue;
+      if (!accepted || this.#hydratedIds.has(id) || !result.sessions.has(id)) {
+        return result;
+      }
+    }
+  }
+
   async #discover(): Promise<CatalogSnapshot> {
     const snapshot = await this.#rebuild();
     this.#lastDiscoveryAt = this.now();
@@ -76,6 +103,7 @@ export class CatalogSnapshotStore {
   async #rebuild(): Promise<CatalogSnapshot> {
     const loadedSources = await Promise.all(
       this.#sources.map(async (source) => ({
+        source,
         descriptor: source.descriptor,
         snapshot: await source.refresh(),
       })),
@@ -113,6 +141,17 @@ export class CatalogSnapshotStore {
       orderedIds,
     };
     preparedPrefixes.commit();
+    const hydratedIds = new Set<DomainSessionId>();
+    const hydrationTargets = new Map<DomainSessionId, HydrationTarget>();
+    for (const { source, descriptor, snapshot: sourceSnapshot } of loadedSources) {
+      for (const entry of sourceSnapshot.sessions) {
+        const id = opaqueIdForParts(descriptor.instanceKey, entry.localId);
+        if (!hydrationTargets.has(id)) {
+          hydrationTargets.set(id, { source, localId: entry.localId });
+        }
+        if (entry.hydrated !== false) hydratedIds.add(id);
+      }
+    }
     this.#aggregate = {
       inputs: linked.inputs,
       nativeBuckets: linked.nativeBuckets,
@@ -120,14 +159,22 @@ export class CatalogSnapshotStore {
       resolvedParents: linked.resolvedParents,
       sessions: normalizedSessions,
     };
+    this.#hydratedIds = hydratedIds;
+    this.#hydrationTargets = hydrationTargets;
     this.#snapshot = snapshot;
     return snapshot;
   }
 }
 
 interface LoadedSource {
+  readonly source: SessionSource;
   readonly descriptor: SessionSourceDescriptor;
   readonly snapshot: SessionSourceSnapshot;
+}
+
+interface HydrationTarget {
+  readonly source: SessionSource;
+  readonly localId: string;
 }
 
 interface PendingSession {

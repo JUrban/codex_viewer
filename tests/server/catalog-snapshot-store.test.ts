@@ -318,6 +318,54 @@ describe("CatalogSnapshotStore incremental derivation", () => {
     expect(recovered.sessions.get(id)!.timelinePrefixIndex)
       .toBe(initial.sessions.get(id)!.timelinePrefixIndex);
   });
+
+  it("serializes concurrent hydration requests without dropping either target", async () => {
+    const summaries = new Map([
+      ["left", normalizedSession("left", "Left")],
+      ["right", normalizedSession("right", "Right")],
+    ]);
+    const hydrated = new Set<string>();
+    const hydrationCalls: string[] = [];
+    const source: SessionSource = {
+      descriptor: {
+        sourceType: "test",
+        instanceKey: "lazy-test",
+        sourceInstanceId: "lazy-test",
+        displayName: "Test",
+      },
+      async hydrate(localId) {
+        hydrationCalls.push(localId);
+        hydrated.add(localId);
+        return true;
+      },
+      async refresh() {
+        return {
+          signature: [...hydrated].sort().join(","),
+          sessions: [...summaries].map(([localId, summary]) => ({
+            ...sourceEntry(
+              localId,
+              hydrated.has(localId)
+                ? withMessage(summary, `${localId} hydrated`)
+                : summary,
+            ),
+            hydrated: hydrated.has(localId),
+          })),
+          diagnostics: [],
+        };
+      },
+    };
+    const store = new CatalogSnapshotStore([source]);
+    const initial = await store.current();
+    const leftId = idByTitle(initial, "Left");
+    const rightId = idByTitle(initial, "Right");
+
+    await Promise.all([store.hydrate(leftId), store.hydrate(rightId)]);
+    const final = await store.current();
+
+    expect(hydrationCalls.sort()).toEqual(["left", "right"]);
+    expect(final.sessions.get(leftId)!.normalized.timeline).toHaveLength(1);
+    expect(final.sessions.get(rightId)!.normalized.timeline).toHaveLength(1);
+  });
 });
 
 const TEST_ORIGIN = {
