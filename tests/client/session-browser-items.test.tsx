@@ -68,7 +68,8 @@ describe("session reader items", () => {
   it("remembers latest-first opening and pages toward the beginning", async () => {
     installIntersectionObserver();
     window.history.replaceState(null, "", `/sessions/${SESSION_ID}`);
-    vi.stubGlobal("scrollTo", vi.fn());
+    const scrollTo = vi.fn();
+    vi.stubGlobal("scrollTo", scrollTo);
     const previousCursor = "opaque.timeline.previous" as TimelineCursor;
     const beginning = page([message("message-1", 1, "Beginning event")]);
     const latest = page([message("message-5", 5, "Latest event")]);
@@ -77,7 +78,8 @@ describe("session reader items", () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(json(beginning))
       .mockResolvedValueOnce(json(latest))
-      .mockResolvedValueOnce(json(earlier));
+      .mockResolvedValueOnce(json(earlier))
+      .mockResolvedValueOnce(json(beginning));
     vi.stubGlobal("fetch", fetchMock);
     render(<SessionApp />);
 
@@ -102,6 +104,17 @@ describe("session reader items", () => {
       "before=opaque.timeline.previous",
     );
     expect(screen.getByText("Latest event")).toBeInTheDocument();
+
+    scrollTo.mockClear();
+    fireEvent.change(
+      screen.getByRole("combobox", { name: "Open session at" }),
+      { target: { value: "beginning" } },
+    );
+    expect(await screen.findByText("Beginning event")).toBeInTheDocument();
+    expect(screen.queryByText("Latest event")).not.toBeInTheDocument();
+    expect(localStorage.getItem(SESSION_OPEN_POSITION_STORAGE_KEY)).toBe("beginning");
+    expect(String(fetchMock.mock.calls[3]?.[0])).not.toContain("position=latest");
+    expect(scrollTo).toHaveBeenCalledWith({ top: 0, behavior: "auto" });
   });
 
   it("loads later pages without duplicating an overlapping item", async () => {

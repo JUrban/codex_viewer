@@ -76,8 +76,6 @@ export function SessionReader({
         onVisibilityChange={onVisibilityChange}
         autoRefreshEnabled={autoRefreshEnabled}
         onAutoRefreshChange={onAutoRefreshChange}
-        openPosition={openPosition}
-        onOpenPositionChange={onOpenPositionChange}
       />
       <DiagnosticNotice
         diagnostics={context.session.diagnostics}
@@ -145,7 +143,11 @@ export function SessionReader({
             </aside>
           )
         : null}
-      <PageJumpControls />
+      <PageJumpControls
+        openPosition={openPosition}
+        onOpenPositionChange={onOpenPositionChange}
+        disabled={readerBusy}
+      />
     </section>
   );
 }

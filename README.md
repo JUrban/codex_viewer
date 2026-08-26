@@ -111,7 +111,8 @@ restart the server after replacing them.
 - Browse active and archived Codex sessions.
 - Open each session at a stable `/sessions/:id` URL.
 - Choose whether sessions open at the beginning or at the latest bounded page;
-  the browser remembers the choice and loads earlier pages while scrolling up.
+  the fixed page control stays reachable at either end, the browser remembers
+  the choice, and earlier pages load while scrolling up.
 - Filter sessions by project, date range, and archive state.
 - Render Markdown, GitHub-flavored Markdown, and KaTeX math.
 - Continue reading rollout files while Codex is writing them.

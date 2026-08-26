@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import type { ItemPagePosition } from "../../shared/api-contract";
 
 const EDGE_DISTANCE_PX = 480;
 
@@ -9,7 +10,17 @@ interface ControlVisibility {
 
 const hiddenControls: ControlVisibility = { top: false, bottom: false };
 
-export function PageJumpControls() {
+interface PageJumpControlsProps {
+  openPosition?: ItemPagePosition;
+  onOpenPositionChange?: (position: ItemPagePosition) => void;
+  disabled?: boolean;
+}
+
+export function PageJumpControls({
+  openPosition,
+  onOpenPositionChange,
+  disabled = false,
+}: PageJumpControlsProps = {}) {
   const [visible, setVisible] = useState(hiddenControls);
 
   useEffect(() => {
@@ -69,6 +80,28 @@ export function PageJumpControls() {
 
   return (
     <nav className="page-jump-controls" aria-label="Page position">
+      {openPosition !== undefined && onOpenPositionChange !== undefined
+        ? (
+            <label className="page-position-control">
+              <span>Open at</span>
+              <select
+                aria-label="Open session at"
+                value={openPosition}
+                disabled={disabled}
+                onChange={(event) => {
+                  const position = event.target.value as ItemPagePosition;
+                  if (position === "beginning") {
+                    window.scrollTo({ top: 0, behavior: "auto" });
+                  }
+                  onOpenPositionChange(position);
+                }}
+              >
+                <option value="beginning">Beginning</option>
+                <option value="latest">Latest</option>
+              </select>
+            </label>
+          )
+        : null}
       <button
         type="button"
         className={`page-jump-control${visible.top ? " is-visible" : ""}`}
