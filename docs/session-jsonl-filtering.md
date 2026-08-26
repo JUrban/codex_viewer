@@ -1,9 +1,9 @@
 # Session JSONL filtering rules
 
-This document is the canonical summary of how rollout JSONL records become
-timeline items. Keep it synchronized with `rollout-decoder.ts`,
-`session-normalizer.ts`, `tool-normalizer.ts`, `user-input-normalizer.ts`, and
-`session-read-service.ts`.
+This document is the canonical summary of how Codex rollout and Claude Code
+JSONL records become timeline items. Keep it synchronized with the Codex and
+Claude normalizers, `rollout-decoder.ts`, `tool-normalizer.ts`,
+`user-input-normalizer.ts`, and `session-read-service.ts`.
 
 ## Decode-time skips
 
@@ -32,6 +32,8 @@ same open file handle used for probes and decoding.
   order. Additional diagnostics are silently discarded.
 
 ## Record normalization
+
+### Codex
 
 - `session_meta` records do not become timeline items. A `turn_context` record
   becomes an `internal` item without retaining its payload.
@@ -71,6 +73,21 @@ same open file handle used for probes and decoding.
   safe unavailable fallback when their shape is not recognized.
 - Other typed records become safe `internal` summaries. A record without a
   usable type becomes a diagnostic.
+
+### Claude Code
+
+- A file is recognized as Claude Code history only after a top-level `user` or
+  `assistant` record with a message object appears in its bounded prefix.
+- Non-empty string content and `text` blocks become user or assistant messages.
+- Assistant `tool_use` blocks become tool-call items. User `tool_result` blocks
+  become tool-output items and are paired by `tool_use_id` when the call is
+  available in the same forward scan.
+- `thinking` blocks, file-history snapshots, and other Claude bookkeeping
+  records do not become timeline items. Thinking text is never retained.
+- Session ID, CLI version, working directory, and timestamps come from the
+  top-level Claude records. The first user message supplies the fallback title.
+- Multiple blocks on one physical JSONL line receive stable derived ordinals so
+  message and tool item IDs remain distinct during append-only refreshes.
 
 ## Client visibility
 

@@ -1,8 +1,8 @@
 # Codex Sessions Reader
 
-A local web viewer for Codex session history stored in your Codex home. It does
-not edit, delete, export, or upload session files. With explicit opt-in, it can
-send input to an existing tmux-hosted Codex session.
+A local web viewer for Codex and Claude Code session history staged in a Codex-
+style session home. It does not edit, delete, export, or upload session files.
+With explicit opt-in, it can send input to an existing tmux-hosted Codex session.
 
 ![Codex session catalog](docs/images/codex-sessions-catalog.png)
 
@@ -14,7 +14,7 @@ Requirements:
 
 - Node.js 22.13 or newer
 - npm
-- A local Codex home (usually `~/.codex`)
+- A local session home (usually `~/.codex`, or a dedicated public staging home)
 
 Install, build, and start:
 
@@ -33,8 +33,8 @@ Pass server options after `npm start --`:
 
 | Option | Default | Description |
 | --- | --- | --- |
-| `--codex-home <path>` | `~/.codex` | Codex home containing `sessions/` and optionally `archived_sessions/` |
-| `--session-allowlist <path>` | none | Allowlist file containing the exact rollout files to expose |
+| `--codex-home <path>` | `~/.codex` | Session home containing `sessions/` and optionally `archived_sessions/` |
+| `--session-allowlist <path>` | none | Allowlist file containing the exact Codex or Claude JSONL files to expose |
 | `--host <host>` | `127.0.0.1` | Server host |
 | `--port <port>` | `4173` | Server port; use `0` to select a free port automatically |
 | `--ssl` | disabled | Enable TLS and accept HTTPS only |
@@ -55,12 +55,14 @@ Restart the server after changing configuration.
 ### Session allowlist
 
 Use `--session-allowlist` to expose only selected sessions. The file contains
-one exact `rollout-*.jsonl` path per line. Blank lines and lines beginning with
-`#` are ignored. Paths may be absolute or relative to `--codex-home`:
+one exact Codex `rollout-*.jsonl` or Claude Code `.jsonl` path per line. Blank
+lines and lines beginning with `#` are ignored. Paths may be absolute or
+relative to `--codex-home`:
 
 ```text
 # allowed-sessions.txt
 sessions/2026/08/26/rollout-2026-08-26T10-00-00-example.jsonl
+/home/user/.codex-public/sessions/11ca4767-8961-4e8e-a05f-758f26bd2edc.jsonl
 /home/user/.codex/archived_sessions/rollout-2026-08-20T09-00-00-example.jsonl
 ```
 
@@ -71,10 +73,32 @@ npm start -- --session-allowlist "$HOME/allowed-sessions.txt"
 ```
 
 The allowlist is fail-closed: every non-comment entry must identify an existing
-regular rollout file inside this Codex home's `sessions/` or
-`archived_sessions/` tree. Directories, globs, symlinks, files outside those
-roots, and malformed entries stop server startup. An empty allowlist exposes no
-sessions. The file is loaded at startup, so restart the server after editing it.
+regular, recognized Codex or Claude Code JSONL file inside this home's
+`sessions/` or `archived_sessions/` tree. Directories, globs, symlinks, files
+outside those roots, and unrecognized entries stop server startup. An empty
+allowlist exposes no sessions. The file is loaded at startup, so restart the
+server after editing it.
+
+### Claude Code sessions
+
+Claude Code normally stores main-session transcripts as
+`~/.claude/projects/<encoded-project>/<session-uuid>.jsonl`. To expose selected
+sessions without scanning the private Claude directory, hardlink them into a
+dedicated session home on the same filesystem:
+
+```sh
+public_sessions="$HOME/.codex-public/sessions"
+install -d -m 700 "$public_sessions"
+ln -- "$HOME/.claude/projects/<project>/<session-uuid>.jsonl" "$public_sessions/"
+
+npm start -- --codex-home "$HOME/.codex-public" --port 8090
+```
+
+The Claude adapter recognizes the top-level `user` and `assistant` records,
+renders text blocks, pairs `tool_use` with `tool_result`, hides thinking blocks,
+and ignores unrelated `.jsonl` files. Hardlinks require the source and public
+directory to be on the same filesystem; copying is the fallback across
+filesystems. Do not `chmod` a hardlink, because it shares the source inode.
 
 ### TLS and mTLS
 
@@ -108,16 +132,16 @@ restart the server after replacing them.
 
 ## Features and limits
 
-- Browse active and archived Codex sessions.
+- Browse active and archived Codex and Claude Code sessions together.
 - Open each session at a stable `/sessions/:id` URL.
 - Choose whether sessions open at the beginning or at the latest bounded page;
   the fixed page control stays reachable at either end, the browser remembers
   the choice, and earlier pages load while scrolling up.
 - Filter sessions by project, date range, and archive state.
-- Build the cold catalog from at most the first 2 MiB of each rollout, then
+- Build the cold catalog from at most the first 2 MiB of each session file, then
   decode and index a session's complete timeline only when it is opened.
 - Render Markdown, GitHub-flavored Markdown, and KaTeX math.
-- Continue reading rollout files while Codex is writing them.
+- Continue reading session files while Codex or Claude Code is writing them.
 - Enable Live updates for active sessions with a preference remembered for the browser tab.
 - Handle malformed or unknown records with diagnostics where possible.
 - With `--enable-interaction`, interact with a user-bound tmux pane and manually
@@ -128,12 +152,13 @@ session, run the activation command shown at the bottom of that session's
 timeline from inside its Codex pane. The interaction panel is shown only while
 Live updates are enabled.
 
-The viewer reads only `rollout-*.jsonl` files and does not inspect Codex
-databases. It applies size limits when reading and serving session data. See
+The viewer reads Codex `rollout-*.jsonl` files and recognized Claude Code JSONL
+transcripts; it does not inspect agent databases. It applies size limits when
+reading and serving session data. See
 [Session JSONL filtering rules](docs/session-jsonl-filtering.md) for supported
 records, truncation, and visibility rules.
 
-For a large rollout, the catalog title, project, identity, and timestamps come
+For a large session, the catalog title, project, identity, and timestamps come
 from a bounded summary read. Message and tool counts may reflect only that
 prefix until the session is opened. The first open performs the full decode;
 subsequent reads and ordinary appends reuse the in-memory checkpoint.
@@ -177,6 +202,7 @@ Accepted architecture decisions are recorded under [`docs/adr`](docs/adr):
 - [ADR-0013: Filter session archive state in the browser](docs/adr/0013-filter-session-archive-state-in-the-browser.md)
 - [ADR-0014: Remember Live updates per browser tab](docs/adr/0014-remember-live-updates-per-browser-tab.md)
 - [ADR-0015: Bounded catalog summaries with lazy timeline hydration](docs/adr/0015-use-bounded-catalog-summaries.md)
+- [ADR-0016: Mixed Codex and Claude Code JSONL sources](docs/adr/0016-support-claude-code-jsonl.md)
 
 ## Development
 
@@ -214,7 +240,8 @@ npm run benchmark:scale
 **No sessions appear**
 
 Pass `--codex-home` with the directory containing `sessions/`, not `sessions/`
-itself. Session files must be regular files named `rollout-*.jsonl`.
+itself. Codex files must be named `rollout-*.jsonl`; Claude files may retain
+their normal UUID filename and must contain recognizable Claude Code records.
 
 **The port is already in use**
 

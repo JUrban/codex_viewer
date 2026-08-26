@@ -118,7 +118,7 @@ export function commandLineHelp(): string {
 Options:
   --codex-home <path>  Codex home directory (default: ~/.codex)
   --session-allowlist <path>
-                       Exact rollout files to expose, one path per line
+                       Exact Codex or Claude JSONL files, one path per line
   --host <host>        Listen host (default: 127.0.0.1)
   --port <port>        Listen port, or 0 for a free port (default: 4173)
   --ssl                Enable TLS; the port will accept HTTPS only

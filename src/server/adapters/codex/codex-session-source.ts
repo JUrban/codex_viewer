@@ -342,11 +342,14 @@ export async function createCodexSessionSource(
   codexHome: string,
   sessionAllowlistPath?: string,
   catalogMode: CodexCatalogMode = "eager",
+  allowedCanonicalPathsOverride?: ReadonlySet<string> | null,
 ): Promise<CodexSessionSource> {
   const configured = resolve(codexHome);
-  const allowedCanonicalPaths = sessionAllowlistPath === undefined
+  const allowedCanonicalPaths = allowedCanonicalPathsOverride !== undefined
+    ? allowedCanonicalPathsOverride
+    : sessionAllowlistPath === undefined
     ? null
-    : await loadSessionAllowlist(configured, sessionAllowlistPath);
+    : (await loadSessionAllowlist(configured, sessionAllowlistPath)).codex;
   return new CodexSessionSource(
     configured,
     `codex-jsonl\0${configured}`,

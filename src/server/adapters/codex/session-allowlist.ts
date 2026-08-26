@@ -1,13 +1,20 @@
 import { readFile } from "node:fs/promises";
-import { isAbsolute, resolve } from "node:path";
+import { basename, isAbsolute, resolve } from "node:path";
+import { isClaudeSessionRecords } from "../claude/claude-session-normalizer.js";
 import { PathPolicy } from "./path-policy.js";
+import { BoundedRolloutSummaryReader } from "./rollout-summary-reader.js";
 
 const MAX_ALLOWLIST_BYTES = 1024 * 1024;
+
+export interface LoadedSessionAllowlist {
+  readonly codex: ReadonlySet<string>;
+  readonly claude: ReadonlySet<string>;
+}
 
 export async function loadSessionAllowlist(
   codexHome: string,
   allowlistPath: string,
-): Promise<ReadonlySet<string>> {
+): Promise<LoadedSessionAllowlist> {
   const configuredHome = resolve(codexHome);
   const configuredAllowlist = resolve(allowlistPath);
   let content: Buffer;
@@ -20,8 +27,10 @@ export async function loadSessionAllowlist(
     throw new Error("Session allowlist must not exceed 1 MiB");
   }
 
-  const policy = await PathPolicy.create(configuredHome);
-  const allowed = new Set<string>();
+  const policy = await PathPolicy.create(configuredHome, "supported");
+  const summaryReader = new BoundedRolloutSummaryReader();
+  const codex = new Set<string>();
+  const claude = new Set<string>();
   const lines = content.toString("utf8").replace(/^\uFEFF/, "").split(/\r?\n/);
   for (const [index, line] of lines.entries()) {
     const entry = line.trim();
@@ -32,11 +41,23 @@ export async function loadSessionAllowlist(
     const descriptor = await policy.register(candidate);
     if (descriptor === null) {
       throw new Error(
-        `Session allowlist line ${index + 1} must name an existing rollout file ` +
-          "within the configured Codex session roots",
+        `Session allowlist line ${index + 1} must name an existing supported JSONL ` +
+          "file within the configured session roots",
       );
     }
-    allowed.add(descriptor.canonicalPath);
+    if (basename(descriptor.canonicalPath).startsWith("rollout-")) {
+      codex.add(descriptor.canonicalPath);
+    } else {
+      const summary = await summaryReader.read(descriptor);
+      if (isClaudeSessionRecords(summary.records)) {
+        claude.add(descriptor.canonicalPath);
+        continue;
+      }
+      throw new Error(
+        `Session allowlist line ${index + 1} is not a recognized Codex or Claude ` +
+          "Code session",
+      );
+    }
   }
-  return allowed;
+  return { codex, claude };
 }

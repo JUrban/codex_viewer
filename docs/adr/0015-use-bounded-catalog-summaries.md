@@ -22,7 +22,7 @@ the list needs only identity and summary metadata.
 
 ## Decision Outcome
 
-The Codex adapter reads at most the first 2 MiB of each unhydrated rollout and
+The Codex and Claude adapters read at most the first 2 MiB of each unhydrated session and
 publishes a metadata-only normalized session with an empty timeline. The source
 marks that entry as unhydrated. Detail, timeline, live, and interaction reads
 ask the catalog store to hydrate the selected source-local session before the
@@ -39,7 +39,7 @@ validated tail.
 
 ### Positive Consequences
 
-- Initial catalog I/O is bounded to 2 MiB per discovered rollout.
+- Initial catalog I/O is bounded to 2 MiB per discovered session file.
 - JSON parsing, normalization, and HMAC prefix work for historical tool output
   is deferred until that session is opened.
 - Opening one session does not hydrate unrelated sessions.

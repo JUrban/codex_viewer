@@ -1,5 +1,5 @@
-import { mkdir, symlink, unlink, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { cp, mkdir, symlink, unlink, writeFile } from "node:fs/promises";
+import { dirname, join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { createCodexSessionReadService } from "../../src/server/create-session-read-service.js";
 import { createTempDirectory } from "../helpers/temp-directories.js";
@@ -34,6 +34,32 @@ describe("session allowlist", () => {
     expect(listed.sessions.find(({ title }) => title === "Allowed archive")?.archived)
       .toBe(true);
     expect(listed.sessions.some(({ title }) => title === "Hidden active")).toBe(false);
+  });
+
+  it("allows selected Codex and Claude Code sessions in one manifest", async () => {
+    const home = await createTempDirectory("mixed-allowlist-");
+    const codex = join(home, "sessions/rollout-codex.jsonl");
+    const claude = join(
+      home,
+      "sessions/00000000-0000-0000-0000-000000000002.jsonl",
+    );
+    await rollout(codex, "Allowed Codex");
+    await mkdir(join(home, "sessions"), { recursive: true });
+    await cp(
+      resolve("tests/fixtures/claude-code/00000000-0000-0000-0000-000000000002.jsonl"),
+      claude,
+    );
+    const allowlist = join(home, "allowed-sessions.txt");
+    await writeFile(allowlist, [
+      "sessions/rollout-codex.jsonl",
+      "sessions/00000000-0000-0000-0000-000000000002.jsonl",
+    ].join("\n"));
+
+    const listed = await (await createCodexSessionReadService(home, allowlist)).list({});
+    expect(listed.sessions.map(({ title }) => title).sort()).toEqual([
+      "Allowed Codex",
+      "What's in src/main.py?",
+    ]);
   });
 
   it("treats an empty allowlist as deny all", async () => {
@@ -72,7 +98,7 @@ describe("session allowlist", () => {
     ]);
   });
 
-  it("fails closed for unreadable, unsafe, and non-rollout entries", async () => {
+  it("fails closed for unreadable, unsafe, and unrecognized entries", async () => {
     const home = await createTempDirectory("codex-allowlist-invalid-");
     const allowed = join(home, "sessions/rollout-allowed.jsonl");
     await rollout(allowed, "Allowed");
@@ -88,21 +114,21 @@ describe("session allowlist", () => {
     const unsafeAllowlist = join(home, "unsafe.txt");
     await writeFile(unsafeAllowlist, outside);
     await expect(createCodexSessionReadService(home, unsafeAllowlist))
-      .rejects.toThrow("line 1 must name an existing rollout file");
+      .rejects.toThrow("line 1 must name an existing supported JSONL file");
 
     const link = join(home, "sessions/rollout-link.jsonl");
     await symlink(allowed, link);
     const linkAllowlist = join(home, "symlink.txt");
     await writeFile(linkAllowlist, "sessions/rollout-link.jsonl\n");
     await expect(createCodexSessionReadService(home, linkAllowlist))
-      .rejects.toThrow("line 1 must name an existing rollout file");
+      .rejects.toThrow("line 1 must name an existing supported JSONL file");
 
     const ordinary = join(home, "sessions/not-a-rollout.jsonl");
     await writeFile(ordinary, "{}\n");
     const ordinaryAllowlist = join(home, "ordinary.txt");
     await writeFile(ordinaryAllowlist, "sessions/not-a-rollout.jsonl\n");
     await expect(createCodexSessionReadService(home, ordinaryAllowlist))
-      .rejects.toThrow("line 1 must name an existing rollout file");
+      .rejects.toThrow("line 1 is not a recognized Codex or Claude Code session");
   });
 });
 

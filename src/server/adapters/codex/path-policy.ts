@@ -3,6 +3,9 @@ import { basename, relative, resolve, sep } from "node:path";
 import { opaqueIdForPath } from "../../security/opaque-id.js";
 
 const ROLLOUT_NAME = /^rollout-[A-Za-z0-9][A-Za-z0-9._-]*\.jsonl$/;
+const JSONL_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*\.jsonl$/;
+
+export type SessionFileNamePolicy = "codex" | "claude" | "supported";
 
 export interface RolloutDescriptor {
   id: string;
@@ -21,11 +24,17 @@ interface AllowedRoot {
 export class PathPolicy {
   readonly #roots: AllowedRoot[];
 
-  private constructor(roots: AllowedRoot[]) {
+  private constructor(
+    roots: AllowedRoot[],
+    private readonly namePolicy: SessionFileNamePolicy,
+  ) {
     this.#roots = roots;
   }
 
-  static async create(codexHome: string): Promise<PathPolicy> {
+  static async create(
+    codexHome: string,
+    namePolicy: SessionFileNamePolicy = "codex",
+  ): Promise<PathPolicy> {
     const configured = [
       { path: resolve(codexHome, "sessions"), archived: false },
       { path: resolve(codexHome, "archived_sessions"), archived: true },
@@ -40,7 +49,7 @@ export class PathPolicy {
         // An absent allowlisted root is normal for a new or unarchived Codex home.
       }
     }
-    return new PathPolicy(roots);
+    return new PathPolicy(roots, namePolicy);
   }
 
   roots(): readonly Readonly<AllowedRoot>[] {
@@ -48,7 +57,7 @@ export class PathPolicy {
   }
 
   async register(candidatePath: string): Promise<RolloutDescriptor | null> {
-    if (!ROLLOUT_NAME.test(basename(candidatePath))) return null;
+    if (!matchesNamePolicy(basename(candidatePath), this.namePolicy)) return null;
 
     try {
       const linkInfo = await lstat(candidatePath);
@@ -75,6 +84,13 @@ export class PathPolicy {
       return null;
     }
   }
+}
+
+function matchesNamePolicy(name: string, policy: SessionFileNamePolicy): boolean {
+  if (!JSONL_NAME.test(name)) return false;
+  if (policy === "supported") return true;
+  const codex = ROLLOUT_NAME.test(name);
+  return policy === "codex" ? codex : !codex;
 }
 
 function isWithin(root: string, candidate: string): boolean {
