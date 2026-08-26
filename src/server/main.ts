@@ -13,7 +13,10 @@ async function main(): Promise<void> {
   }
 
   const { config } = command;
-  const sessions = await createCodexSessionReadService(config.codexHome);
+  const sessions = await createCodexSessionReadService(
+    config.codexHome,
+    config.sessionAllowlistPath,
+  );
   const interaction = new SessionInteractionService(
     sessions,
     config.interactionEnabled,

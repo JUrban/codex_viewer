@@ -1,5 +1,5 @@
-import { memo, useMemo } from "react";
-import type { TimelineCursor } from "../../shared/api-contract";
+import { memo, useLayoutEffect, useMemo, useRef } from "react";
+import type { ItemPagePosition, TimelineCursor } from "../../shared/api-contract";
 import type { TimelineItem } from "../../shared/domain";
 import type { UserInputItem as UserInputTimelineItem } from "../../shared/domain";
 import { DirectiveItem } from "./DirectiveItem";
@@ -18,12 +18,15 @@ interface TimelineProps {
   items: TimelineItem[];
   sessionId: string;
   cursor: TimelineCursor;
+  previousCursor?: TimelineCursor | null;
   hasMore: boolean;
   loading: boolean;
   readerBusy?: boolean;
-  paginationEnabled?: boolean;
+  forwardPaginationEnabled?: boolean;
   paginationFrozen?: boolean;
-  onLoadMore: () => void;
+  initialPosition?: ItemPagePosition | null;
+  onLoadMore: () => void | Promise<boolean>;
+  onLoadPrevious?: () => void | Promise<boolean>;
   onTimelineConflict: () => void;
 }
 
@@ -31,17 +34,58 @@ export const Timeline = memo(function Timeline({
   items,
   sessionId,
   cursor,
+  previousCursor = null,
   hasMore,
   loading,
   readerBusy = loading,
-  paginationEnabled = true,
+  forwardPaginationEnabled = true,
   paginationFrozen = false,
+  initialPosition = null,
   onLoadMore,
+  onLoadPrevious = () => undefined,
   onTimelineConflict,
 }: TimelineProps) {
   const entries = useMemo(() => projectUserInputCards(items), [items]);
+  const prependAnchor = useRef<{ height: number; top: number } | null>(null);
+
+  useLayoutEffect(() => {
+    if (initialPosition !== "latest") return;
+    window.scrollTo({
+      top: document.documentElement.scrollHeight,
+      behavior: "auto",
+    });
+  }, [initialPosition, sessionId]);
+
+  useLayoutEffect(() => {
+    const anchor = prependAnchor.current;
+    if (anchor === null) return;
+    prependAnchor.current = null;
+    window.scrollTo({
+      top: anchor.top + document.documentElement.scrollHeight - anchor.height,
+      behavior: "auto",
+    });
+  }, [items[0]?.id]);
+
+  const loadPrevious = () => {
+    prependAnchor.current = {
+      height: document.documentElement.scrollHeight,
+      top: window.scrollY,
+    };
+    return onLoadPrevious();
+  };
+
   return (
     <>
+      {previousCursor !== null && !paginationFrozen
+        ? <InfiniteScrollSentinel
+            enabled={!readerBusy}
+            edge="start"
+            triggerKey={previousCursor}
+            loading={loading}
+            loadingLabel="Loading earlier events…"
+            onLoadMore={loadPrevious}
+          />
+        : null}
       <ol className="timeline" aria-label="Session timeline">
         {entries.map((item) => (
           <li
@@ -58,7 +102,7 @@ export const Timeline = memo(function Timeline({
           </li>
         ))}
       </ol>
-      {hasMore && paginationEnabled && !paginationFrozen
+      {hasMore && forwardPaginationEnabled && !paginationFrozen
         ? <InfiniteScrollSentinel
             enabled={!readerBusy}
             triggerKey={cursor}

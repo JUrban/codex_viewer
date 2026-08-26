@@ -10,8 +10,9 @@ export function createSessionReadService(
 
 export async function createCodexSessionReadService(
   codexHome: string,
+  sessionAllowlistPath?: string,
 ): Promise<SessionReadService> {
   return createSessionReadService(
-    [await createCodexSessionSource(codexHome)],
+    [await createCodexSessionSource(codexHome, sessionAllowlistPath)],
   );
 }

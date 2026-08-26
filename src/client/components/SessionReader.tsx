@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import type {
   InteractionResponse,
+  ItemPagePosition,
 } from "../../shared/api-contract";
 import type { TimelineItem } from "../../shared/domain";
 import {
@@ -27,7 +28,11 @@ interface SessionReaderProps {
   readerBusy: boolean;
   autoRefreshEnabled: boolean;
   onAutoRefreshChange: (enabled: boolean) => void;
-  onLoadMore: () => void;
+  openPosition: ItemPagePosition;
+  onOpenPositionChange: (position: ItemPagePosition) => void;
+  openedPosition: ItemPagePosition | null;
+  onLoadMore: () => Promise<boolean>;
+  onLoadPrevious: () => Promise<boolean>;
   onTimelineConflict: () => void;
   timelineConflict: boolean;
   timelineRenderGeneration: number;
@@ -46,7 +51,11 @@ export function SessionReader({
   readerBusy,
   autoRefreshEnabled,
   onAutoRefreshChange,
+  openPosition,
+  onOpenPositionChange,
+  openedPosition,
   onLoadMore,
+  onLoadPrevious,
   onTimelineConflict,
   timelineConflict,
   timelineRenderGeneration,
@@ -67,6 +76,8 @@ export function SessionReader({
         onVisibilityChange={onVisibilityChange}
         autoRefreshEnabled={autoRefreshEnabled}
         onAutoRefreshChange={onAutoRefreshChange}
+        openPosition={openPosition}
+        onOpenPositionChange={onOpenPositionChange}
       />
       <DiagnosticNotice
         diagnostics={context.session.diagnostics}
@@ -75,23 +86,29 @@ export function SessionReader({
       {visibleItems.length === 0 && !readerLoading
         ? (
             <EmptyState title="This session has no visible events">
-              {emptyStateMessage(visibility, hasMore)}
+              {emptyStateMessage(
+                visibility,
+                hasMore || context.previousCursor !== null,
+              )}
             </EmptyState>
           )
         : null}
-      {visibleItems.length > 0 || hasMore
+      {visibleItems.length > 0 || hasMore || context.previousCursor !== null
         ? (
             <Timeline
               key={timelineRenderGeneration}
               items={visibleItems}
               sessionId={context.session.id}
               cursor={context.cursor}
+              previousCursor={context.previousCursor}
               hasMore={hasMore}
               loading={readerLoading}
               readerBusy={readerBusy}
-              paginationEnabled={!autoRefreshEnabled}
+              forwardPaginationEnabled={!autoRefreshEnabled}
               paginationFrozen={timelineConflict}
+              initialPosition={openedPosition}
               onLoadMore={onLoadMore}
+              onLoadPrevious={onLoadPrevious}
               onTimelineConflict={onTimelineConflict}
             />
           )

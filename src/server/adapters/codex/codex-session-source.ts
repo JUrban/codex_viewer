@@ -19,6 +19,7 @@ import {
 } from "./identity-resolver.js";
 import { JsonlCatalogSource } from "./jsonl-catalog-source.js";
 import { DECODER_VERSION, NORMALIZER_VERSION } from "./limits.js";
+import { loadSessionAllowlist } from "./session-allowlist.js";
 import {
   CheckpointedRolloutDecoder,
   type RolloutCheckpoint,
@@ -94,6 +95,7 @@ export class CodexSessionSource implements SessionSource {
     private readonly decoder: RolloutDecoder = new CheckpointedRolloutDecoder(),
     private readonly identity = new IdentityResolver(),
     private readonly normalizer: SessionNormalizer = new DefaultSessionNormalizer(),
+    private readonly allowedCanonicalPaths: ReadonlySet<string> | null = null,
   ) {
     this.descriptor = {
       sourceType: "codex-jsonl",
@@ -105,7 +107,10 @@ export class CodexSessionSource implements SessionSource {
 
   async refresh(): Promise<SessionSourceSnapshot> {
     const policy = await PathPolicy.create(this.codexHome);
-    const discovery = await new JsonlCatalogSource(policy).discover();
+    const discovery = await new JsonlCatalogSource(
+      policy,
+      this.allowedCanonicalPaths,
+    ).discover();
     const discoverySignature = JSON.stringify({
       diagnostics: discovery.diagnostics,
       entries: discovery.entries.map(({ descriptor }) => fingerprintOf(descriptor)),
@@ -230,11 +235,19 @@ export class CodexSessionSource implements SessionSource {
 
 export async function createCodexSessionSource(
   codexHome: string,
+  sessionAllowlistPath?: string,
 ): Promise<CodexSessionSource> {
   const configured = resolve(codexHome);
+  const allowedCanonicalPaths = sessionAllowlistPath === undefined
+    ? null
+    : await loadSessionAllowlist(configured, sessionAllowlistPath);
   return new CodexSessionSource(
     configured,
     `codex-jsonl\0${configured}`,
+    undefined,
+    undefined,
+    undefined,
+    allowedCanonicalPaths,
   );
 }
 

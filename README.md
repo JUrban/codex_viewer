@@ -34,6 +34,7 @@ Pass server options after `npm start --`:
 | Option | Default | Description |
 | --- | --- | --- |
 | `--codex-home <path>` | `~/.codex` | Codex home containing `sessions/` and optionally `archived_sessions/` |
+| `--session-allowlist <path>` | none | Allowlist file containing the exact rollout files to expose |
 | `--host <host>` | `127.0.0.1` | Server host |
 | `--port <port>` | `4173` | Server port; use `0` to select a free port automatically |
 | `--ssl` | disabled | Enable TLS and accept HTTPS only |
@@ -50,6 +51,30 @@ npm start -- --codex-home /path/to/codex-home --port 4180
 ```
 
 Restart the server after changing configuration.
+
+### Session allowlist
+
+Use `--session-allowlist` to expose only selected sessions. The file contains
+one exact `rollout-*.jsonl` path per line. Blank lines and lines beginning with
+`#` are ignored. Paths may be absolute or relative to `--codex-home`:
+
+```text
+# allowed-sessions.txt
+sessions/2026/08/26/rollout-2026-08-26T10-00-00-example.jsonl
+/home/user/.codex/archived_sessions/rollout-2026-08-20T09-00-00-example.jsonl
+```
+
+Start the viewer with the manifest:
+
+```sh
+npm start -- --session-allowlist "$HOME/allowed-sessions.txt"
+```
+
+The allowlist is fail-closed: every non-comment entry must identify an existing
+regular rollout file inside this Codex home's `sessions/` or
+`archived_sessions/` tree. Directories, globs, symlinks, files outside those
+roots, and malformed entries stop server startup. An empty allowlist exposes no
+sessions. The file is loaded at startup, so restart the server after editing it.
 
 ### TLS and mTLS
 
@@ -85,6 +110,8 @@ restart the server after replacing them.
 
 - Browse active and archived Codex sessions.
 - Open each session at a stable `/sessions/:id` URL.
+- Choose whether sessions open at the beginning or at the latest bounded page;
+  the browser remembers the choice and loads earlier pages while scrolling up.
 - Filter sessions by project, date range, and archive state.
 - Render Markdown, GitHub-flavored Markdown, and KaTeX math.
 - Continue reading rollout files while Codex is writing them.
@@ -119,6 +146,9 @@ same machine. If you bind to a non-loopback address or place the viewer behind a
 reverse proxy, add authentication and restrict network access—especially when
 interaction is enabled, because any client that can reach the viewer can call
 its interaction endpoints.
+
+For an outsider-facing deployment, keep interaction disabled, use a session
+allowlist, and put authentication at the reverse proxy or private-network layer.
 
 ## Architecture decisions
 

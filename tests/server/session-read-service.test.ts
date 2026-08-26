@@ -609,6 +609,53 @@ describe("SessionReadService", () => {
     expect(page?.hasMore).toBe(true);
   });
 
+  it("opens at the latest bounded page and pages backward", async () => {
+    const timeline: DomainTimelineRecord[] = Array.from(
+      { length: 5 },
+      (_, index) => ({
+        kind: "message",
+        id: `message-${index + 1}`,
+        ordinal: index + 1,
+        timestamp: "2026-07-28T00:00:00Z",
+        role: "assistant",
+        phase: "commentary",
+        itemType: null,
+        markdown: `Message ${index + 1}`,
+      }),
+    );
+    const repository = new SessionReadService(
+      [staticSource("timeline-latest", [
+        sourceEntry(
+          "timeline-latest",
+          normalizedSession("timeline-latest", "Timeline latest", null, timeline),
+        ),
+      ])],
+    );
+    const session = (await repository.list({})).sessions[0]!;
+
+    const latest = await repository.getItems(session.id, {
+      limit: 2,
+      position: "latest",
+    });
+    expect(latest?.items.map(({ ordinal }) => ordinal)).toEqual([4, 5]);
+    expect(latest?.hasMore).toBe(false);
+    expect(latest?.previousCursor).toEqual(expect.any(String));
+
+    const middle = await repository.getItems(session.id, {
+      limit: 2,
+      before: latest!.previousCursor!,
+    });
+    expect(middle?.items.map(({ ordinal }) => ordinal)).toEqual([2, 3]);
+    expect(middle?.previousCursor).toEqual(expect.any(String));
+
+    const beginning = await repository.getItems(session.id, {
+      limit: 2,
+      before: middle!.previousCursor!,
+    });
+    expect(beginning?.items.map(({ ordinal }) => ordinal)).toEqual([1]);
+    expect(beginning?.previousCursor).toBeNull();
+  });
+
   it("discovers an archived root created after repository startup", async () => {
     const home = await createTempDirectory("codex-late-archive-");
     await mkdir(join(home, "sessions"), { recursive: true });

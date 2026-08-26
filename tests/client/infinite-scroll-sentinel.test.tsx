@@ -69,4 +69,21 @@ describe("infinite scroll sentinel", () => {
     />);
     expect(() => intersectLatest()).toThrow("No active infinite-scroll observer");
   });
+
+  it("observes ahead of the top edge for backward pagination", () => {
+    installIntersectionObserver();
+    render(<InfiniteScrollSentinel
+      enabled
+      edge="start"
+      triggerKey="previous-cursor"
+      loading={false}
+      loadingLabel="Loading earlier…"
+      onLoadMore={vi.fn()}
+    />);
+    expect(latestObserverOptions()).toMatchObject({
+      root: null,
+      rootMargin: "300px 0px 0px 0px",
+      threshold: 0,
+    });
+  });
 });

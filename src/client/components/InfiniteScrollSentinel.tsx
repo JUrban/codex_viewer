@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 
 interface InfiniteScrollSentinelProps {
   enabled: boolean;
+  edge?: "start" | "end";
   triggerKey: string;
   loading: boolean;
   loadingLabel: string;
@@ -10,6 +11,7 @@ interface InfiniteScrollSentinelProps {
 
 export function InfiniteScrollSentinel({
   enabled,
+  edge = "end",
   triggerKey,
   loading,
   loadingLabel,
@@ -31,15 +33,15 @@ export function InfiniteScrollSentinel({
       callback.current();
     }, {
       root: null,
-      rootMargin: "0px 0px 300px 0px",
+      rootMargin: edge === "start" ? "300px 0px 0px 0px" : "0px 0px 300px 0px",
       threshold: 0,
     });
     observer.observe(element.current);
     return () => observer.disconnect();
-  }, [enabled, triggerKey]);
+  }, [edge, enabled, triggerKey]);
 
   return (
-    <div className="infinite-scroll-sentinel" ref={element}>
+    <div className={`infinite-scroll-sentinel ${edge}`} ref={element}>
       {loading ? <p className="loading" role="status">{loadingLabel}</p> : null}
     </div>
   );

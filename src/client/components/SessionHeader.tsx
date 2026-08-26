@@ -1,4 +1,5 @@
 import type { SessionDetail } from "../../shared/domain";
+import type { ItemPagePosition } from "../../shared/api-contract";
 import type {
   TimelineVisibility,
   TimelineVisibilityKey,
@@ -10,6 +11,8 @@ interface SessionHeaderProps {
   onVisibilityChange: (key: TimelineVisibilityKey, visible: boolean) => void;
   autoRefreshEnabled: boolean;
   onAutoRefreshChange: (enabled: boolean) => void;
+  openPosition?: ItemPagePosition;
+  onOpenPositionChange?: (position: ItemPagePosition) => void;
 }
 
 const DATE_FORMAT = new Intl.DateTimeFormat(undefined, {
@@ -23,6 +26,8 @@ export function SessionHeader({
   onVisibilityChange,
   autoRefreshEnabled,
   onAutoRefreshChange,
+  openPosition = "beginning",
+  onOpenPositionChange = () => undefined,
 }: SessionHeaderProps) {
   const updatedAt = formatTimestamp(session.updatedAt);
 
@@ -44,6 +49,18 @@ export function SessionHeader({
           Original session ID · <code>{session.sourceId ?? "Unavailable"}</code>
         </p>
         <div className="reader-controls">
+          <label className="open-position-control">
+            <span>Open session at</span>
+            <select
+              value={openPosition}
+              onChange={(event) => {
+                onOpenPositionChange(event.target.value as ItemPagePosition);
+              }}
+            >
+              <option value="beginning">Beginning</option>
+              <option value="latest">Latest</option>
+            </select>
+          </label>
           {!session.archived
             ? (
                 <div className="auto-refresh-control">

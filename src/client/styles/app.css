@@ -220,6 +220,18 @@
   display: flex; flex-wrap: wrap; align-items: center; gap: .7rem 1.2rem;
   max-width: 100%; margin-top: .85rem;
 }
+.open-position-control {
+  display: inline-flex; flex: 0 0 auto; align-items: center; gap: .45rem;
+  color: var(--current); font-family: var(--mono-font); font-size: .76rem;
+  font-weight: 650; letter-spacing: .03em;
+}
+.open-position-control select {
+  height: 2rem; padding: 0 .55rem; color: var(--ink); background: var(--paper);
+  border: 1px solid #8fa6ab; font: inherit; cursor: pointer;
+}
+.open-position-control select:focus-visible {
+  outline: 2px solid var(--signal); outline-offset: 2px;
+}
 .auto-refresh-control {
   display: inline-flex; flex: 0 0 auto; align-items: center; gap: .4rem;
 }
@@ -383,6 +395,7 @@
 .truncated { color: #7a4f2d; font-size: .8rem; }
 .load-more { margin-left: 0; }
 .infinite-scroll-sentinel { min-height: 1px; margin-top: .25rem; }
+.infinite-scroll-sentinel.start { margin: 1rem 0 -1.5rem; }
 .infinite-scroll-sentinel .loading { margin: 0; }
 .diagnostics, .error-state {
   margin: 1.25rem 0; padding: .9rem 1rem; color: #653e2d; background: #fff4e9; border-left: 3px solid var(--signal);

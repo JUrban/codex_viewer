@@ -10,6 +10,8 @@ export interface SessionListCriteria {
 export interface ItemPageCriteria {
   readonly limit?: number;
   readonly cursor?: string;
+  readonly before?: string;
+  readonly position?: "beginning" | "latest";
 }
 
 export interface ToolDetailCriteria {

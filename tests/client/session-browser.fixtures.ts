@@ -50,6 +50,7 @@ export function readContext(
 ) {
   return {
     cursor,
+    previousCursor: null,
     session: sessionDetail,
     hasMore,
     liveRevision: LIVE_REVISION,

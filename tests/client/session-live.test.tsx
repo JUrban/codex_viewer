@@ -284,7 +284,8 @@ function page(
 ): ItemPageResponse {
   return {
     session: { ...baseSession, archived, sourceId: "reader", diagnostics: [], itemCount: items.length },
-    items, cursor, hasMore, interaction: { supported: false }, liveRevision,
+    items, cursor, previousCursor: null, hasMore,
+    interaction: { supported: false }, liveRevision,
   };
 }
 

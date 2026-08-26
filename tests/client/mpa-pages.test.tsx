@@ -237,6 +237,7 @@ function itemPage(): ItemPageResponse {
       markdown: "Ready",
     }],
     cursor: TIMELINE_CURSOR,
+    previousCursor: null,
     hasMore: false,
     interaction: { supported: false },
     liveRevision: LIVE_REVISION,

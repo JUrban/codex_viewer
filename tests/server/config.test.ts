@@ -28,6 +28,7 @@ describe("server command line", () => {
   it("parses all server and mutual TLS options", () => {
     expect(runnable([
       "--codex-home", "fixtures/codex",
+      "--session-allowlist", "config/allowed-sessions.txt",
       "--host", "0.0.0.0",
       "--port", "0",
       "--ssl",
@@ -38,6 +39,7 @@ describe("server command line", () => {
       host: "0.0.0.0",
       port: 0,
       codexHome: resolve("fixtures/codex"),
+      sessionAllowlistPath: resolve("config/allowed-sessions.txt"),
       tls: {
         enabled: true,
         certificatePath: resolve("certs/server.pem"),
@@ -56,6 +58,8 @@ describe("server command line", () => {
   it("rejects malformed general options", () => {
     expect(() => loadConfig(["--port", "65536"])).toThrow("--port must be an integer");
     expect(() => loadConfig(["--codex-home", " "])).toThrow("--codex-home must not be empty");
+    expect(() => loadConfig(["--session-allowlist", " "]))
+      .toThrow("--session-allowlist must not be empty");
     expect(() => loadConfig(["--unknown"])).toThrow();
     expect(() => loadConfig(["positional"])).toThrow();
   });
@@ -63,6 +67,7 @@ describe("server command line", () => {
   it("returns help without requiring runtime options", () => {
     expect(loadConfig(["--help"])).toEqual({ kind: "help" });
     expect(commandLineHelp()).toContain("--ssl-ca <path>");
+    expect(commandLineHelp()).toContain("--session-allowlist <path>");
     expect(commandLineHelp()).toContain("npm start -- --ssl");
   });
 });

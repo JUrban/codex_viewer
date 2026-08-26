@@ -16,7 +16,7 @@ afterEach(async () => {
     new Promise<void>((done) => server.close(() => done()))));
 });
 
-async function startApi(existingHome?: string) {
+async function startApi(existingHome?: string, sessionAllowlistPath?: string) {
   const home = existingHome ?? await createTempDirectory("codex-opaque-api-");
   if (existingHome === undefined) {
     await cp(resolve("tests/fixtures/codex-home"), home, { recursive: true });
@@ -26,7 +26,7 @@ async function startApi(existingHome?: string) {
     writeFile(join(clientDirectory, "index.html"), "<h1>sessions</h1>"),
     writeFile(join(clientDirectory, "session.html"), "<h1>session reader</h1>"),
   ]);
-  const repository = await createCodexSessionReadService(home);
+  const repository = await createCodexSessionReadService(home, sessionAllowlistPath);
   const config: ServerConfig = {
     host: LOOPBACK_HOST,
     port: 0,
@@ -50,6 +50,25 @@ async function startApi(existingHome?: string) {
 }
 
 describe("opaque cursor API", () => {
+  it("exposes only allowlisted sessions through the HTTP API", async () => {
+    const home = await createTempDirectory("codex-opaque-allowlist-");
+    await cp(resolve("tests/fixtures/codex-home"), home, { recursive: true });
+    const allowlist = join(home, "allowed-sessions.txt");
+    await writeFile(
+      allowlist,
+      "sessions/2026/07/28/rollout-2026-07-28T10-00-00-basic-session.jsonl\n",
+    );
+
+    const { base } = await startApi(home, allowlist);
+    const response = await fetch(`${base}/api/v1/sessions`);
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload.total).toBe(1);
+    expect(payload.sessions).toHaveLength(1);
+    expect(payload.sessions[0].title).toBe("Synthetic trace");
+  });
+
   it("classifies structurally valid cursors from another service instance as recoverable", async () => {
     const firstServer = await startApi();
     const list = await fetch(`${firstServer.base}/api/v1/sessions?limit=1`)
@@ -165,6 +184,7 @@ describe("opaque cursor API", () => {
       interaction: { supported: false },
       items: expect.any(Array),
       cursor: expect.any(String),
+      previousCursor: null,
       hasMore: true,
       liveRevision: expect.any(String),
     }));
@@ -194,6 +214,25 @@ describe("opaque cursor API", () => {
       text: expect.stringContaining("DIRECTIVE_DETAIL_CANARY"),
       truncated: false,
     });
+
+    const latest = await fetch(
+      `${base}/api/v1/sessions/${sessionId}/items?limit=1&position=latest`,
+    ).then((response) => response.json());
+    expect(latest.items).toHaveLength(1);
+    expect(latest.hasMore).toBe(false);
+    expect(latest.previousCursor).toEqual(expect.any(String));
+    const previous = await fetch(
+      `${base}/api/v1/sessions/${sessionId}/items?limit=1&before=${encodeURIComponent(latest.previousCursor)}`,
+    ).then((response) => response.json());
+    expect(previous.items).toHaveLength(1);
+    expect(previous.items[0].ordinal).toBeLessThan(latest.items[0].ordinal);
+
+    expect((await fetch(
+      `${base}/api/v1/sessions/${sessionId}/items?position=middle`,
+    )).status).toBe(400);
+    expect((await fetch(
+      `${base}/api/v1/sessions/${sessionId}/items?position=latest&cursor=${encodeURIComponent(first.cursor)}`,
+    )).status).toBe(400);
   });
 
   it("long-polls without advancing the timeline cursor and detects appended backlog", async () => {

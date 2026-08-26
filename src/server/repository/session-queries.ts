@@ -53,6 +53,7 @@ export interface ProjectFacet {
 export interface TimelinePageContext {
   readonly session: DomainSession;
   readonly cursor: string;
+  readonly previousCursor: string | null;
   readonly hasMore: boolean;
 }
 
@@ -149,28 +150,35 @@ export class SessionQueries {
     validateItemQuery(query);
     const versioned = snapshot.sessions.get(id);
     if (versioned === undefined) return null;
-    const requestedBoundary = this.#resolveReadBoundary(id, versioned, query.cursor);
+    const requestedBoundary = this.#resolveReadBoundary(
+      id,
+      versioned,
+      query.cursor ?? query.before,
+    );
     const { normalized } = versioned;
-    const after = requestedBoundary.throughOrdinal;
-    const visible = normalized.timeline.filter((item) => item.ordinal > after);
     const limit = query.limit ?? DEFAULT_ITEM_LIMIT;
-    const items: DomainTimelineRecord[] = [];
-    let itemBytes = 0;
-    for (const item of visible) {
-      if (items.length >= limit) break;
-      const bytes = Buffer.byteLength(JSON.stringify(item), "utf8") + (items.length > 0 ? 1 : 0);
-      if (items.length > 0 && itemBytes + bytes > MAX_ITEM_PAGE_BYTES) break;
-      items.push(item);
-      itemBytes += bytes;
-    }
+    const backward = query.before !== undefined || query.position === "latest";
+    const items = boundedPage(
+      normalized.timeline,
+      limit,
+      backward,
+      requestedBoundary.throughOrdinal,
+      query.before !== undefined,
+    );
     const boundary = items.length === 0
       ? requestedBoundary
       : versioned.timelinePrefixIndex.boundaryAt(
         normalized.timeline,
         items.at(-1)!.ordinal,
       )!;
+    const oldest = items[0];
+    const firstOrdinal = normalized.timeline[0]?.ordinal;
+    const previousBoundary = oldest !== undefined && firstOrdinal !== undefined &&
+        oldest.ordinal > firstOrdinal
+      ? versioned.timelinePrefixIndex.boundaryAt(normalized.timeline, oldest.ordinal)
+      : null;
     return {
-      context: this.#readContext(id, versioned, boundary),
+      context: this.#readContext(id, versioned, boundary, previousBoundary),
       items,
     };
   }
@@ -260,6 +268,10 @@ export class SessionQueries {
     id: string,
     versioned: IndexedSession,
     boundary: { throughOrdinal: number; timelinePrefixRevision: string },
+    previousBoundary: {
+      throughOrdinal: number;
+      timelinePrefixRevision: string;
+    } | null = null,
   ): TimelinePageContext {
     return {
       session: versioned.normalized.session,
@@ -268,6 +280,13 @@ export class SessionQueries {
         boundary.throughOrdinal,
         boundary.timelinePrefixRevision,
       ),
+      previousCursor: previousBoundary === null
+        ? null
+        : this.cursors.encodeTimeline(
+          id,
+          previousBoundary.throughOrdinal,
+          previousBoundary.timelinePrefixRevision,
+        ),
       hasMore: boundary.throughOrdinal <
         (versioned.normalized.timeline.at(-1)?.ordinal ?? 0),
     };
@@ -335,6 +354,54 @@ function validateItemQuery(query: ItemPageCriteria): void {
     (!Number.isInteger(query.limit) || query.limit < 1 || query.limit > MAX_ITEM_LIMIT)) {
     throw new RepositoryQueryError("invalid_query", `limit must be between 1 and ${MAX_ITEM_LIMIT}`);
   }
+  if (query.position !== undefined &&
+    query.position !== "beginning" && query.position !== "latest") {
+    throw new RepositoryQueryError(
+      "invalid_query",
+      "position must be beginning or latest",
+    );
+  }
+  const navigationOptions = [query.cursor, query.before, query.position]
+    .filter((value) => value !== undefined);
+  if (navigationOptions.length > 1) {
+    throw new RepositoryQueryError(
+      "invalid_query",
+      "cursor, before, and position cannot be combined",
+    );
+  }
+}
+
+function boundedPage(
+  timeline: readonly DomainTimelineRecord[],
+  limit: number,
+  fromEnd: boolean,
+  boundaryOrdinal: number,
+  beforeBoundary: boolean,
+): DomainTimelineRecord[] {
+  const items: DomainTimelineRecord[] = [];
+  let itemBytes = 0;
+  const append = (item: DomainTimelineRecord) => {
+    const bytes = Buffer.byteLength(JSON.stringify(item), "utf8") +
+      (items.length > 0 ? 1 : 0);
+    if (items.length > 0 && itemBytes + bytes > MAX_ITEM_PAGE_BYTES) return false;
+    if (fromEnd) items.unshift(item);
+    else items.push(item);
+    itemBytes += bytes;
+    return true;
+  };
+  if (fromEnd) {
+    for (let index = timeline.length - 1; index >= 0 && items.length < limit; index -= 1) {
+      const item = timeline[index]!;
+      if (beforeBoundary && item.ordinal >= boundaryOrdinal) continue;
+      if (!append(item)) break;
+    }
+  } else {
+    for (const item of timeline) {
+      if (item.ordinal <= boundaryOrdinal) continue;
+      if (items.length >= limit || !append(item)) break;
+    }
+  }
+  return items;
 }
 
 function isIsoTimestamp(value: string): boolean {

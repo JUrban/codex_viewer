@@ -7,6 +7,7 @@ import { SessionApp } from "../../src/client/SessionApp";
 import { DirectiveItem } from "../../src/client/components/DirectiveItem";
 import { Timeline } from "../../src/client/components/Timeline";
 import { ToolItem } from "../../src/client/components/ToolItem";
+import { SESSION_OPEN_POSITION_STORAGE_KEY } from "../../src/client/state/use-session-open-position";
 import type { ItemPageResponse, LiveRevision, TimelineCursor } from "../../src/shared/api-contract";
 import type { TimelineItem } from "../../src/shared/domain";
 import {
@@ -64,6 +65,45 @@ describe("session reader items", () => {
     expect(await screen.findByText("Strict ready")).toBeInTheDocument();
   });
 
+  it("remembers latest-first opening and pages toward the beginning", async () => {
+    installIntersectionObserver();
+    window.history.replaceState(null, "", `/sessions/${SESSION_ID}`);
+    vi.stubGlobal("scrollTo", vi.fn());
+    const previousCursor = "opaque.timeline.previous" as TimelineCursor;
+    const beginning = page([message("message-1", 1, "Beginning event")]);
+    const latest = page([message("message-5", 5, "Latest event")]);
+    latest.previousCursor = previousCursor;
+    const earlier = page([message("message-4", 4, "Earlier event")]);
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(json(beginning))
+      .mockResolvedValueOnce(json(latest))
+      .mockResolvedValueOnce(json(earlier));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<SessionApp />);
+
+    expect(await screen.findByText("Beginning event")).toBeInTheDocument();
+    const position = screen.getByRole("combobox", { name: "Open session at" });
+    expect(position).toHaveValue("beginning");
+
+    fireEvent.change(position, { target: { value: "latest" } });
+    expect(await screen.findByText("Latest event")).toBeInTheDocument();
+    expect(screen.queryByText("Beginning event")).not.toBeInTheDocument();
+    expect(localStorage.getItem(SESSION_OPEN_POSITION_STORAGE_KEY)).toBe("latest");
+    expect(String(fetchMock.mock.calls[1]?.[0])).toContain("position=latest");
+    expect(window.scrollTo).toHaveBeenCalled();
+
+    await waitFor(() => {
+      expect(document.querySelector(".infinite-scroll-sentinel.start"))
+        .toBeInTheDocument();
+    });
+    intersectLatest();
+    expect(await screen.findByText("Earlier event")).toBeInTheDocument();
+    expect(String(fetchMock.mock.calls[2]?.[0])).toContain(
+      "before=opaque.timeline.previous",
+    );
+    expect(screen.getByText("Latest event")).toBeInTheDocument();
+  });
+
   it("loads later pages without duplicating an overlapping item", async () => {
     installIntersectionObserver();
     window.history.replaceState(null, "", `/sessions/${SESSION_ID}`);
@@ -96,6 +136,10 @@ describe("session reader items", () => {
     render(<SessionApp />);
     await screen.findByText("First");
 
+    await waitFor(() => {
+      expect(document.querySelector(".infinite-scroll-sentinel.end"))
+        .toBeInTheDocument();
+    });
     vi.useFakeTimers();
     vi.spyOn(Math, "random").mockReturnValue(0.5);
     intersectLatest();
@@ -251,6 +295,7 @@ function page(
     session: { ...baseSession, sourceId: "reader", diagnostics: [], itemCount: items.length },
     items,
     cursor,
+    previousCursor: null,
     hasMore,
     interaction: { supported: false },
     liveRevision: "opaque.live.revision" as LiveRevision,

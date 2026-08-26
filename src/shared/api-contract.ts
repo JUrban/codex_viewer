@@ -64,14 +64,19 @@ export interface SessionDetailResponse {
   liveRevision: LiveRevision;
 }
 
+export type ItemPagePosition = "beginning" | "latest";
+
 export interface ItemPageQuery {
   limit?: number;
   cursor?: TimelineCursor;
+  before?: TimelineCursor;
+  position?: ItemPagePosition;
 }
 
 export interface ItemPageResponse {
   session: SessionDetail;
   cursor: TimelineCursor;
+  previousCursor: TimelineCursor | null;
   hasMore: boolean;
   items: TimelineItem[];
   interaction: InteractionResponse;

@@ -98,6 +98,8 @@ export const api = {
       `/api/v1/sessions/${encodeURIComponent(id)}/items${queryString({
         limit: query.limit,
         cursor: query.cursor,
+        before: query.before,
+        position: query.position,
       })}`,
       signal,
     ),

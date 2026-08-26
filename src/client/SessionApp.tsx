@@ -4,6 +4,7 @@ import { ErrorState } from "./components/ErrorState";
 import { SessionReader } from "./components/SessionReader";
 import { useSessionReader } from "./state/use-session-reader";
 import { useTimelineVisibility } from "./state/use-timeline-visibility";
+import { useSessionOpenPosition } from "./state/use-session-open-position";
 
 export function SessionApp() {
   const sessionId = sessionIdFromPath(window.location.pathname);
@@ -15,7 +16,8 @@ export function SessionApp() {
 
 function SessionPage({ sessionId }: { sessionId: string }) {
   const timelineVisibility = useTimelineVisibility();
-  const reader = useSessionReader(sessionId);
+  const [openPosition, setOpenPosition] = useSessionOpenPosition();
+  const reader = useSessionReader(sessionId, openPosition);
   const sessionTitle = reader.context?.session.title ?? null;
 
   useEffect(() => {
@@ -38,10 +40,14 @@ function SessionPage({ sessionId }: { sessionId: string }) {
               readerBusy={reader.operation !== null}
               autoRefreshEnabled={reader.autoRefreshEnabled}
               onAutoRefreshChange={reader.setAutoRefreshEnabled}
+              openPosition={openPosition}
+              onOpenPositionChange={setOpenPosition}
               onLoadMore={reader.loadMore}
+              onLoadPrevious={reader.loadPrevious}
               onTimelineConflict={reader.markTimelineConflict}
               timelineConflict={reader.timelineConflict}
               timelineRenderGeneration={reader.timelineRenderGeneration}
+              openedPosition={reader.openedPosition}
               onRefreshLatest={reader.refreshLatest}
               error={reader.readerError}
               onDismissError={reader.clearReaderError}

@@ -9,6 +9,7 @@ afterEach(() => {
   if (typeof window === "undefined") return;
   cleanup();
   window.sessionStorage.clear();
+  window.localStorage.clear();
   Object.defineProperty(document, "hidden", {
     configurable: true,
     value: false,

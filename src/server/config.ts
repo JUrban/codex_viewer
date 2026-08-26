@@ -17,6 +17,7 @@ export interface ServerConfig {
   host: string;
   port: number;
   codexHome: string;
+  sessionAllowlistPath?: string;
   clientDirectory: string;
   tls: ServerTlsConfig;
   interactionEnabled: boolean;
@@ -51,6 +52,7 @@ export function loadConfig(args: readonly string[] = process.argv.slice(2)): Com
     strict: true,
     options: {
       "codex-home": { type: "string" },
+      "session-allowlist": { type: "string" },
       host: { type: "string" },
       port: { type: "string" },
       ssl: { type: "boolean" },
@@ -66,6 +68,10 @@ export function loadConfig(args: readonly string[] = process.argv.slice(2)): Com
 
   const host = nonEmptyOption("host", values.host) ?? LOOPBACK_HOST;
   const codexHome = nonEmptyOption("codex-home", values["codex-home"]);
+  const sessionAllowlistPath = nonEmptyOption(
+    "session-allowlist",
+    values["session-allowlist"],
+  );
   const certificatePath = nonEmptyOption("ssl-cert", values["ssl-cert"]);
   const privateKeyPath = nonEmptyOption("ssl-key", values["ssl-key"]);
   const certificateAuthorityPath = nonEmptyOption("ssl-ca", values["ssl-ca"]);
@@ -96,6 +102,9 @@ export function loadConfig(args: readonly string[] = process.argv.slice(2)): Com
       host,
       port: parsePort(values.port),
       codexHome: codexHome ? resolve(codexHome) : resolve(homedir(), ".codex"),
+      ...(sessionAllowlistPath
+        ? { sessionAllowlistPath: resolve(sessionAllowlistPath) }
+        : {}),
       clientDirectory: resolve(process.cwd(), "dist/client"),
       tls,
       interactionEnabled: values["enable-interaction"] ?? false,
@@ -108,6 +117,8 @@ export function commandLineHelp(): string {
 
 Options:
   --codex-home <path>  Codex home directory (default: ~/.codex)
+  --session-allowlist <path>
+                       Exact rollout files to expose, one path per line
   --host <host>        Listen host (default: 127.0.0.1)
   --port <port>        Listen port, or 0 for a free port (default: 4173)
   --ssl                Enable TLS; the port will accept HTTPS only

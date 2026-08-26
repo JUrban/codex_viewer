@@ -47,6 +47,7 @@ export class SessionApiMapper {
     return {
       session: this.sessionDetail(result.context.session),
       cursor: result.context.cursor as TimelineCursor,
+      previousCursor: result.context.previousCursor as TimelineCursor | null,
       hasMore: result.context.hasMore,
       items: result.items.map((item) => this.timelineItem(item)),
     };

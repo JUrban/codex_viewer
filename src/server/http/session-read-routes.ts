@@ -166,10 +166,19 @@ function parseListQuery(params: URLSearchParams): SessionListQuery {
 }
 
 function parseItemQuery(params: URLSearchParams): ItemPageQuery {
-  only(params, ["limit", "cursor"]);
+  only(params, ["limit", "cursor", "before", "position"]);
   const query: ItemPageQuery = {};
   const cursor = optional(params, "cursor");
   if (cursor !== undefined) query.cursor = cursor as TimelineCursor;
+  const before = optional(params, "before");
+  if (before !== undefined) query.before = before as TimelineCursor;
+  const position = optional(params, "position");
+  if (position !== undefined) {
+    if (position !== "beginning" && position !== "latest") {
+      invalid("position must be beginning or latest");
+    }
+    query.position = position;
+  }
   const limit = optional(params, "limit");
   if (limit !== undefined) query.limit = integer(limit, "limit");
   return query;

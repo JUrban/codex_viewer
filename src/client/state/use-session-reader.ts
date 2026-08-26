@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useReducer, useRef } from "react";
 import type {
   InteractionResponse,
+  ItemPagePosition,
+  ItemPageQuery,
   ItemPageResponse,
   SessionLiveResponse,
 } from "../../shared/api-contract";
@@ -19,7 +21,9 @@ import type { ReaderContext } from "./session-reader-state";
 
 const TIMELINE_PAGE_SIZE = 300;
 
-export type ReaderOperation = "open" | "page" | "poll" | "reload" | null;
+export type ReaderOperation = "open" | "page" | "previous" | "poll" | "reload" | null;
+
+type PageMerge = "replace" | "append" | "prepend";
 
 interface ReaderState {
   operation: ReaderOperation;
@@ -30,11 +34,17 @@ interface ReaderState {
   missing: boolean;
   timelineConflict: boolean;
   timelineRenderGeneration: number;
+  openedPosition: ItemPagePosition | null;
 }
 
 type ReaderAction =
   | { type: "start"; operation: Exclude<ReaderOperation, null>; preserve: boolean }
-  | { type: "success"; page: ItemPageResponse; replace: boolean }
+  | {
+      type: "success";
+      page: ItemPageResponse;
+      merge: PageMerge;
+      position?: ItemPagePosition;
+    }
   | { type: "live-success"; response: SessionLiveResponse }
   | { type: "live-error"; error: string }
   | { type: "page-retry"; error: string }
@@ -49,7 +59,8 @@ interface ActiveRequest {
 
 interface PageRequestMode {
   readonly preserveCurrent: boolean;
-  readonly replaceItems: boolean;
+  readonly merge: PageMerge;
+  readonly position?: ItemPagePosition;
 }
 
 const initialState: ReaderState = {
@@ -61,9 +72,13 @@ const initialState: ReaderState = {
   missing: false,
   timelineConflict: false,
   timelineRenderGeneration: 0,
+  openedPosition: null,
 };
 
-export function useSessionReader(sessionId: string) {
+export function useSessionReader(
+  sessionId: string,
+  openPosition: ItemPagePosition = "beginning",
+) {
   const [state, dispatch] = useReducer(reducer, initialState);
   const [autoRefreshEnabled, setAutoRefreshEnabled] = useLiveUpdatesPreference();
   const active = useRef<ActiveRequest | null>(null);
@@ -86,7 +101,7 @@ export function useSessionReader(sessionId: string) {
 
   const requestPage = useCallback(async (
     operation: Exclude<ReaderOperation, null>,
-    cursor: ReaderContext["cursor"] | undefined,
+    query: ItemPageQuery,
     mode: PageRequestMode,
   ): Promise<boolean> => {
     if (active.current !== null) return false;
@@ -101,11 +116,16 @@ export function useSessionReader(sessionId: string) {
       while (isCurrent(request)) {
         try {
           const page = await api.items(sessionId, {
-            cursor,
+            ...query,
             limit: TIMELINE_PAGE_SIZE,
           }, request.controller.signal);
           if (!isCurrent(request)) return false;
-          dispatch({ type: "success", page, replace: mode.replaceItems });
+          dispatch({
+            type: "success",
+            page,
+            merge: mode.merge,
+            position: mode.position,
+          });
           return true;
         } catch (reason) {
           if (!isCurrent(request) || isAbort(reason)) return false;
@@ -113,7 +133,9 @@ export function useSessionReader(sessionId: string) {
             markTimelineConflict();
             return false;
           }
-          const retryablePagination = (operation === "page" || operation === "poll") &&
+          const retryablePagination = (
+            operation === "page" || operation === "previous" || operation === "poll"
+          ) &&
             isRetryableRequestError(reason);
           if (!retryablePagination) throw reason;
           dispatch({ type: "page-retry", error: messageFor(reason) });
@@ -137,42 +159,57 @@ export function useSessionReader(sessionId: string) {
     generation.current += 1;
     active.current?.controller.abort();
     active.current = null;
-    void requestPage("open", undefined, {
+    void requestPage("open", initialQuery(openPosition), {
       preserveCurrent: false,
-      replaceItems: true,
+      merge: "replace",
+      position: openPosition,
     });
     return () => {
       generation.current += 1;
       active.current?.controller.abort();
       active.current = null;
     };
-  }, [requestPage]);
+  }, [openPosition, requestPage]);
 
   const loadMore = useCallback(() => {
     const current = stateRef.current;
     if (current.context === null || !current.context.hasMore || current.timelineConflict) {
       return Promise.resolve(false);
     }
-    return requestPage("page", current.context.cursor, {
+    return requestPage("page", { cursor: current.context.cursor }, {
       preserveCurrent: true,
-      replaceItems: false,
+      merge: "append",
     });
   }, [requestPage]);
 
-  const retryOpen = useCallback(() => requestPage("open", undefined, {
+  const loadPrevious = useCallback(() => {
+    const current = stateRef.current;
+    if (current.context === null || current.context.previousCursor === null ||
+      current.timelineConflict) {
+      return Promise.resolve(false);
+    }
+    return requestPage("previous", { before: current.context.previousCursor }, {
+      preserveCurrent: true,
+      merge: "prepend",
+    });
+  }, [requestPage]);
+
+  const retryOpen = useCallback(() => requestPage("open", initialQuery(openPosition), {
     preserveCurrent: false,
-    replaceItems: true,
-  }), [requestPage]);
+    merge: "replace",
+    position: openPosition,
+  }), [openPosition, requestPage]);
 
   const reloadLatest = useCallback(() => {
     active.current?.controller.abort();
     active.current = null;
     generation.current += 1;
-    return requestPage("reload", undefined, {
+    return requestPage("reload", initialQuery(openPosition), {
       preserveCurrent: true,
-      replaceItems: true,
+      merge: "replace",
+      position: openPosition,
     });
-  }, [requestPage]);
+  }, [openPosition, requestPage]);
 
   const onLiveUpdate = useCallback(async (
     response: SessionLiveResponse,
@@ -184,9 +221,9 @@ export function useSessionReader(sessionId: string) {
       current.context.liveRevision !== expected.liveRevision ||
       response.cursor !== expected.cursor) return;
     if (response.hasMore) {
-      const loaded = await requestPage("poll", expected.cursor, {
+      const loaded = await requestPage("poll", { cursor: expected.cursor }, {
         preserveCurrent: true,
-        replaceItems: false,
+        merge: "append",
       });
       if (!loaded && !stateRef.current.timelineConflict) setAutoRefreshEnabled(false);
       return;
@@ -219,15 +256,17 @@ export function useSessionReader(sessionId: string) {
     interaction: state.interaction,
     operation: state.operation,
     readerLoading: state.operation === "open" || state.operation === "page" ||
-      state.operation === "reload",
+      state.operation === "previous" || state.operation === "reload",
     readerError: state.error,
     missing: state.missing,
     timelineConflict: state.timelineConflict,
     timelineRenderGeneration: state.timelineRenderGeneration,
+    openedPosition: state.openedPosition,
     clearReaderError: () => dispatch({ type: "clear-error" }),
     autoRefreshEnabled: autoRefreshEnabled && state.context?.session.archived !== true,
     setAutoRefreshEnabled,
     loadMore,
+    loadPrevious,
     retryOpen,
     markTimelineConflict,
     refreshLatest: reloadLatest,
@@ -245,9 +284,26 @@ function reducer(state: ReaderState, action: ReaderAction): ReaderState {
             timelineRenderGeneration: state.timelineRenderGeneration,
           };
     case "success": {
+      if (action.merge === "prepend" && state.context !== null) {
+        return {
+          ...state,
+          operation: null,
+          context: {
+            ...state.context,
+            previousCursor: action.page.previousCursor,
+          },
+          items: prependUnique(state.items, action.page.items),
+          error: null,
+          missing: false,
+          timelineConflict: false,
+        };
+      }
       const context: ReaderContext = {
         session: action.page.session,
         cursor: action.page.cursor,
+        previousCursor: action.merge === "append"
+          ? state.context?.previousCursor ?? action.page.previousCursor
+          : action.page.previousCursor,
         hasMore: action.page.hasMore,
         liveRevision: action.page.liveRevision,
       };
@@ -255,14 +311,19 @@ function reducer(state: ReaderState, action: ReaderAction): ReaderState {
         ...state,
         operation: null,
         context,
-        items: action.replace ? action.page.items : appendUnique(state.items, action.page.items),
+        items: action.merge === "replace"
+          ? action.page.items
+          : appendUnique(state.items, action.page.items),
         interaction: action.page.interaction,
         error: null,
         missing: false,
         timelineConflict: false,
-        timelineRenderGeneration: action.replace && state.timelineConflict
+        timelineRenderGeneration: action.merge === "replace" && state.timelineConflict
           ? state.timelineRenderGeneration + 1
           : state.timelineRenderGeneration,
+        openedPosition: action.merge === "replace"
+          ? action.position ?? "beginning"
+          : state.openedPosition,
       };
     }
     case "live-success":
@@ -272,6 +333,7 @@ function reducer(state: ReaderState, action: ReaderAction): ReaderState {
         context: {
           session: action.response.session,
           cursor: action.response.cursor,
+          previousCursor: state.context.previousCursor,
           hasMore: action.response.hasMore,
           liveRevision: action.response.liveRevision,
         },
@@ -296,4 +358,14 @@ function appendUnique(existing: TimelineItem[], incoming: TimelineItem[]): Timel
   const seen = new Set(existing.map((item) => item.id));
   const additions = incoming.filter((item) => !seen.has(item.id));
   return additions.length === 0 ? existing : [...existing, ...additions];
+}
+
+function prependUnique(existing: TimelineItem[], incoming: TimelineItem[]): TimelineItem[] {
+  const seen = new Set(existing.map((item) => item.id));
+  const additions = incoming.filter((item) => !seen.has(item.id));
+  return additions.length === 0 ? existing : [...additions, ...existing];
+}
+
+function initialQuery(position: ItemPagePosition): ItemPageQuery {
+  return position === "latest" ? { position } : {};
 }
