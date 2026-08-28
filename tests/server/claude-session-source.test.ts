@@ -25,7 +25,7 @@ describe("Claude Code session source", () => {
     expect(session).toMatchObject({
       title: "What's in src/main.py?",
       cwd: "/home/dev/example-project",
-      messageCount: 3,
+      messageCount: 4,
       toolCount: 1,
       origin: {
         sourceType: "claude-code-jsonl",
@@ -38,6 +38,13 @@ describe("Claude Code session source", () => {
     const page = await repository.getItems(session.id, { limit: 20 });
     expect(page?.items).toEqual([
       expect.objectContaining({ kind: "message", role: "user", markdown: "What's in src/main.py?" }),
+      expect.objectContaining({
+        kind: "message",
+        role: "assistant",
+        phase: "commentary",
+        itemType: "Narration",
+        markdown: "1336 of 2984 core theorems translated successfully.",
+      }),
       expect.objectContaining({ kind: "message", role: "assistant", markdown: "I'll read the file." }),
       expect.objectContaining({ kind: "tool", stage: "call", toolName: "Read" }),
       expect.objectContaining({ kind: "tool", stage: "output", toolName: "Read" }),
@@ -73,7 +80,7 @@ describe("Claude Code session source", () => {
     await cp(resolve("tests/fixtures/claude-code", CLAUDE_FILE), path);
     const repository = await createCodexSessionReadService(home);
     const session = (await repository.list({})).sessions[0]!;
-    expect((await repository.getItems(session.id, { limit: 20 }))?.items).toHaveLength(5);
+    expect((await repository.getItems(session.id, { limit: 20 }))?.items).toHaveLength(6);
 
     await appendFile(path, `${JSON.stringify({
       type: "user",
@@ -89,7 +96,7 @@ describe("Claude Code session source", () => {
     await repository.refresh();
 
     const updated = await repository.getItems(session.id, { limit: 20 });
-    expect(updated?.items).toHaveLength(6);
+    expect(updated?.items).toHaveLength(7);
     expect(updated?.items.at(-1)).toMatchObject({
       kind: "message",
       role: "user",

@@ -27,7 +27,9 @@ name and bounded record shape, then gives each adapter only its own canonical
 paths. Unrecognized files fail closed when explicitly allowlisted and are
 silently ignored during ordinary directory discovery.
 
-Claude text, tool calls, and tool results are retained. Thinking blocks and
+Claude text, tool calls, and tool results are retained. Claude Code also stores
+visible progress updates in `thinking` blocks whose signed metadata labels them
+as `narration`; those become commentary messages. Other thinking blocks and
 unrelated bookkeeping records are deliberately omitted. Claude sessions do not
 publish Codex tmux interaction bindings.
 

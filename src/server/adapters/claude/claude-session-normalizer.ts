@@ -1,3 +1,4 @@
+import { Buffer } from "node:buffer";
 import type {
   DomainDiagnostic,
   DomainSession,
@@ -22,6 +23,12 @@ import {
 } from "../codex/tool-normalizer.js";
 
 const ORDINAL_BLOCK_WIDTH = 1024;
+const CLAUDE_SIGNATURE_SCAN_BYTES = 96;
+const CLAUDE_NARRATION_WIRE_MARKER = Buffer.from([
+  0x42,
+  0x09,
+  ...Buffer.from("narration", "ascii"),
+]);
 
 export interface ClaudeSessionNormalizerState {
   readonly descriptor: RolloutDescriptor;
@@ -130,6 +137,21 @@ export class ClaudeSessionNormalizer {
           }
           continue;
         }
+        if (role === "assistant" && block.type === "thinking" &&
+          hasClaudeNarrationSignature(block.signature)) {
+          const markdown = meaningfulText(block.thinking);
+          if (markdown === null) continue;
+          timeline.push(messageItem(
+            ordinal,
+            timestamp,
+            role,
+            markdown,
+            "commentary",
+            "Narration",
+          ));
+          messageCount += 1;
+          continue;
+        }
         if (role === "assistant" && block.type === "tool_use") {
           const callId = nonEmptyString(block.id);
           if (callId === null) continue;
@@ -230,6 +252,8 @@ function messageItem(
   timestamp: string | null,
   role: "user" | "assistant",
   markdown: string,
+  phase: "commentary" | "final" | null = role === "assistant" ? "final" : null,
+  itemType: string | null = null,
 ): DomainTimelineRecord {
   return {
     kind: "message",
@@ -237,10 +261,21 @@ function messageItem(
     ordinal,
     timestamp,
     role,
-    phase: role === "assistant" ? "final" : null,
-    itemType: null,
+    phase,
+    itemType,
     markdown: truncateText(markdown, MAX_MESSAGE_CHARS).text,
   };
+}
+
+function hasClaudeNarrationSignature(value: unknown): boolean {
+  const signature = nonEmptyString(value);
+  if (signature === null || signature.length % 4 !== 0 ||
+    !/^[A-Za-z0-9+/]+={0,2}$/.test(signature)) {
+    return false;
+  }
+  const decoded = Buffer.from(signature, "base64");
+  const prefix = decoded.subarray(0, CLAUDE_SIGNATURE_SCAN_BYTES);
+  return prefix.indexOf(CLAUDE_NARRATION_WIRE_MARKER) !== -1;
 }
 
 function meaningfulText(value: unknown): string | null {

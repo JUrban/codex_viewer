@@ -82,8 +82,12 @@ same open file handle used for probes and decoding.
 - Assistant `tool_use` blocks become tool-call items. User `tool_result` blocks
   become tool-output items and are paired by `tool_use_id` when the call is
   available in the same forward scan.
-- `thinking` blocks, file-history snapshots, and other Claude bookkeeping
-  records do not become timeline items. Thinking text is never retained.
+- A non-empty `thinking` block whose signed metadata identifies it as
+  `narration` becomes an assistant commentary message. Other `thinking` blocks,
+  including signed private-thinking blocks, do not become timeline items and
+  their text is never retained.
+- File-history snapshots and other Claude bookkeeping records do not become
+  timeline items.
 - Session ID, CLI version, working directory, and timestamps come from the
   top-level Claude records. The first user message supplies the fallback title.
 - Multiple blocks on one physical JSONL line receive stable derived ordinals so

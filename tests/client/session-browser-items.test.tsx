@@ -5,6 +5,7 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { describe, expect, it, vi } from "vitest";
 import { SessionApp } from "../../src/client/SessionApp";
 import { DirectiveItem } from "../../src/client/components/DirectiveItem";
+import { MessageItem } from "../../src/client/components/MessageItem";
 import { Timeline } from "../../src/client/components/Timeline";
 import { ToolItem } from "../../src/client/components/ToolItem";
 import { SESSION_OPEN_POSITION_STORAGE_KEY } from "../../src/client/state/use-session-open-position";
@@ -22,6 +23,24 @@ import {
 import { installIntersectionObserver, intersectLatest } from "./intersection-observer";
 
 describe("session reader items", () => {
+  it("renders Claude narration as assistant commentary", () => {
+    render(<MessageItem item={{
+      kind: "message",
+      id: "claude-narration",
+      ordinal: 513,
+      timestamp: "2026-08-28T19:41:37.043Z",
+      role: "assistant",
+      phase: "commentary",
+      itemType: "Narration",
+      markdown: "1336 of 2984 core theorems translated successfully.",
+    }} />);
+
+    expect(screen.getByText("1336 of 2984 core theorems translated successfully."))
+      .toBeInTheDocument();
+    expect(screen.getByText("Assistant commentary · Narration · 513"))
+      .toBeInTheDocument();
+  });
+
   it("renders inline directives without requesting detail", () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);

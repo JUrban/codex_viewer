@@ -95,10 +95,11 @@ npm start -- --codex-home "$HOME/.codex-public" --port 8090
 ```
 
 The Claude adapter recognizes the top-level `user` and `assistant` records,
-renders text blocks, pairs `tool_use` with `tool_result`, hides thinking blocks,
-and ignores unrelated `.jsonl` files. Hardlinks require the source and public
-directory to be on the same filesystem; copying is the fallback across
-filesystems. Do not `chmod` a hardlink, because it shares the source inode.
+renders text blocks and signed narration updates, pairs `tool_use` with
+`tool_result`, hides private thinking blocks, and ignores unrelated `.jsonl`
+files. Hardlinks require the source and public directory to be on the same
+filesystem; copying is the fallback across filesystems. Do not `chmod` a
+hardlink, because it shares the source inode.
 
 ### TLS and mTLS
 
